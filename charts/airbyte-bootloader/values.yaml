@@ -7,7 +7,6 @@ global:
   serviceAccountName: placeholderServiceAccount
   deploymentMode: oss
   secretName: ""
-  shareProcessNamespace: false  
   database:
     secretName: ""
     secretValue: ""
@@ -35,6 +34,8 @@ enabled: true
 image:
   repository: airbyte/bootloader
   pullPolicy: IfNotPresent
+
+shareProcessNamespace: false  
 
 ##  podAnnotations [object] Add extra annotations to the bootloader pod
 ##
