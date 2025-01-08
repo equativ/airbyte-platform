@@ -20,6 +20,7 @@ import io.airbyte.api.model.generated.ConnectorRolloutStrategy
 import io.airbyte.api.model.generated.ConnectorRolloutUpdateStateRequestBody
 import io.airbyte.api.problems.model.generated.ProblemMessageData
 import io.airbyte.api.problems.throwable.generated.ConnectorRolloutInvalidRequestProblem
+import io.airbyte.api.problems.throwable.generated.ConnectorRolloutMaximumRolloutPercentageReachedProblem
 import io.airbyte.api.problems.throwable.generated.ConnectorRolloutNotEnoughActorsProblem
 import io.airbyte.config.ConnectorEnumRolloutState
 import io.airbyte.config.ConnectorEnumRolloutStrategy
@@ -29,15 +30,18 @@ import io.airbyte.config.persistence.UserPersistence
 import io.airbyte.connector.rollout.client.ConnectorRolloutClient
 import io.airbyte.connector.rollout.shared.ActorSelectionInfo
 import io.airbyte.connector.rollout.shared.Constants.AIRBYTE_API_CLIENT_EXCEPTION
+import io.airbyte.connector.rollout.shared.Constants.DEFAULT_MAX_ROLLOUT_PERCENTAGE
 import io.airbyte.connector.rollout.shared.RolloutActorFinder
 import io.airbyte.connector.rollout.shared.models.ConnectorRolloutActivityInputFinalize
+import io.airbyte.connector.rollout.shared.models.ConnectorRolloutActivityInputPause
 import io.airbyte.connector.rollout.shared.models.ConnectorRolloutActivityInputRollout
-import io.airbyte.connector.rollout.shared.models.ConnectorRolloutActivityInputStart
+import io.airbyte.connector.rollout.shared.models.ConnectorRolloutWorkflowInput
 import io.airbyte.data.exceptions.InvalidRequestException
 import io.airbyte.data.helpers.ActorDefinitionVersionUpdater
 import io.airbyte.data.services.ActorDefinitionService
 import io.airbyte.data.services.ConnectorRolloutService
 import io.micronaut.cache.annotation.Cacheable
+import io.micronaut.context.annotation.Value
 import io.micronaut.transaction.annotation.Transactional
 import io.temporal.client.WorkflowUpdateException
 import io.temporal.failure.ApplicationFailure
@@ -47,6 +51,8 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
+import kotlin.math.ceil
+import kotlin.math.min
 
 /**
  * OperationsHandler. Javadocs suppressed because api docs should be used as source of truth.
@@ -55,6 +61,12 @@ import java.util.UUID
 open class ConnectorRolloutHandler
   @Inject
   constructor(
+    @Value("\${airbyte.connector-rollout.timeouts.wait_between_rollout_seconds}")
+    private val waitBetweenRolloutSeconds: Int,
+    @Value("\${airbyte.connector-rollout.timeouts.wait_between_sync_results_queries_seconds}")
+    private val waitBetweenSyncResultsQueriesSeconds: Int,
+    @Value("\${airbyte.connector-rollout.timeouts.rollout_expiration_seconds}")
+    private val rolloutExpirationSeconds: Int,
     private val connectorRolloutService: ConnectorRolloutService,
     private val actorDefinitionService: ActorDefinitionService,
     private val actorDefinitionVersionUpdater: ActorDefinitionVersionUpdater,
@@ -91,6 +103,7 @@ open class ConnectorRolloutHandler
           .expiresAt(connectorRollout.expiresAt?.let { unixTimestampToOffsetDateTime(it) })
           .errorMsg(connectorRollout.errorMsg)
           .failedReason(connectorRollout.failedReason)
+          .pausedReason(connectorRollout.pausedReason)
           .updatedBy(
             connectorRollout.rolloutStrategy?.let { strategy ->
               connectorRollout.updatedBy?.let { updatedBy ->
@@ -99,11 +112,19 @@ open class ConnectorRolloutHandler
             },
           ).completedAt(connectorRollout.completedAt?.let { unixTimestampToOffsetDateTime(it) })
           .expiresAt(connectorRollout.expiresAt?.let { unixTimestampToOffsetDateTime(it) })
-          .errorMsg(connectorRollout.errorMsg)
-          .failedReason(connectorRollout.failedReason)
 
       if (withActorSyncAndSelectionInfo) {
-        rollout = rollout.actorSelectionInfo(getPinnedActorInfo(connectorRollout.id)).actorSyncs(getActorSyncInfo(connectorRollout.id))
+        val pinnedActorInfo = getPinnedActorInfo(connectorRollout.id)
+        val actorSyncInfo = getActorSyncInfo(connectorRollout.id).mapKeys { (uuidKey, _) -> uuidKey.toString() }
+
+        logger.info {
+          "buildConnectorRolloutRead withActorSyncAndSelectionInfo \n pinnedActorInfo=$pinnedActorInfo \n actorSyncInfo=$actorSyncInfo"
+        }
+
+        rollout =
+          rollout
+            .actorSelectionInfo(pinnedActorInfo)
+            .actorSyncs(actorSyncInfo)
       }
       return rollout
     }
@@ -186,7 +207,7 @@ open class ConnectorRolloutHandler
             .withUpdatedBy(updatedBy)
             .withState(ConnectorEnumRolloutState.INITIALIZED)
             .withHasBreakingChanges(false)
-            .withRolloutStrategy(ConnectorEnumRolloutStrategy.fromValue(rolloutStrategy.toString()))
+            .withRolloutStrategy(getRolloutStrategyForManualStart(rolloutStrategy))
             .withInitialRolloutPct(initialRolloutPct?.toLong())
             .withFinalTargetRolloutPct(finalTargetRolloutPct?.toLong())
         connectorRolloutService.writeConnectorRollout(connectorRollout)
@@ -207,15 +228,22 @@ open class ConnectorRolloutHandler
       val rolloutsInInvalidState =
         connectorRollouts.filter { rollout: ConnectorRollout ->
           finalEnumStates.contains(rollout.state) &&
-            (rollout.state != ConnectorEnumRolloutState.INITIALIZED)
+            (rollout.state != ConnectorEnumRolloutState.INITIALIZED && rollout.state != ConnectorEnumRolloutState.CANCELED)
         }
 
       if (rolloutsInInvalidState.isNotEmpty()) {
         throw ConnectorRolloutInvalidRequestProblem(
-          ProblemMessageData().message("Found rollouts in invalid states: ${rolloutsInInvalidState.map { it.id }}."),
+          ProblemMessageData().message("Found rollouts in invalid states: $rolloutsInInvalidState."),
         )
       }
-      return initializedRollouts.first()
+      val connectorRollout =
+        initializedRollouts.first()
+          .withUpdatedBy(updatedBy)
+          .withRolloutStrategy(getRolloutStrategyForManualStart(rolloutStrategy))
+          .withInitialRolloutPct(initialRolloutPct?.toLong())
+          .withFinalTargetRolloutPct(finalTargetRolloutPct?.toLong())
+      connectorRolloutService.writeConnectorRollout(connectorRollout)
+      return connectorRollout
     }
 
     @VisibleForTesting
@@ -245,16 +273,17 @@ open class ConnectorRolloutHandler
     @VisibleForTesting
     open fun getAndRollOutConnectorRollout(connectorRolloutRequest: ConnectorRolloutRequestBody): ConnectorRollout {
       var connectorRollout = connectorRolloutService.getConnectorRollout(connectorRolloutRequest.id)
-      if (connectorRollout.state !in
+      val validStates =
         setOf(
+          ConnectorEnumRolloutState.INITIALIZED,
           ConnectorEnumRolloutState.WORKFLOW_STARTED,
           ConnectorEnumRolloutState.IN_PROGRESS,
           ConnectorEnumRolloutState.PAUSED,
         )
-      ) {
+      if (connectorRollout.state !in validStates) {
         throw ConnectorRolloutInvalidRequestProblem(
           ProblemMessageData().message(
-            "Connector rollout must be in WORKFLOW_STARTED, IN_PROGRESS, or PAUSED state to update the rollout, but was in state " +
+            "Connector rollout must be in $validStates state to update the rollout, but was in state " +
               connectorRollout.state.toString(),
           ),
         )
@@ -289,7 +318,20 @@ open class ConnectorRolloutHandler
         connectorRollout = pinByPercentage(connectorRollout, connectorRolloutRequest.targetPercentage!!, connectorRolloutRequest.rolloutStrategy!!)
       }
 
+      // get current percentage pinned
+      connectorRollout.withCurrentTargetRolloutPct(getPercentagePinned(getActorSelectionInfo(connectorRollout, 0)))
       return connectorRollout
+    }
+
+    fun getPercentagePinned(actorSelectionInfo: ActorSelectionInfo): Long {
+      logger.info {
+        "getPercentagePinned actorSelectionInfo=$actorSelectionInfo percentagePinned=${ceil(
+          (actorSelectionInfo.nPreviouslyPinned + actorSelectionInfo.nNewPinned) / actorSelectionInfo.nActorsEligibleOrAlreadyPinned.toDouble(),
+        ).toLong()}"
+      }
+      return ceil(
+        (100 * actorSelectionInfo.nPreviouslyPinned + actorSelectionInfo.nNewPinned) / actorSelectionInfo.nActorsEligibleOrAlreadyPinned.toDouble(),
+      ).toLong()
     }
 
     open fun pinByPercentage(
@@ -297,7 +339,14 @@ open class ConnectorRolloutHandler
       targetPercentage: Int,
       rolloutStrategy: ConnectorRolloutStrategy,
     ): ConnectorRollout {
-      val actorSelectionInfo = getActorSelectionInfo(connectorRollout, targetPercentage)
+      val actualPercentageToPin =
+        getValidPercentageToPin(
+          connectorRollout,
+          targetPercentage,
+          rolloutStrategy,
+        )
+
+      val actorSelectionInfo = getActorSelectionInfo(connectorRollout, actualPercentageToPin)
       if (actorSelectionInfo.actorIdsToPin.isEmpty()) {
         throw ConnectorRolloutNotEnoughActorsProblem(
           ProblemMessageData().message(
@@ -321,7 +370,37 @@ open class ConnectorRolloutHandler
         .withState(ConnectorEnumRolloutState.IN_PROGRESS)
         .withRolloutStrategy(ConnectorEnumRolloutStrategy.fromValue(rolloutStrategy.toString()))
         .withUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC).toEpochSecond())
-        .withCurrentTargetRolloutPct(actorSelectionInfo.percentagePinned.toLong())
+    }
+
+    @VisibleForTesting
+    internal fun getValidPercentageToPin(
+      connectorRollout: ConnectorRollout,
+      targetPercentage: Int,
+      rolloutStrategy: ConnectorRolloutStrategy,
+    ): Int {
+      if (rolloutStrategy != ConnectorRolloutStrategy.AUTOMATED) {
+        return targetPercentage
+      }
+      val maxRolloutPct =
+        if (connectorRollout.finalTargetRolloutPct == null) {
+          DEFAULT_MAX_ROLLOUT_PERCENTAGE
+        } else {
+          connectorRollout.finalTargetRolloutPct.toInt()
+        }
+
+      val actualTargetRolloutPct = min(targetPercentage, maxRolloutPct)
+      if (targetPercentage > actualTargetRolloutPct) {
+        logger.info { "Requested to pin $targetPercentage% of actors but capped at $actualTargetRolloutPct." }
+      }
+
+      if (connectorRollout.currentTargetRolloutPct >= actualTargetRolloutPct) {
+        throw ConnectorRolloutMaximumRolloutPercentageReachedProblem(
+          ProblemMessageData().message(
+            "Requested to pin $actualTargetRolloutPct% of actors but already pinned ${connectorRollout.currentTargetRolloutPct}.",
+          ),
+        )
+      }
+      return actualTargetRolloutPct
     }
 
     @VisibleForTesting
@@ -362,6 +441,7 @@ open class ConnectorRolloutHandler
       state: ConnectorEnumRolloutState,
       errorMsg: String?,
       failedReason: String?,
+      pausedReason: String?,
     ): ConnectorRollout {
       val connectorRollout = connectorRolloutService.getConnectorRollout(id)
       val invalidUpdateStates = ConnectorRolloutFinalState.entries.map { ConnectorEnumRolloutState.fromValue(it.toString()) }
@@ -377,6 +457,7 @@ open class ConnectorRolloutHandler
         .withState(state)
         .withErrorMsg(errorMsg)
         .withFailedReason(failedReason)
+        .withPausedReason(pausedReason)
     }
 
     private fun unixTimestampToOffsetDateTime(unixTimestamp: Long): OffsetDateTime = Instant.ofEpochSecond(unixTimestamp).atOffset(ZoneOffset.UTC)
@@ -426,7 +507,7 @@ open class ConnectorRolloutHandler
           connectorRollout.id.toString(),
           connectorRollout.releaseCandidateVersionId,
         )
-        connectorRollout.initialRolloutPct = getActorSelectionInfo(connectorRollout, 0).percentagePinned.toLong()
+        connectorRollout.currentTargetRolloutPct = getPercentagePinned(getActorSelectionInfo(connectorRollout, 0))
       }
 
       val updatedConnectorRollout = connectorRolloutService.writeConnectorRollout(connectorRollout)
@@ -468,30 +549,34 @@ open class ConnectorRolloutHandler
           ConnectorEnumRolloutState.fromValue(connectorRolloutUpdateStateRequestBody.state.toString()),
           connectorRolloutUpdateStateRequestBody.errorMsg,
           connectorRolloutUpdateStateRequestBody.failedReason,
+          connectorRolloutUpdateStateRequestBody.pausedReason,
         )
       val updatedConnectorRollout = connectorRolloutService.writeConnectorRollout(connectorRollout)
       return buildConnectorRolloutRead(updatedConnectorRollout, true)
     }
 
-    fun getActorSyncInfo(id: UUID): List<ConnectorRolloutActorSyncInfo> {
+    fun getActorSyncInfo(id: UUID): Map<UUID, ConnectorRolloutActorSyncInfo> {
       val rollout = connectorRolloutService.getConnectorRollout(id)
       val actorSyncInfoMap = rolloutActorFinder.getSyncInfoForPinnedActors(rollout)
-      return actorSyncInfoMap.map { (actorId, syncInfo) ->
+      return actorSyncInfoMap.mapValues { (id, syncInfo) ->
         ConnectorRolloutActorSyncInfo()
-          .actorId(actorId)
-          .nConnections(syncInfo.nConnections)
-          .nSucceeded(syncInfo.nSucceeded)
-          .nFailed(syncInfo.nFailed)
+          .actorId(id)
+          .numConnections(syncInfo.nConnections)
+          .numSucceeded(syncInfo.nSucceeded)
+          .numFailed(syncInfo.nFailed)
       }
     }
 
     fun getPinnedActorInfo(id: UUID): ConnectorRolloutActorSelectionInfo {
       val rollout = connectorRolloutService.getConnectorRollout(id)
+      logger.info { "getPinnedActorInfo: rollout=$rollout" }
       val actorSelectionInfo = rolloutActorFinder.getActorSelectionInfo(rollout, null)
+      logger.info { "getPinnedActorInfo: actorSelectionInfo=$actorSelectionInfo" }
+
       return ConnectorRolloutActorSelectionInfo()
-        .nActors(actorSelectionInfo.nActors)
-        .nPinnedToConnectorRollout(actorSelectionInfo.nPreviouslyPinned)
-        .nActorsEligibleOrAlreadyPinned(actorSelectionInfo.nActorsEligibleOrAlreadyPinned)
+        .numActors(actorSelectionInfo.nActors)
+        .numPinnedToConnectorRollout(actorSelectionInfo.nPreviouslyPinned)
+        .numActorsEligibleOrAlreadyPinned(actorSelectionInfo.nActorsEligibleOrAlreadyPinned)
     }
 
     open fun manualStartConnectorRollout(connectorRolloutManualStart: ConnectorRolloutManualStartRequestBody): ConnectorRolloutRead {
@@ -508,7 +593,7 @@ open class ConnectorRolloutHandler
 
       try {
         connectorRolloutClient.startRollout(
-          ConnectorRolloutActivityInputStart(
+          ConnectorRolloutWorkflowInput(
             connectorRolloutManualStart.dockerRepository,
             connectorRolloutManualStart.dockerImageTag,
             connectorRolloutManualStart.actorDefinitionId,
@@ -519,9 +604,10 @@ open class ConnectorRolloutHandler
             rollout,
             getPinnedActorInfo(rollout.id),
             getActorSyncInfo(rollout.id),
-            rollout.initialRolloutPct?.toInt(),
-            rollout.finalTargetRolloutPct?.toInt(),
             connectorRolloutManualStart.migratePins,
+            waitBetweenRolloutSeconds,
+            waitBetweenSyncResultsQueriesSeconds,
+            rolloutExpirationSeconds,
           ),
         )
       } catch (e: WorkflowUpdateException) {
@@ -538,7 +624,7 @@ open class ConnectorRolloutHandler
       if (connectorRollout.state == ConnectorEnumRolloutState.INITIALIZED) {
         try {
           connectorRolloutClient.startRollout(
-            ConnectorRolloutActivityInputStart(
+            ConnectorRolloutWorkflowInput(
               connectorRolloutUpdate.dockerRepository,
               connectorRolloutUpdate.dockerImageTag,
               connectorRolloutUpdate.actorDefinitionId,
@@ -549,9 +635,10 @@ open class ConnectorRolloutHandler
               connectorRollout,
               getPinnedActorInfo(connectorRollout.id),
               getActorSyncInfo(connectorRollout.id),
-              connectorRollout.initialRolloutPct.toInt(),
-              connectorRollout.finalTargetRolloutPct.toInt(),
               connectorRolloutUpdate.migratePins,
+              waitBetweenRolloutSeconds,
+              waitBetweenSyncResultsQueriesSeconds,
+              rolloutExpirationSeconds,
             ),
           )
         } catch (e: WorkflowUpdateException) {
@@ -586,7 +673,7 @@ open class ConnectorRolloutHandler
       if (connectorRollout.state == ConnectorEnumRolloutState.INITIALIZED) {
         try {
           connectorRolloutClient.startRollout(
-            ConnectorRolloutActivityInputStart(
+            ConnectorRolloutWorkflowInput(
               connectorRolloutFinalize.dockerRepository,
               connectorRolloutFinalize.dockerImageTag,
               connectorRolloutFinalize.actorDefinitionId,
@@ -597,6 +684,9 @@ open class ConnectorRolloutHandler
               connectorRollout,
               getPinnedActorInfo(connectorRollout.id),
               getActorSyncInfo(connectorRollout.id),
+              waitBetweenRolloutSeconds = waitBetweenRolloutSeconds,
+              waitBetweenSyncResultsQueriesSeconds = waitBetweenSyncResultsQueriesSeconds,
+              rolloutExpirationSeconds = rolloutExpirationSeconds,
             ),
           )
         } catch (e: WorkflowUpdateException) {
@@ -633,11 +723,70 @@ open class ConnectorRolloutHandler
       return response
     }
 
-    private fun getRolloutStrategyForManualUpdate(currentRolloutStrategy: ConnectorEnumRolloutStrategy?): ConnectorEnumRolloutStrategy {
+    open fun manualPauseConnectorRollout(connectorRolloutPause: ConnectorRolloutUpdateStateRequestBody): ConnectorRolloutRead {
+      // Start a workflow if one doesn't exist
+      val connectorRollout = connectorRolloutService.getConnectorRollout(connectorRolloutPause.id)
+
+      if (connectorRollout.state == ConnectorEnumRolloutState.INITIALIZED) {
+        try {
+          connectorRolloutClient.startRollout(
+            ConnectorRolloutWorkflowInput(
+              connectorRolloutPause.dockerRepository,
+              connectorRolloutPause.dockerImageTag,
+              connectorRolloutPause.actorDefinitionId,
+              connectorRolloutPause.id,
+              connectorRolloutPause.updatedBy,
+              getRolloutStrategyForManualUpdate(connectorRollout.rolloutStrategy),
+              actorDefinitionService.getActorDefinitionVersion(connectorRollout.initialVersionId).dockerImageTag,
+              connectorRollout,
+              getPinnedActorInfo(connectorRollout.id),
+              getActorSyncInfo(connectorRollout.id),
+              waitBetweenRolloutSeconds = waitBetweenRolloutSeconds,
+              waitBetweenSyncResultsQueriesSeconds = waitBetweenSyncResultsQueriesSeconds,
+              rolloutExpirationSeconds = rolloutExpirationSeconds,
+            ),
+          )
+        } catch (e: WorkflowUpdateException) {
+          throw throwAirbyteApiClientExceptionIfExists("startWorkflow", e)
+        }
+      }
+      logger.info {
+        "Pausing rollout for ${connectorRolloutPause.id}; " +
+          "dockerRepository=${connectorRolloutPause.dockerRepository}" +
+          "dockerImageTag=${connectorRolloutPause.dockerImageTag}" +
+          "actorDefinitionId=${connectorRolloutPause.actorDefinitionId}"
+      }
+      try {
+        connectorRolloutClient.pauseRollout(
+          ConnectorRolloutActivityInputPause(
+            connectorRolloutPause.dockerRepository,
+            connectorRolloutPause.dockerImageTag,
+            connectorRolloutPause.actorDefinitionId,
+            connectorRolloutPause.id,
+            connectorRolloutPause.pausedReason,
+            connectorRolloutPause.updatedBy,
+            getRolloutStrategyForManualUpdate(connectorRollout.rolloutStrategy),
+          ),
+        )
+      } catch (e: WorkflowUpdateException) {
+        throw throwAirbyteApiClientExceptionIfExists("pauseRollout", e)
+      }
+      return buildConnectorRolloutRead(connectorRolloutService.getConnectorRollout(connectorRolloutPause.id)!!, false)
+    }
+
+    internal fun getRolloutStrategyForManualUpdate(currentRolloutStrategy: ConnectorEnumRolloutStrategy?): ConnectorEnumRolloutStrategy {
       return if (currentRolloutStrategy == null || currentRolloutStrategy == ConnectorEnumRolloutStrategy.MANUAL) {
         ConnectorEnumRolloutStrategy.MANUAL
       } else {
         ConnectorEnumRolloutStrategy.OVERRIDDEN
+      }
+    }
+
+    internal fun getRolloutStrategyForManualStart(rolloutStrategy: ConnectorRolloutStrategy?): ConnectorEnumRolloutStrategy {
+      return if (rolloutStrategy == null || rolloutStrategy == ConnectorRolloutStrategy.MANUAL) {
+        ConnectorEnumRolloutStrategy.MANUAL
+      } else {
+        ConnectorEnumRolloutStrategy.AUTOMATED
       }
     }
 
@@ -647,10 +796,17 @@ open class ConnectorRolloutHandler
       targetPercent: Int,
     ): ActorSelectionInfo {
       val actorSelectionInfo = rolloutActorFinder.getActorSelectionInfo(connectorRollout, targetPercent)
-      if (targetPercent > 0 && actorSelectionInfo.actorIdsToPin.isEmpty()) {
+      if (targetPercent > 0 && actorSelectionInfo.actorIdsToPin.isEmpty() && actorSelectionInfo.nPreviouslyPinned == 0) {
         throw ConnectorRolloutNotEnoughActorsProblem(
           ProblemMessageData().message(
             "No actors are eligible to be pinned for a progressive rollout.",
+          ),
+        )
+      }
+      if (targetPercent > 0 && actorSelectionInfo.actorIdsToPin.isEmpty() && actorSelectionInfo.nPreviouslyPinned > 0) {
+        throw ConnectorRolloutNotEnoughActorsProblem(
+          ProblemMessageData().message(
+            "No new actors are eligible to be pinned for a progressive rollout.",
           ),
         )
       }

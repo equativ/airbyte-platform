@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024 Airbyte, Inc., all rights reserved.
+ * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
  */
 
 package io.airbyte.workers;
@@ -177,7 +177,7 @@ public class ReplicationInputHydrator {
         : airbyteApiClient.getConnectionApi().getConnection(new ConnectionIdRequestBody(replicationActivityInput.getConnectionId()));
 
     final ConfiguredAirbyteCatalog catalog = retrieveCatalog(connectionInfo);
-    if (replicationActivityInput.getIsReset()) {
+    if (replicationActivityInput.isReset()) {
       // If this is a reset, we need to set the streams being reset to Full Refresh | Overwrite.
       updateCatalogForReset(replicationActivityInput, catalog);
     }

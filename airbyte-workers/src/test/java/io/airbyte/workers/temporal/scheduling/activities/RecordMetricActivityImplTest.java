@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024 Airbyte, Inc., all rights reserved.
+ * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
  */
 
 package io.airbyte.workers.temporal.scheduling.activities;
@@ -107,8 +107,9 @@ class RecordMetricActivityImplTest {
 
   @Test
   void testRecordingMetricCounterDoesntCrashOnApiNotFoundErrors() {
-    final ConnectionUpdaterInput inputForUnkwnownWorkspaceId = new ConnectionUpdaterInput();
-    inputForUnkwnownWorkspaceId.setConnectionId(CONNECTION_ID_WITHOUT_WORKSPACE);
+    final ConnectionUpdaterInput inputForUnkwnownWorkspaceId = new ConnectionUpdaterInput(
+        CONNECTION_ID_WITHOUT_WORKSPACE,
+        null, null, false, null, null, false, false, false);
     final RecordMetricInput metricInput = new RecordMetricInput(inputForUnkwnownWorkspaceId, Optional.empty(), METRIC_NAME, null);
 
     activity.recordWorkflowCountMetric(metricInput);

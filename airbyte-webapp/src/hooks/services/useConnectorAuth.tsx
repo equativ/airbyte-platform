@@ -13,7 +13,11 @@ import {
   DestinationOauthConsentRequest,
   SourceOauthConsentRequest,
 } from "core/api/types/AirbyteClient";
-import { ConnectorDefinition, ConnectorDefinitionSpecification, ConnectorSpecification } from "core/domain/connector";
+import {
+  ConnectorDefinition,
+  ConnectorDefinitionSpecificationRead,
+  ConnectorSpecification,
+} from "core/domain/connector";
 import { isSourceDefinitionSpecification } from "core/domain/connector/source";
 import { trackError } from "core/utils/datadog";
 import { useAnalyticsTrackFunctions } from "views/Connector/ConnectorForm/components/Sections/auth/useAnalyticsTrackFunctions";
@@ -25,7 +29,7 @@ import { useCurrentWorkspace } from "./useWorkspace";
 let windowObjectReference: Window | null = null;
 
 const tabUuid = uuid();
-const OAUTH_REDIRECT_URL = `${window.location.protocol}//${window.location.host}`;
+export const OAUTH_REDIRECT_URL = `${window.location.protocol}//${window.location.host}/auth_flow`;
 
 /**
  * Since some OAuth providers clear out the window.opener and window.name properties,
@@ -63,7 +67,7 @@ function openWindow(url: string): Window | null {
 
 export function useConnectorAuth(): {
   getConsentUrl: (
-    connector: ConnectorDefinitionSpecification,
+    connector: ConnectorDefinitionSpecificationRead,
     oAuthInputConfiguration: Record<string, unknown>
   ) => Promise<{
     payload: SourceOauthConsentRequest | DestinationOauthConsentRequest;
@@ -83,7 +87,7 @@ export function useConnectorAuth(): {
 
   return {
     getConsentUrl: async (
-      connector: ConnectorDefinitionSpecification,
+      connector: ConnectorDefinitionSpecificationRead,
       oAuthInputConfiguration: Record<string, unknown>
     ): Promise<{
       payload: SourceOauthConsentRequest | DestinationOauthConsentRequest;
@@ -94,7 +98,7 @@ export function useConnectorAuth(): {
           const payload: SourceOauthConsentRequest = {
             workspaceId,
             sourceDefinitionId: ConnectorSpecification.id(connector),
-            redirectUrl: `${OAUTH_REDIRECT_URL}/auth_flow`,
+            redirectUrl: OAUTH_REDIRECT_URL,
             oAuthInputConfiguration,
             sourceId: connectorId,
           };
@@ -105,7 +109,7 @@ export function useConnectorAuth(): {
         const payload: DestinationOauthConsentRequest = {
           workspaceId,
           destinationDefinitionId: ConnectorSpecification.id(connector),
-          redirectUrl: `${OAUTH_REDIRECT_URL}/auth_flow`,
+          redirectUrl: OAUTH_REDIRECT_URL,
           oAuthInputConfiguration,
           destinationId: connectorId,
         };
@@ -163,7 +167,7 @@ export function useRunOauthFlow({
   connectorDefinition,
   onDone,
 }: {
-  connector: ConnectorDefinitionSpecification;
+  connector: ConnectorDefinitionSpecificationRead;
   connectorDefinition?: ConnectorDefinition;
   onDone?: (values: CompleteOAuthResponseAuthPayload) => void;
 }): {

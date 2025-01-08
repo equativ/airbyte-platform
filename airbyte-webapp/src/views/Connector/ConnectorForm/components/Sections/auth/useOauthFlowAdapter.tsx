@@ -7,21 +7,21 @@ import { FieldPath, useFormContext } from "react-hook-form";
 import { FormattedMessage } from "react-intl";
 
 import { AdvancedAuth, CompleteOAuthResponseAuthPayload } from "core/api/types/AirbyteClient";
-import { ConnectorDefinition, ConnectorDefinitionSpecification } from "core/domain/connector";
+import { ConnectorDefinition, ConnectorDefinitionSpecificationRead } from "core/domain/connector";
 import { useRunOauthFlow } from "hooks/services/useConnectorAuth";
 import { useAuthentication } from "views/Connector/ConnectorForm/useAuthentication";
 
 import { useNotificationService } from "../../../../../../hooks/services/Notification";
 import { useConnectorForm } from "../../../connectorFormContext";
 import { ConnectorFormValues } from "../../../types";
-import { makeConnectionConfigurationPath, serverProvidedOauthPaths } from "../../../utils";
+import { makeConnectionConfigurationPath, serverProvidedOauthPaths, userProvidedOauthInputPaths } from "../../../utils";
 
 interface Credentials {
   credentials: AdvancedAuth;
 }
 
 function useFormOauthAdapter(
-  connector: ConnectorDefinitionSpecification,
+  connector: ConnectorDefinitionSpecificationRead,
   connectorDefinition?: ConnectorDefinition
 ): {
   loading: boolean;
@@ -74,12 +74,7 @@ function useFormOauthAdapter(
     done: done || hasAuthFieldValues,
     hasRun,
     run: async () => {
-      const oauthInputProperties =
-        (
-          connector?.advancedAuth?.oauthConfigSpecification?.oauthUserInputFromConnectorConfigSpecification as {
-            properties: Array<{ path_in_connector_config: string[] }>;
-          }
-        )?.properties ?? {};
+      const oauthInputProperties = userProvidedOauthInputPaths(connector);
 
       if (!isEmpty(oauthInputProperties)) {
         const oauthInputFields =

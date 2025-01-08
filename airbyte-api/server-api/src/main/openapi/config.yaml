@@ -3555,7 +3555,32 @@ paths:
     post:
       tags:
         - jobs
+      summary: Get the latest job not including the cancel jobs.
       operationId: getLastReplicationJob
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectionIdRequestBody"
+        required: true
+      responses:
+        "200":
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobOptionalRead"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
+  /v1/jobs/get_last_replication_job_with_cancel:
+    post:
+      tags:
+        - jobs
+        - internal
+      summary: Get the latest job including the cancel jobs. This is used for scheduling in order to make sure that we don't immediately start a new job after a cancel.
+      operationId: getLastReplicationJobWithCancel
       requestBody:
         content:
           application/json:
@@ -4761,6 +4786,40 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrganizationTrialStatusRead"
+  /v1/billing/cancel_subscription:
+    post:
+      summary: Schedule canceling the subscription of an organization
+      tags:
+        - billing
+        - cloud-only
+      operationId: cancelSubscription
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationIdRequestBody"
+      responses:
+        "200":
+          description: Successfully scheduled cancelation of the subscription
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CancelSubscriptionRead"
+  /v1/billing/unschedule_cancel_subscription:
+    post:
+      summary: Unschedule a scheduled cancelation of the subscription of an organization
+      tags:
+        - billing
+        - cloud-only
+      operationId: unscheduleCancelSubscription
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationIdRequestBody"
+      responses:
+        "204":
+          description: Successfully unscheduled cancelation of the subscription
   /v1/organization_payment_config/{organizationId}:
     get:
       summary: Get an organization payment config
@@ -4784,26 +4843,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OrganizationPaymentConfigRead"
-    delete:
-      summary: Delete an organization payment config
-      tags:
-        - organization_payment_config
-        - billing
-        - cloud-only
-        - admin-api
-      operationId: deleteOrganizationPaymentConfig
-      parameters:
-        - in: path
-          name: organizationId
-          schema:
-            type: string
-            format: uuid
-          required: true
-      responses:
-        "204":
-          description: Successfully deleted organization payment config
-        "404":
-          description: Payment config didn't exist
   /v1/organization_payment_config:
     post:
       summary: Create or update an organization payment config
@@ -5480,6 +5519,30 @@ paths:
       tags:
         - connector_rollout
 
+  /v1/connector_rollout/manual_pause:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConnectorRolloutUpdateStateRequestBody"
+      responses:
+        "200":
+          description: Updated connector rollout object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectorRolloutResponse"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
+
+      summary: Update rollout state to paused
+      operationId: manualPauseConnectorRollout
+      tags:
+        - connector_rollout
+
   # User Invitations
   /v1/user_invitations/create:
     post:
@@ -5639,6 +5702,29 @@ paths:
           description: Successful operation
         "422":
           $ref: "#/components/responses/InvalidInputResponse"
+
+  /v1/dataplanes/get_dataplane_id:
+    post:
+      summary: Get a dataplane ID given the provided request body params
+      tags:
+        - dataplane
+      operationId: getDataplaneId
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DataplaneGetIdRequestBody"
+        required: true
+      responses:
+        "200":
+          description: Successfully retrieved dataplane ID
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataplaneRead"
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
+
   # Airbyte API
   /public:
     get:
@@ -7568,13 +7654,15 @@ components:
           type: string
         failed_reason:
           type: string
+        paused_reason:
+          type: string
         rollout_strategy:
           $ref: "#/components/schemas/ConnectorRolloutStrategy"
         actor_selection_info:
           $ref: "#/components/schemas/ConnectorRolloutActorSelectionInfo"
         actor_syncs:
-          type: array
-          items:
+          type: object
+          additionalProperties:
             $ref: "#/components/schemas/ConnectorRolloutActorSyncInfo"
 
     ConnectorRolloutState:
@@ -7775,6 +7863,11 @@ components:
           type: string
         failed_reason:
           type: string
+        paused_reason:
+          type: string
+        updated_by:
+          type: string
+          format: uuid
 
     ConnectorRolloutFinalizeRequestBody:
       type: object
@@ -7821,40 +7914,40 @@ components:
             actor_selection_info:
               $ref: "#/components/schemas/ConnectorRolloutActorSelectionInfo"
             syncs:
-              type: array
-              items:
+              type: object
+              additionalProperties:
                 $ref: "#/components/schemas/ConnectorRolloutActorSyncInfo"
 
     ConnectorRolloutActorSelectionInfo:
       type: object
       required:
-        - n_actors
-        - n_actors_eligible_or_already_pinned
-        - n_pinned_to_connector_rollout
+        - num_actors
+        - num_actors_eligible_or_already_pinned
+        - num_pinned_to_connector_rollout
       properties:
-        n_actors:
+        num_actors:
           type: integer
-        n_actors_eligible_or_already_pinned:
+        num_actors_eligible_or_already_pinned:
           type: integer
-        n_pinned_to_connector_rollout:
+        num_pinned_to_connector_rollout:
           type: integer
 
     ConnectorRolloutActorSyncInfo:
       type: object
       required:
         - actor_id
-        - n_succeeded
-        - n_failed
-        - n_connections
+        - num_succeeded
+        - num_failed
+        - num_connections
       properties:
         actor_id:
           type: string
           format: uuid
-        n_succeeded:
+        num_succeeded:
           type: integer
-        n_failed:
+        num_failed:
           type: integer
-        n_connections:
+        num_connections:
           type: integer
 
     ConnectorRolloutManualFinalizeResponse:
@@ -8286,7 +8379,6 @@ components:
       required:
         - organizationId
         - organizationName
-        - pba
         - sso
       properties:
         organizationId:
@@ -8294,8 +8386,6 @@ components:
           format: uuid
         organizationName:
           type: string
-        pba:
-          type: boolean
         sso:
           type: boolean
         billing:
@@ -9283,7 +9373,7 @@ components:
           $ref: "#/components/schemas/SourceDefinitionSpecification"
         advancedAuth:
           $ref: "#/components/schemas/AdvancedAuth"
-        advancedAuthCredentialsAvailable:
+        advancedAuthGlobalCredentialsAvailable:
           type: boolean
         jobInfo:
           $ref: "#/components/schemas/SynchronousJobRead"
@@ -9728,7 +9818,7 @@ components:
           $ref: "#/components/schemas/DestinationDefinitionSpecification"
         advancedAuth:
           $ref: "#/components/schemas/AdvancedAuth"
-        advancedAuthCredentialsAvailable:
+        advancedAuthGlobalCredentialsAvailable:
           type: boolean
         jobInfo:
           $ref: "#/components/schemas/SynchronousJobRead"
@@ -11144,6 +11234,7 @@ components:
           enum:
             - portal
             - payment_method
+            - setup
           default: portal
     CustomerPortalRead:
       type: object
@@ -11321,9 +11412,50 @@ components:
             - The organization has left the trial already
         trialEndsAt:
           $ref: "#/components/schemas/ISO8601DateTime"
+    CancelSubscriptionRead:
+      type: object
+      required:
+        - subscriptionEndsAt
+      properties:
+        subscriptionEndsAt:
+          $ref: "#/components/schemas/ISO8601DateTime"
 
     # Organization payment config
     OrganizationPaymentConfigRead:
+      type: object
+      required:
+        - organizationId
+        - paymentStatus
+        - subscriptionStatus
+      properties:
+        organizationId:
+          type: string
+          format: uuid
+        paymentStatus:
+          type: string
+          enum:
+            - uninitialized
+            - okay
+            - grace_period
+            - disabled
+            - locked
+            - manual
+        subscriptionStatus:
+          type: string
+          enum:
+            - pre_subscription
+            - subscribed
+            - unsubscribed
+        paymentProviderId:
+          type: string
+        gracePeriodEndAt:
+          $ref: "#/components/schemas/ISO8601DateTime"
+        usageCategoryOverwrite:
+          type: string
+          enum:
+            - free
+            - internal
+    OrganizationPaymentConfigUpdateRequestBody:
       type: object
       required:
         - organizationId
@@ -11343,16 +11475,11 @@ components:
             - manual
         paymentProviderId:
           type: string
-        gracePeriodEndAt:
-          $ref: "#/components/schemas/ISO8601DateTime"
         usageCategoryOverwrite:
           type: string
           enum:
             - free
             - internal
-    OrganizationPaymentConfigUpdateRequestBody:
-      $ref: "#/components/schemas/OrganizationPaymentConfigRead"
-
     # ORGANIZATIONS
     OrganizationId:
       type: string
@@ -11376,10 +11503,6 @@ components:
           format: uuid
         organizationName:
           type: string
-        pba:
-          type: boolean
-        orgLevelBilling:
-          type: boolean
         email:
           type: string
     OrganizationCreateRequestBody:
@@ -11395,18 +11518,12 @@ components:
           type: string
         email:
           type: string
-        pba:
-          type: boolean
-        orgLevelBilling:
-          type: boolean
     OrganizationRead:
       type: object
       required:
         - organizationId
         - organizationName
         - email
-        - pba
-        - orgLevelBilling
       properties:
         organizationId:
           type: string
@@ -11415,10 +11532,6 @@ components:
           type: string
         email:
           type: string
-        pba:
-          type: boolean
-        orgLevelBilling:
-          type: boolean
         ssoRealm:
           type: string
         organizationLimits:
@@ -11985,6 +12098,189 @@ components:
     MapperConfiguration:
       type: object
       description: The values required to configure the mapper.
+      oneOf:
+        - $ref: "#/components/schemas/HashingMapperConfiguration"
+        - $ref: "#/components/schemas/FieldRenamingMapperConfiguration"
+        - $ref: "#/components/schemas/RowFilteringMapperConfiguration"
+        - $ref: "#/components/schemas/EncryptionMapperConfiguration"
+      x-sdk-component: true
+    HashingMapperConfiguration:
+      title: "Hashing"
+      type: "object"
+      properties:
+        fieldNameSuffix:
+          type: "string"
+          title: "Field name suffix"
+          description: "The suffix to append to the field name after hashing."
+        method:
+          type: "string"
+          enum:
+            - "MD2"
+            - "MD5"
+            - "SHA-1"
+            - "SHA-224"
+            - "SHA-256"
+            - "SHA-384"
+            - "SHA-512"
+          title: "Hashing method"
+          description: "The hashing algorithm to use."
+        targetField:
+          type: "string"
+          title: "Original Field Name"
+          description: "The name of the field to be hashed."
+      required:
+        - "fieldNameSuffix"
+        - "method"
+        - "targetField"
+      x-sdk-component: true
+    FieldRenamingMapperConfiguration:
+      title: "Field Renaming"
+      type: "object"
+      properties:
+        newFieldName:
+          type: "string"
+          title: "New Field Name"
+          description: "The new name for the field after renaming."
+        originalFieldName:
+          type: "string"
+          title: "Original Field Name"
+          description: "The current name of the field to rename."
+      required:
+        - "newFieldName"
+        - "originalFieldName"
+      x-sdk-component: true
+    RowFilteringOperationType:
+      type: "string"
+      enum:
+        - "EQUAL"
+        - "NOT"
+      x-sdk-component: true
+    RowFilteringOperationEqual:
+      type: "object"
+      title: "EQUAL"
+      required:
+        - "comparisonValue"
+        - "fieldName"
+        - "type"
+      properties:
+        comparisonValue:
+          type: "string"
+          title: "Comparison Value"
+          description: "The value to compare the field against."
+        fieldName:
+          type: "string"
+          title: "Field Name"
+          description: "The name of the field to apply the operation on."
+        type:
+          $ref: "#/components/schemas/RowFilteringOperationType"
+      x-sdk-component: true
+    RowFilteringOperationNot:
+      type: "object"
+      title: "NOT"
+      required:
+        - "conditions"
+        - "type"
+      properties:
+        conditions:
+          title: "Sub-Conditions (NOT)"
+          description: "Conditions to evaluate with the NOT operator."
+          minItems: 1
+          type: "array"
+          items:
+            $ref: "#/components/schemas/RowFilteringOperation"
+        type:
+          $ref: "#/components/schemas/RowFilteringOperationType"
+      x-sdk-component: true
+    RowFilteringOperation:
+      type: object
+      oneOf:
+        - $ref: "#/components/schemas/RowFilteringOperationEqual"
+        - $ref: "#/components/schemas/RowFilteringOperationNot"
+      discriminator:
+        propertyName: type
+        mapping:
+          EQUAL: "#/components/schemas/RowFilteringOperationEqual"
+          NOT: "#/components/schemas/RowFilteringOperationNot"
+      x-sdk-component: true
+    RowFilteringMapperConfiguration:
+      title: "Row Filtering"
+      type: "object"
+      properties:
+        conditions:
+          $ref: "#/components/schemas/RowFilteringOperation"
+      required:
+        - "conditions"
+      x-sdk-component: true
+    EncryptionMapperAlgorithm:
+      type: string
+      enum:
+        - RSA
+        - AES
+      x-sdk-component: true
+    EncryptionMapperConfiguration:
+      title: Encryption
+      type: object
+      oneOf:
+        - $ref: "#/components/schemas/EncryptionMapperRSAConfiguration"
+        - $ref: "#/components/schemas/EncryptionMapperAESConfiguration"
+      discriminator:
+        propertyName: algorithm
+        mapping:
+          RSA: "#/components/schemas/EncryptionMapperRSAConfiguration"
+          AES: "#/components/schemas/EncryptionMapperAESConfiguration"
+      x-sdk-component: true
+    EncryptionMapperRSAConfiguration:
+      title: "Encryption - RSA"
+      type: "object"
+      properties:
+        algorithm:
+          $ref: "#/components/schemas/EncryptionMapperAlgorithm"
+        fieldNameSuffix:
+          type: "string"
+        publicKey:
+          type: "string"
+        targetField:
+          type: "string"
+      required:
+        - "algorithm"
+        - "publicKey"
+        - "targetField"
+        - "fieldNameSuffix"
+      x-sdk-component: true
+    EncryptionMapperAESConfiguration:
+      title: "Encryption - AES"
+      type: "object"
+      properties:
+        algorithm:
+          $ref: "#/components/schemas/EncryptionMapperAlgorithm"
+        fieldNameSuffix:
+          type: "string"
+        key:
+          type: string
+          x-sdk-param-sensitive: true
+        mode:
+          type: "string"
+          enum:
+            - "CBC"
+            - "CFB"
+            - "OFB"
+            - "CTR"
+            - "GCM"
+            - "ECB"
+        padding:
+          type: "string"
+          enum:
+            - "NoPadding"
+            - "PKCS5Padding"
+        targetField:
+          type: "string"
+      required:
+        - "algorithm"
+        - "key"
+        - "mode"
+        - "padding"
+        - "targetField"
+        - "fieldNameSuffix"
       x-sdk-component: true
     SelectedFields:
       description: Paths to the fields that will be included in the configured catalog.
@@ -13406,9 +13702,14 @@ components:
       type: object
       required:
         - initialFields
+        - outputFields
         - mappers
       properties:
         initialFields:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldSpec"
+        outputFields:
           type: array
           items:
             $ref: "#/components/schemas/FieldSpec"
@@ -13421,9 +13722,15 @@ components:
       required:
         - name
         - type
+        - isSelectedPrimaryKey
+        - isSelectedCursor
       properties:
         name:
           type: string
+        isSelectedPrimaryKey:
+          type: boolean
+        isSelectedCursor:
+          type: boolean
         type:
           type: string
           enum:
@@ -13444,11 +13751,16 @@ components:
       type: object
       required:
         - outputFields
+        - inputFields
       properties:
         id:
           type: string
           format: uuid
         outputFields:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldSpec"
+        inputFields:
           type: array
           items:
             $ref: "#/components/schemas/FieldSpec"
@@ -15671,6 +15983,29 @@ components:
           type: string
         workflowId:
           type: string
+    DataplaneGetIdRequestBody:
+      type: object
+      required:
+        - workloadPriority
+      properties:
+        connectionId:
+          $ref: "#/components/schemas/ConnectionId"
+        actorType:
+          $ref: "#/components/schemas/ActorType"
+        actorId:
+          $ref: "#/components/schemas/ActorId"
+        workspaceId:
+          $ref: "#/components/schemas/WorkspaceId"
+        workloadPriority:
+          $ref: "#/components/schemas/WorkloadPriority"
+    DataplaneRead:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+
   responses:
     NotFoundResponse:
       description: Object with given id was not found.

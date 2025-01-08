@@ -20,11 +20,11 @@ export interface Experiments {
   "connector.suggestedDestinationConnectors": string;
   "connectorBuilder.aiAssist.enabled": boolean;
   "connectorBuilder.contributeEditsToMarketplace": boolean;
+  productLimitsUI: boolean;
   "settings.breakingChangeNotifications": boolean;
   "settings.downloadDiagnostics": boolean;
   "settings.organizationRbacImprovements": boolean;
   "settings.showAdvancedSettings": boolean;
-  "upcomingFeaturesPage.url": string;
 }
 
 export const defaultExperimentValues: Experiments = {
@@ -42,9 +42,9 @@ export const defaultExperimentValues: Experiments = {
   "connector.suggestedSourceConnectors": "",
   "connectorBuilder.aiAssist.enabled": false,
   "connectorBuilder.contributeEditsToMarketplace": true,
+  productLimitsUI: false,
   "settings.breakingChangeNotifications": false,
   "settings.downloadDiagnostics": false,
   "settings.organizationRbacImprovements": false,
   "settings.showAdvancedSettings": false,
-  "upcomingFeaturesPage.url": "",
 };

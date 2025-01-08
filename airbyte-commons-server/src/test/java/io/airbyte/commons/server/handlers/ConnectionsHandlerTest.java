@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024 Airbyte, Inc., all rights reserved.
+ * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
  */
 
 package io.airbyte.commons.server.handlers;
@@ -99,6 +99,7 @@ import io.airbyte.commons.server.scheduler.EventRunner;
 import io.airbyte.commons.server.validation.CatalogValidator;
 import io.airbyte.commons.server.validation.ValidationError;
 import io.airbyte.config.ActorCatalog;
+import io.airbyte.config.ActorCatalogWithUpdatedAt;
 import io.airbyte.config.ActorDefinitionVersion;
 import io.airbyte.config.ActorType;
 import io.airbyte.config.Attempt;
@@ -669,9 +670,9 @@ class ConnectionsHandlerTest {
 
     @Test
     void testListConnectionsByActorDefinition() throws IOException {
-      when(connectionService.listConnectionsByActorDefinitionIdAndType(sourceDefinitionId, ActorType.SOURCE.value(), false))
+      when(connectionService.listConnectionsByActorDefinitionIdAndType(sourceDefinitionId, ActorType.SOURCE.value(), false, true))
           .thenReturn(Lists.newArrayList(standardSync));
-      when(connectionService.listConnectionsByActorDefinitionIdAndType(destinationDefinitionId, ActorType.DESTINATION.value(), false))
+      when(connectionService.listConnectionsByActorDefinitionIdAndType(destinationDefinitionId, ActorType.DESTINATION.value(), false, true))
           .thenReturn(Lists.newArrayList(standardSync2));
 
       final ConnectionReadList connectionReadListForSourceDefinitionId = connectionsHandler.listConnectionsForActorDefinition(
@@ -3153,6 +3154,29 @@ class ConnectionsHandlerTest {
       final var spiedConnectionsHandler = spy(connectionsHandler);
       doReturn(diffResult).when(spiedConnectionsHandler).diffCatalogAndConditionallyDisable(CONNECTION_ID, DISCOVERED_CATALOG_ID);
       doReturn(autoPropResult).when(spiedConnectionsHandler).applySchemaChange(CONNECTION_ID, WORKSPACE_ID, DISCOVERED_CATALOG_ID, catalog, true);
+
+      final var result = spiedConnectionsHandler.postprocessDiscoveredCatalog(CONNECTION_ID, DISCOVERED_CATALOG_ID);
+
+      assertEquals(propagatedDiff, result.getAppliedDiff());
+    }
+
+    @Test
+    void postprocessDiscoveredComposesDiffingAndSchemaPropagationUsesMostRecentCatalog()
+        throws JsonValidationException, ConfigNotFoundException, IOException, io.airbyte.config.persistence.ConfigNotFoundException {
+      final var catalog = catalogConverter.toApi(Jsons.clone(airbyteCatalog), SOURCE_VERSION);
+      final var diffResult = new SourceDiscoverSchemaRead().catalog(catalog);
+      final var transform = new StreamTransform().transformType(StreamTransform.TransformTypeEnum.ADD_STREAM)
+          .streamDescriptor(new StreamDescriptor().namespace(A_DIFFERENT_NAMESPACE).name(A_DIFFERENT_STREAM));
+      final var propagatedDiff = new CatalogDiff().transforms(List.of(transform));
+      final var autoPropResult = new ConnectionAutoPropagateResult().propagatedDiff(propagatedDiff);
+
+      final var mostRecentCatalogId = UUID.randomUUID();
+      final var mostRecentCatalog = new ActorCatalogWithUpdatedAt().withId(mostRecentCatalogId);
+      doReturn(Optional.of(mostRecentCatalog)).when(catalogService).getMostRecentSourceActorCatalog(SOURCE_ID);
+
+      final var spiedConnectionsHandler = spy(connectionsHandler);
+      doReturn(diffResult).when(spiedConnectionsHandler).diffCatalogAndConditionallyDisable(CONNECTION_ID, mostRecentCatalogId);
+      doReturn(autoPropResult).when(spiedConnectionsHandler).applySchemaChange(CONNECTION_ID, WORKSPACE_ID, mostRecentCatalogId, catalog, true);
 
       final var result = spiedConnectionsHandler.postprocessDiscoveredCatalog(CONNECTION_ID, DISCOVERED_CATALOG_ID);
 

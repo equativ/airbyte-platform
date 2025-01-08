@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2024 Airbyte, Inc., all rights reserved.
+ * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
  */
 
 package io.airbyte.commons.server.handlers;
@@ -325,7 +325,7 @@ class OAuthHandlerTest {
         .withConfiguration(Jsons.deserialize("""
                                              {"credentials": {"client_id": "test", "client_secret": "shhhh" }}
                                              """));
-    when(oauthService.getSourceOAuthParameterWithSecrets(any(), any())).thenReturn(sourceOAuthParameter);
+    when(oauthService.getSourceOAuthParameterWithSecretsOptional(any(), any())).thenReturn(Optional.of(sourceOAuthParameter));
     when(secretsRepositoryReader.hydrateConfigFromDefaultSecretPersistence(any())).thenReturn(sourceOAuthParameter.getConfiguration());
 
     final JsonNode expected = Jsons.deserialize("""
@@ -345,7 +345,7 @@ class OAuthHandlerTest {
         .withConfiguration(Jsons.deserialize("""
                                              {"credentials": {"client_id": "test", "client_secret": "shhhh" }}
                                              """));
-    when(oauthService.getSourceOAuthParameterWithSecrets(any(), any())).thenReturn(sourceOAuthParameter);
+    when(oauthService.getSourceOAuthParameterWithSecretsOptional(any(), any())).thenReturn(Optional.of(sourceOAuthParameter));
     when(featureFlagClient.boolVariation(any(), any())).thenReturn(true);
     when(secretsRepositoryReader.hydrateConfigFromDefaultSecretPersistence(any())).thenReturn(sourceOAuthParameter.getConfiguration());
 
