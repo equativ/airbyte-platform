@@ -164,7 +164,7 @@ spec:
               name: {{ .Release.Name }}-airbyte-env
               key: JOB_KUBE_TOLERATIONS
         {{- end }}
-        {{- if $.Values.global.jobs.kube.main_container_image_pull_secret }}
+        {{- if and $.Values.global.jobs.kube.main_container_image_pull_secret (ne $.Values.global.jobs.kube.main_container_image_pull_secret "") }}
         - name: JOB_KUBE_MAIN_CONTAINER_IMAGE_PULL_SECRET
           valueFrom:
             configMapKeyRef:
