@@ -170,6 +170,9 @@ spec:
             configMapKeyRef:
               name: {{ .Release.Name }}-airbyte-env
               key: JOB_KUBE_MAIN_CONTAINER_IMAGE_PULL_SECRET
+        {{- else }}
+        - name: JOB_KUBE_MAIN_CONTAINER_IMAGE_PULL_SECRET
+          value: ""     
         {{- end }}
         - name: JOB_MAIN_CONTAINER_CPU_REQUEST
           valueFrom:
