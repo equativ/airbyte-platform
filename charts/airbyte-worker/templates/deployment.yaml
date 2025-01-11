@@ -164,15 +164,12 @@ spec:
               name: {{ .Release.Name }}-airbyte-env
               key: JOB_KUBE_TOLERATIONS
         {{- end }}
-        {{- if and $.Values.global.jobs.kube.main_container_image_pull_secret (ne $.Values.global.jobs.kube.main_container_image_pull_secret "") }}
+        {{- if $.Values.global.jobs.kube.main_container_image_pull_secret  }}
         - name: JOB_KUBE_MAIN_CONTAINER_IMAGE_PULL_SECRET
           valueFrom:
             configMapKeyRef:
               name: {{ .Release.Name }}-airbyte-env
-              key: JOB_KUBE_MAIN_CONTAINER_IMAGE_PULL_SECRET
-        {{- else }}
-        - name: JOB_KUBE_MAIN_CONTAINER_IMAGE_PULL_SECRET
-          value: ""     
+              key: JOB_KUBE_MAIN_CONTAINER_IMAGE_PULL_SECRET  
         {{- end }}
         - name: JOB_MAIN_CONTAINER_CPU_REQUEST
           valueFrom:
