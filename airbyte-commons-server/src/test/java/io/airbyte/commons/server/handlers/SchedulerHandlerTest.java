@@ -84,7 +84,6 @@ import io.airbyte.commons.temporal.JobMetadata;
 import io.airbyte.commons.temporal.ManualOperationResult;
 import io.airbyte.commons.version.Version;
 import io.airbyte.config.ActorCatalog;
-import io.airbyte.config.ActorDefinitionResourceRequirements;
 import io.airbyte.config.ActorDefinitionVersion;
 import io.airbyte.config.ConnectorJobOutput;
 import io.airbyte.config.DestinationConnection;
@@ -97,6 +96,7 @@ import io.airbyte.config.NotificationItem;
 import io.airbyte.config.NotificationSettings;
 import io.airbyte.config.OperatorWebhook;
 import io.airbyte.config.ResourceRequirements;
+import io.airbyte.config.ScopedResourceRequirements;
 import io.airbyte.config.SourceConnection;
 import io.airbyte.config.StandardCheckConnectionOutput;
 import io.airbyte.config.StandardDestinationDefinition;
@@ -371,10 +371,11 @@ class SchedulerHandlerTest {
         applySchemaChangeHelper);
   }
 
-  @Test
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
   @DisplayName("Test job creation")
-  void createJob() throws JsonValidationException, ConfigNotFoundException, IOException {
-    Mockito.when(jobFactory.createSync(CONNECTION_ID))
+  void createJob(final boolean isScheduled) throws JsonValidationException, ConfigNotFoundException, IOException {
+    Mockito.when(jobFactory.createSync(CONNECTION_ID, isScheduled))
         .thenReturn(JOB_ID);
     Mockito.when(connectionService.getStandardSync(CONNECTION_ID))
         .thenReturn(Mockito.mock(StandardSync.class));
@@ -383,8 +384,9 @@ class SchedulerHandlerTest {
     Mockito.when(jobConverter.getJobInfoRead(job))
         .thenReturn(new JobInfoRead().job(new JobRead().id(JOB_ID)));
 
-    final JobInfoRead output = schedulerHandler.createJob(new JobCreate().connectionId(CONNECTION_ID));
+    final JobInfoRead output = schedulerHandler.createJob(new JobCreate().connectionId(CONNECTION_ID).isScheduled(isScheduled));
 
+    verify(jobFactory).createSync(CONNECTION_ID, isScheduled);
     Assertions.assertThat(output.getJob().getId()).isEqualTo(JOB_ID);
   }
 
@@ -403,7 +405,7 @@ class SchedulerHandlerTest {
         .thenReturn(List.of(
             new StreamRefresh(UUID.randomUUID(), CONNECTION_ID, "name", "namespace", null, RefreshType.TRUNCATE)));
 
-    final JobInfoRead output = schedulerHandler.createJob(new JobCreate().connectionId(CONNECTION_ID));
+    final JobInfoRead output = schedulerHandler.createJob(new JobCreate().connectionId(CONNECTION_ID).isScheduled(true));
 
     verify(jobFactory).createRefresh(eq(CONNECTION_ID), any());
     Assertions.assertThat(output.getJob().getId()).isEqualTo(JOB_ID);
@@ -446,7 +448,7 @@ class SchedulerHandlerTest {
     Mockito.when(jobConverter.getJobInfoRead(job))
         .thenReturn(new JobInfoRead().job(new JobRead().id(JOB_ID)));
 
-    final JobInfoRead output = schedulerHandler.createJob(new JobCreate().connectionId(CONNECTION_ID));
+    final JobInfoRead output = schedulerHandler.createJob(new JobCreate().connectionId(CONNECTION_ID).isScheduled(true));
 
     Mockito.verify(oAuthConfigSupplier).injectDestinationOAuthParameters(any(), any(), any(), any());
     Mockito.verify(actorDefinitionVersionHelper).getDestinationVersion(destinationDefinition, WORKSPACE_ID, DESTINATION_ID);
@@ -496,7 +498,7 @@ class SchedulerHandlerTest {
 
     final StandardSourceDefinition sourceDefinition = new StandardSourceDefinition()
         .withSourceDefinitionId(source.getSourceDefinitionId())
-        .withResourceRequirements(new ActorDefinitionResourceRequirements().withJobSpecific(List.of(new JobTypeResourceLimit().withJobType(
+        .withResourceRequirements(new ScopedResourceRequirements().withJobSpecific(List.of(new JobTypeResourceLimit().withJobType(
             JobType.CHECK_CONNECTION).withResourceRequirements(RESOURCE_REQUIREMENT))));
     when(sourceService.getStandardSourceDefinition(source.getSourceDefinitionId()))
         .thenReturn(sourceDefinition);
@@ -628,7 +630,7 @@ class SchedulerHandlerTest {
         .connectionConfiguration(destination.getConfiguration());
     final StandardDestinationDefinition destinationDefinition = new StandardDestinationDefinition()
         .withDestinationDefinitionId(destination.getDestinationDefinitionId())
-        .withResourceRequirements(new ActorDefinitionResourceRequirements().withJobSpecific(List.of(new JobTypeResourceLimit().withJobType(
+        .withResourceRequirements(new ScopedResourceRequirements().withJobSpecific(List.of(new JobTypeResourceLimit().withJobType(
             JobType.CHECK_CONNECTION).withResourceRequirements(RESOURCE_REQUIREMENT))));
     when(destinationService.getStandardDestinationDefinition(destination.getDestinationDefinitionId()))
         .thenReturn(destinationDefinition);
@@ -819,7 +821,7 @@ class SchedulerHandlerTest {
 
     final StandardSourceDefinition sourceDefinition = new StandardSourceDefinition()
         .withSourceDefinitionId(source.getSourceDefinitionId())
-        .withResourceRequirements(new ActorDefinitionResourceRequirements().withJobSpecific(List.of(new JobTypeResourceLimit().withJobType(
+        .withResourceRequirements(new ScopedResourceRequirements().withJobSpecific(List.of(new JobTypeResourceLimit().withJobType(
             JobType.DISCOVER_SCHEMA).withResourceRequirements(RESOURCE_REQUIREMENT))));
     when(sourceService.getStandardSourceDefinition(source.getSourceDefinitionId()))
         .thenReturn(sourceDefinition);

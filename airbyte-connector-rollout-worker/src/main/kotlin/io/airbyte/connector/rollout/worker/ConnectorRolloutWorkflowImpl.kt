@@ -97,11 +97,11 @@ class ConnectorRolloutWorkflowImpl : ConnectorRolloutWorkflow {
     )
 
   private val verifyActivityOptions =
-    defaultActivityOptions.toBuilder()
+    defaultActivityOptions
+      .toBuilder()
       .setHeartbeatTimeout(
         Duration.ofSeconds(Constants.VERIFY_ACTIVITY_HEARTBEAT_TIMEOUT_SECONDS.toLong()),
-      )
-      .setStartToCloseTimeout(
+      ).setStartToCloseTimeout(
         Duration.ofSeconds((Constants.VERIFY_ACTIVITY_TIMEOUT_MILLIS / 1000).toLong()),
       ).build()
 
@@ -123,12 +123,12 @@ class ConnectorRolloutWorkflowImpl : ConnectorRolloutWorkflow {
       defaultActivityOptions,
     )
 
-  private var startRolloutFailed = false
   private var isPaused = false
+  private var workflowId: String? = null
   private var connectorRollout: ConnectorRolloutOutput? = null
 
   override fun run(input: ConnectorRolloutWorkflowInput): ConnectorEnumRolloutState {
-    val workflowId = Workflow.getInfo().workflowId
+    workflowId = Workflow.getInfo().workflowId
 
     // Checkpoint to record the workflow version
     Workflow.getVersion("ChangedActivityInputStart", Workflow.DEFAULT_VERSION, 1)
@@ -136,10 +136,22 @@ class ConnectorRolloutWorkflowImpl : ConnectorRolloutWorkflow {
     // Set the rollout's initial state
     setRollout(input)
 
+    startRollout(
+      ConnectorRolloutActivityInputStart(
+        input.dockerRepository,
+        input.dockerImageTag,
+        input.actorDefinitionId,
+        input.rolloutId,
+        input.updatedBy,
+        input.rolloutStrategy,
+        input.migratePins,
+      ),
+    )
+
     return if (input.rolloutStrategy == ConnectorEnumRolloutStrategy.AUTOMATED) {
       logger.info { "Running an automated workflow for $workflowId" }
       try {
-        runAutomated(workflowId, input)
+        runAutomated(workflowId!!, input)
       } catch (e: Exception) {
         connectorRollout =
           pauseRollout(
@@ -157,20 +169,14 @@ class ConnectorRolloutWorkflowImpl : ConnectorRolloutWorkflow {
         getRolloutState()
       }
     } else {
-      runManual(workflowId)
+      runManual(workflowId!!)
     }
   }
 
   @VisibleForTesting
   fun runManual(workflowId: String): ConnectorEnumRolloutState {
     // End the workflow if we were unable to start the rollout, or we've reached a terminal state
-    Workflow.await { startRolloutFailed || rolloutStateIsTerminal() }
-    if (startRolloutFailed) {
-      throw ApplicationFailure.newFailure(
-        "Failure starting rollout for $workflowId",
-        ConnectorEnumRolloutState.CANCELED.value(),
-      )
-    }
+    Workflow.await { rolloutStateIsTerminal() }
     logger.info { "Rollout for $workflowId has reached a terminal state: ${connectorRollout?.state}" }
 
     return getRolloutState()
@@ -189,18 +195,6 @@ class ConnectorRolloutWorkflowImpl : ConnectorRolloutWorkflow {
     val waitBetweenRolloutsSeconds = input.waitBetweenRolloutSeconds
     val waitBetweenResultPollsSeconds = input.waitBetweenSyncResultsQueriesSeconds
     val stepSizePercentage = rollout.initialRolloutPct ?: Constants.DEFAULT_INITIAL_ROLLOUT_PERCENTAGE
-
-    startRollout(
-      ConnectorRolloutActivityInputStart(
-        input.dockerRepository,
-        input.dockerImageTag,
-        input.actorDefinitionId,
-        input.rolloutId,
-        input.updatedBy,
-        input.rolloutStrategy,
-        input.migratePins,
-      ),
-    )
 
     // Continuously manage the rollout until we reach a terminal state, the workflow is paused, or the rollout expires.
     // The loop performs the following steps:
@@ -301,9 +295,7 @@ class ConnectorRolloutWorkflowImpl : ConnectorRolloutWorkflow {
     return e.cause?.message?.contains(ConnectorRolloutMaximumRolloutPercentageReachedProblemResponse().type) ?: false
   }
 
-  private fun getCurrentTimeMilli(): Instant {
-    return Instant.ofEpochMilli(Workflow.currentTimeMillis())
-  }
+  private fun getCurrentTimeMilli(): Instant = Instant.ofEpochMilli(Workflow.currentTimeMillis())
 
   private fun doNext(
     decision: Decision,
@@ -394,23 +386,19 @@ class ConnectorRolloutWorkflowImpl : ConnectorRolloutWorkflow {
       )
   }
 
-  private fun getOffset(timestamp: Long?): OffsetDateTime? {
-    return if (timestamp == null) {
+  private fun getOffset(timestamp: Long?): OffsetDateTime? =
+    if (timestamp == null) {
       null
     } else {
       Instant.ofEpochMilli(timestamp).atOffset(ZoneOffset.UTC)
     }
-  }
 
-  private fun getRolloutState(): ConnectorEnumRolloutState {
-    return connectorRollout?.state ?: ConnectorEnumRolloutState.WORKFLOW_STARTED
-  }
+  private fun getRolloutState(): ConnectorEnumRolloutState = connectorRollout?.state ?: ConnectorEnumRolloutState.WORKFLOW_STARTED
 
-  private fun rolloutStateIsTerminal(): Boolean {
-    return ConnectorRolloutFinalState.entries.any { it.value() == getRolloutState().value() }
-  }
+  private fun rolloutStateIsTerminal(): Boolean = ConnectorRolloutFinalState.entries.any { it.value() == getRolloutState().value() }
 
-  override fun startRollout(input: ConnectorRolloutActivityInputStart): ConnectorRolloutOutput {
+  @VisibleForTesting
+  internal fun startRollout(input: ConnectorRolloutActivityInputStart): ConnectorRolloutOutput {
     logger.info { "startRollout: calling startRolloutActivity" }
     val workflowRunId = Workflow.getInfo().firstExecutionRunId
     return try {
@@ -433,15 +421,10 @@ class ConnectorRolloutWorkflowImpl : ConnectorRolloutWorkflow {
           rolloutStrategy = input.rolloutStrategy,
         ),
       )
-      startRolloutFailed = true
-      throw e
-    }
-  }
-
-  override fun startRolloutValidator(input: ConnectorRolloutActivityInputStart) {
-    logger.info { "startRolloutValidator: ${input.dockerRepository}:${input.dockerImageTag}" }
-    require(!(input.dockerRepository == null || input.dockerImageTag == null || input.actorDefinitionId == null || input.rolloutId == null)) {
-      "Cannot start rollout; invalid input: ${mapAttributesToString(input)}"
+      throw ApplicationFailure.newFailure(
+        "Failure starting rollout for $workflowId",
+        ConnectorEnumRolloutState.CANCELED.value(),
+      )
     }
   }
 

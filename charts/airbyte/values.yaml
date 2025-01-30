@@ -436,7 +436,7 @@ webapp:
 ## @section Pod Sweeper parameters
 
 pod-sweeper:
-  enabled: true
+  enabled: false
   image:
     # -- The image repository to use for the pod sweeper
     repository: airbyte/pod-sweeper
@@ -1403,7 +1403,7 @@ temporal:
     # -- The pull policy for the temporal image
     pullPolicy: IfNotPresent
     # -- The temporal image tag to use
-    tag: "1.23.0"
+    tag: "1.26"
 
   service:
     # -- The Kubernetes Service Type
@@ -2354,4 +2354,4 @@ featureflag-server:
 testWebapp:
   image:
     repository: airbyte/airbyte-base-java-image
-    tag: 3.3.1
+    tag: 3.3.2

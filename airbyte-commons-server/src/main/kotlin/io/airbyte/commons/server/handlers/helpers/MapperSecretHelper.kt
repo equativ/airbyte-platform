@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
+ */
+
 package io.airbyte.commons.server.handlers.helpers
 
 import com.fasterxml.jackson.databind.JsonNode
@@ -13,6 +17,8 @@ import io.airbyte.config.ConfiguredMapper
 import io.airbyte.config.MapperConfig
 import io.airbyte.config.ScopeType
 import io.airbyte.config.StreamDescriptor
+import io.airbyte.config.mapper.configs.EncryptionConfig.Companion.ALGO_AES
+import io.airbyte.config.mapper.configs.EncryptionMapperConfig
 import io.airbyte.config.secrets.JsonSecretsProcessor
 import io.airbyte.config.secrets.SecretsHelpers
 import io.airbyte.config.secrets.SecretsRepositoryReader
@@ -64,25 +70,31 @@ class MapperSecretHelper(
     deploymentMode,
   )
 
-  private fun getMapper(name: String): Mapper<MapperConfig> {
-    return mappers[name] ?: throw IllegalArgumentException("Mapper $name not found")
+  private fun getMapper(name: String): Mapper<MapperConfig> = mappers[name] ?: throw IllegalArgumentException("Mapper $name not found")
+
+  private fun specHasSecrets(spec: JsonNode): Boolean = SecretsHelpers.getSortedSecretPaths(spec).isNotEmpty()
+
+  internal fun shouldRequireRuntimePersistence(
+    mapperConfig: MapperConfig,
+    organizationId: UUID,
+  ): Boolean {
+    if (deploymentMode != DeploymentMode.CLOUD) {
+      return false
+    }
+
+    if (featureFlagClient.boolVariation(AllowMappersDefaultSecretPersistence, Organization(organizationId))) {
+      return false
+    }
+
+    return when (mapperConfig) {
+      is EncryptionMapperConfig -> ALGO_AES == mapperConfig.config.algorithm
+      else -> false
+    }
   }
 
-  private fun specHasSecrets(spec: JsonNode): Boolean {
-    return SecretsHelpers.getSortedSecretPaths(spec).isNotEmpty()
-  }
-
-  private fun getSecretPersistence(organizationId: UUID): RuntimeSecretPersistence? {
+  private fun getRuntimeSecretPersistence(organizationId: UUID): RuntimeSecretPersistence? {
     val isRuntimePersistenceEnabled = featureFlagClient.boolVariation(UseRuntimeSecretPersistence, Organization(organizationId))
     if (!isRuntimePersistenceEnabled) {
-      if (deploymentMode == DeploymentMode.CLOUD &&
-        !featureFlagClient.boolVariation(
-          AllowMappersDefaultSecretPersistence,
-          Organization(organizationId),
-        )
-      ) {
-        throw RuntimeSecretsManagerRequiredProblem()
-      }
       return null
     }
     val secretPersistenceConfig = secretPersistenceConfigService.get(ScopeType.ORGANIZATION, organizationId)
@@ -104,9 +116,7 @@ class MapperSecretHelper(
     mapperConfig: MapperConfig,
     workspaceId: UUID,
     organizationId: UUID,
-  ): MapperConfig {
-    return handleMapperConfigSecrets(mapperConfig, existingMapperConfig = null, workspaceId, organizationId)
-  }
+  ): MapperConfig = handleMapperConfigSecrets(mapperConfig, existingMapperConfig = null, workspaceId, organizationId)
 
   private fun handleMapperConfigSecrets(
     mapperConfig: MapperConfig,
@@ -123,7 +133,12 @@ class MapperSecretHelper(
       return mapperConfig
     }
 
-    val secretPersistence = getSecretPersistence(organizationId)
+    val secretPersistence = getRuntimeSecretPersistence(organizationId)
+    val requireRuntimePersistence = shouldRequireRuntimePersistence(mapperConfig, organizationId)
+    if (requireRuntimePersistence && secretPersistence == null) {
+      throw RuntimeSecretsManagerRequiredProblem()
+    }
+
     val persistedConfigAsJson = existingMapperConfig?.let { Jsons.jsonNode(it.config()) }
     val hydratedPersistedConfig = tryHydrateConfigJson(persistedConfigAsJson, secretPersistence)
 
@@ -230,26 +245,24 @@ class MapperSecretHelper(
     return mapperInstance.spec().deserialize(ConfiguredMapper(mapperName, maskedConfig, mapperConfig.id()))
   }
 
-  private fun maskMapperSecretsForStream(stream: ConfiguredAirbyteStream): ConfiguredAirbyteStream {
-    return stream.copy(
+  private fun maskMapperSecretsForStream(stream: ConfiguredAirbyteStream): ConfiguredAirbyteStream =
+    stream.copy(
       mappers =
         stream.mappers.map {
           maskMapperConfigSecrets(it)
         },
     )
-  }
 
   /**
    * Given a catalog with mapper configurations, mask the secrets in the configurations.
    */
-  fun maskMapperSecrets(catalog: ConfiguredAirbyteCatalog): ConfiguredAirbyteCatalog {
-    return catalog.copy(
+  fun maskMapperSecrets(catalog: ConfiguredAirbyteCatalog): ConfiguredAirbyteCatalog =
+    catalog.copy(
       streams =
         catalog.streams.map {
           maskMapperSecretsForStream(it)
         },
     )
-  }
 
   private fun tryHydrateConfigJson(
     persistedConfigJson: JsonNode?,

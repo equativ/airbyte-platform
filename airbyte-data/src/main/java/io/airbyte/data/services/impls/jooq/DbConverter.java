@@ -32,7 +32,6 @@ import io.airbyte.config.ActorCatalogFetchEvent;
 import io.airbyte.config.ActorCatalogWithUpdatedAt;
 import io.airbyte.config.ActorDefinitionBreakingChange;
 import io.airbyte.config.ActorDefinitionConfigInjection;
-import io.airbyte.config.ActorDefinitionResourceRequirements;
 import io.airbyte.config.ActorDefinitionVersion;
 import io.airbyte.config.ActorDefinitionVersion.SupportState;
 import io.airbyte.config.AllowedHosts;
@@ -54,6 +53,7 @@ import io.airbyte.config.ResourceRequirements;
 import io.airbyte.config.Schedule;
 import io.airbyte.config.ScheduleData;
 import io.airbyte.config.ScopeType;
+import io.airbyte.config.ScopedResourceRequirements;
 import io.airbyte.config.SecretPersistenceConfig.SecretPersistenceType;
 import io.airbyte.config.SecretPersistenceCoordinate;
 import io.airbyte.config.SourceConnection;
@@ -272,7 +272,7 @@ public class DbConverter {
         .withCustom(record.get(ACTOR_DEFINITION.CUSTOM))
         .withResourceRequirements(record.get(ACTOR_DEFINITION.RESOURCE_REQUIREMENTS) == null
             ? null
-            : Jsons.deserialize(record.get(ACTOR_DEFINITION.RESOURCE_REQUIREMENTS).data(), ActorDefinitionResourceRequirements.class))
+            : Jsons.deserialize(record.get(ACTOR_DEFINITION.RESOURCE_REQUIREMENTS).data(), ScopedResourceRequirements.class))
         .withMetrics(record.get(ACTOR_DEFINITION.METRICS) == null
             ? null
             : Jsons.deserialize(record.get(ACTOR_DEFINITION.METRICS).data(), ConnectorRegistryEntryMetrics.class))
@@ -300,7 +300,7 @@ public class DbConverter {
             : Jsons.deserialize(record.get(ACTOR_DEFINITION.METRICS).data(), ConnectorRegistryEntryMetrics.class))
         .withResourceRequirements(record.get(ACTOR_DEFINITION.RESOURCE_REQUIREMENTS) == null
             ? null
-            : Jsons.deserialize(record.get(ACTOR_DEFINITION.RESOURCE_REQUIREMENTS).data(), ActorDefinitionResourceRequirements.class));
+            : Jsons.deserialize(record.get(ACTOR_DEFINITION.RESOURCE_REQUIREMENTS).data(), ScopedResourceRequirements.class));
   }
 
   /**
@@ -429,6 +429,7 @@ public class DbConverter {
             : Jsons.deserialize(record.get(CONNECTOR_BUILDER_PROJECT.TESTING_VALUES).data()))
         .withBaseActorDefinitionVersionId(record.get(CONNECTOR_BUILDER_PROJECT.BASE_ACTOR_DEFINITION_VERSION_ID))
         .withContributionPullRequestUrl(record.get(CONNECTOR_BUILDER_PROJECT.CONTRIBUTION_PULL_REQUEST_URL))
+        .withComponentsFileContent(record.get(CONNECTOR_BUILDER_PROJECT.COMPONENTS_FILE_CONTENT))
         .withContributionActorDefinitionId(record.get(CONNECTOR_BUILDER_PROJECT.CONTRIBUTION_ACTOR_DEFINITION_ID));
   }
 

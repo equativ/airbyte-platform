@@ -9,9 +9,12 @@ import com.google.common.annotations.VisibleForTesting;
 import io.airbyte.commons.json.JsonPaths;
 import io.airbyte.commons.json.Jsons;
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,24 +61,37 @@ public class DeclarativeOAuthSpecHandler {
   protected static final String ACCESS_TOKEN_PARAMS_KEY = "access_token_params";
   protected static final String ACCESS_TOKEN_URL = "access_token_url";
   protected static final String AUTH_CODE_KEY = "auth_code_key";
+  protected static final String AUTH_CODE_PARAM = "auth_code_param";
   protected static final String AUTH_CODE_VALUE = "code";
+  protected static final String AUTH_CODE_VALUE_KEY = "auth_code_value";
   protected static final String CLIENT_ID_KEY = "client_id_key";
+  protected static final String CLIENT_ID_PARAM = "client_id_param";
   protected static final String CLIENT_ID_VALUE = "client_id";
+  protected static final String CLIENT_ID_VALUE_KEY = "client_id_value";
   protected static final String CLIENT_SECRET_KEY = "client_secret_key";
+  protected static final String CLIENT_SECRET_PARAM = "client_secret_param";
   protected static final String CLIENT_SECRET_VALUE = "client_secret";
+  protected static final String CLIENT_SECRET_VALUE_KEY = "client_secret_value";
   protected static final String CONSENT_URL = "consent_url";
   protected static final String EXTRACT_OUTPUT_KEY = "extract_output";
   protected static final String REDIRECT_URI_KEY = "redirect_uri_key";
+  protected static final String REDIRECT_URI_PARAM = "redirect_uri_param";
   protected static final String REDIRECT_URI_VALUE = "redirect_uri";
+  protected static final String REDIRECT_URI_VALUE_KEY = "redirect_uri_value";
   protected static final String REFRESH_TOKEN = "refresh_token";
   protected static final String SCOPE_KEY = "scope_key";
+  protected static final String SCOPE_PARAM = "scope_param";
   protected static final String SCOPE_VALUE = "scope";
+  protected static final String SCOPE_VALUE_KEY = "scope_value";
   protected static final String STATE_KEY = "state_key";
+  protected static final String STATE_PARAM = "state_param";
   protected static final String STATE_VALUE = "state";
+  protected static final String STATE_VALUE_KEY = "state_value";
   protected static final String STATE_PARAM_KEY = STATE_VALUE;
   protected static final String STATE_PARAM_MIN_KEY = "min";
   protected static final String STATE_PARAM_MAX_KEY = "max";
-  protected static final String TOKEN_EXPIRY_KEY = "expires_in";
+  protected static final String TOKEN_EXPIRY_KEY = "token_expiry_key";
+  protected static final String TOKEN_EXPIRY_VALUE = "expires_in";
   protected static final String TOKEN_EXPIRY_DATE_KEY = "token_expiry_date";
 
   /**
@@ -110,14 +126,14 @@ public class DeclarativeOAuthSpecHandler {
    * or are not supported by the system.
    */
   private static final List<String> RESTRICTED_CONTEXT = List.of(
-      "const:",
-      "env:",
-      "file:",
-      "java:",
-      "localhost:",
-      "properties:",
-      "resourceBundle:",
-      "sys:");
+      "const",
+      "env",
+      "file",
+      "java",
+      "localhost",
+      "properties",
+      "resourceBundle",
+      "sys");
 
   /**
    * Creates and configures a StringSubstitutor for interpolating variables within strings.
@@ -127,11 +143,13 @@ public class DeclarativeOAuthSpecHandler {
    */
   private static StringSubstitutor getInterpolator(final Map<String, String> templateValues) {
 
-    final StringLookup defaultResolver = StringLookupFactory.INSTANCE.interpolatorStringLookup(templateValues);
-    final StringLookup resolver = new CodeChallengeS256Lookup(defaultResolver);
+    final StringLookup baseResolver = StringLookupFactory.INSTANCE.interpolatorStringLookup(templateValues);
+    final StringLookup customResolver = new CodeChallengeS256Lookup(baseResolver);
+    final StringLookup resolver = new JinjaStringLookup(customResolver);
     final StringSubstitutor interpolator = new StringSubstitutor(resolver);
 
-    interpolator.setVariablePrefix("{");
+    interpolator.setVariablePrefix("{{");
+    interpolator.setVariableSuffix("}}");
     interpolator.setEnableSubstitutionInVariables(true);
     interpolator.setEnableUndefinedVariableException(true);
 
@@ -176,6 +194,10 @@ public class DeclarativeOAuthSpecHandler {
    */
   protected final String getClientSecretKey(final JsonNode userConfig) {
     return userConfig.path(CLIENT_SECRET_KEY).asText(CLIENT_SECRET_VALUE);
+  }
+
+  protected final String getTokenExpiryKey(final JsonNode userConfig) {
+    return userConfig.path(TOKEN_EXPIRY_KEY).asText(TOKEN_EXPIRY_VALUE);
   }
 
   /**
@@ -227,6 +249,66 @@ public class DeclarativeOAuthSpecHandler {
   }
 
   /**
+   * Adds a reference to the template values map.
+   *
+   * @param templateValues the map containing template values
+   * @param key the key to retrieve the value from the template values map
+   * @param paramKey the key under which the reference will be stored in the template values map
+   * @param encode a boolean indicating whether the value should be URL encoded
+   */
+  private void addParameterReference(final Map<String, String> templateValues,
+                                     final String key,
+                                     final String paramKey,
+                                     final boolean encode) {
+    final String value = templateValues.get(templateValues.get(key));
+    templateValues.put(paramKey, makeParameter(templateValues.get(key), encode ? urlEncode(value) : value));
+  }
+
+  /**
+   * Adds a value reference to the templateValues map.
+   *
+   * This method retrieves the value associated with the key in the templateValues map, and then puts
+   * this value into the map with the specified valueKey.
+   *
+   * @param templateValues the map containing template values
+   * @param key the key whose associated value is to be retrieved
+   * @param valueKey the key with which the retrieved value is to be associated
+   */
+  private void addValueReference(final Map<String, String> templateValues,
+                                 final String key,
+                                 final String valueKey) {
+    final String value = templateValues.get(templateValues.get(key));
+    templateValues.put(valueKey, value);
+  }
+
+  /**
+   * Populates the provided template values map with references for various OAuth parameters. Some
+   * parameters are URL-encoded by default.
+   *
+   * @param templateValues a map containing the template values to be populated with references
+   * @return the updated map with added references
+   */
+  protected Map<String, String> getTemplateParametersAndValues(final Map<String, String> templateValues) {
+    addParameterReference(templateValues, CLIENT_ID_KEY, CLIENT_ID_PARAM, false);
+    addParameterReference(templateValues, CLIENT_SECRET_KEY, CLIENT_SECRET_PARAM, false);
+    addParameterReference(templateValues, AUTH_CODE_KEY, AUTH_CODE_PARAM, false);
+    addParameterReference(templateValues, STATE_KEY, STATE_PARAM, false);
+    // urlEncode the `redirect_uri` and `scope` by default
+    addParameterReference(templateValues, REDIRECT_URI_KEY, REDIRECT_URI_PARAM, true);
+    addParameterReference(templateValues, SCOPE_KEY, SCOPE_PARAM, true);
+
+    // add more value references to increase the granularity and flexibility
+    addValueReference(templateValues, CLIENT_ID_KEY, CLIENT_ID_VALUE_KEY);
+    addValueReference(templateValues, CLIENT_SECRET_KEY, CLIENT_SECRET_VALUE_KEY);
+    addValueReference(templateValues, AUTH_CODE_KEY, AUTH_CODE_VALUE_KEY);
+    addValueReference(templateValues, STATE_KEY, STATE_VALUE_KEY);
+    addValueReference(templateValues, REDIRECT_URI_KEY, REDIRECT_URI_VALUE_KEY);
+    addValueReference(templateValues, SCOPE_KEY, SCOPE_VALUE_KEY);
+
+    return templateValues;
+  }
+
+  /**
    * Generates a map of template values for constructing a consent URL.
    *
    * @param userConfig The JSON node containing the OAuth configuration.
@@ -245,7 +327,7 @@ public class DeclarativeOAuthSpecHandler {
     templateValues.put(templateValues.get(REDIRECT_URI_KEY), redirectUrl);
     templateValues.put(templateValues.get(STATE_KEY), state);
 
-    return templateValues;
+    return getTemplateParametersAndValues(templateValues);
   }
 
   /**
@@ -270,7 +352,7 @@ public class DeclarativeOAuthSpecHandler {
     templateValues.put(templateValues.get(AUTH_CODE_KEY), authCode);
     templateValues.put(templateValues.get(REDIRECT_URI_KEY), redirectUrl);
 
-    return templateValues;
+    return getTemplateParametersAndValues(templateValues);
   }
 
   /**
@@ -298,7 +380,7 @@ public class DeclarativeOAuthSpecHandler {
     templateValues.put(templateValues.get(REDIRECT_URI_KEY), redirectUrl);
     templateValues.put(templateValues.get(STATE_KEY), state);
 
-    return templateValues;
+    return getTemplateParametersAndValues(templateValues);
   }
 
   /**
@@ -326,7 +408,7 @@ public class DeclarativeOAuthSpecHandler {
     templateValues.put(templateValues.get(REDIRECT_URI_KEY), redirectUrl);
     templateValues.put(templateValues.get(STATE_KEY), state);
 
-    return templateValues;
+    return getTemplateParametersAndValues(templateValues);
   }
 
   /**
@@ -339,10 +421,11 @@ public class DeclarativeOAuthSpecHandler {
    * @throws IOException if an I/O error occurs during the rendering process.
    */
   protected final String renderStringTemplate(final Map<String, String> templateValues, final String templateString) throws IOException {
+    final String cleanedTemplatedString = removeWhitespaces(templateString);
 
     try {
-      checkContext(templateString);
-      return getInterpolator(templateValues).replace(templateString);
+      checkContext(cleanedTemplatedString);
+      return getInterpolator(templateValues).replace(cleanedTemplatedString);
     } catch (final IOException e) {
       throw new RuntimeException(e);
     }
@@ -462,24 +545,39 @@ public class DeclarativeOAuthSpecHandler {
       throws IOException {
 
     final Map<String, Object> oauth_output = new HashMap<>();
+    final List<String> expectedOAuthOuputFields = getConfigExtractOutput(userConfig);
+    final List<String> availableOAuthOuputFields = getAvailableKeysForOAuthOutput(data);
 
-    for (final String path : getConfigExtractOutput(userConfig)) {
+    for (final String path : expectedOAuthOuputFields) {
       final String value = JsonPaths.getSingleValueTextOrNull(data, path);
       final String key = JsonPaths.getTargetKeyFromJsonPath(path);
 
       if (value != null) {
-        // handle `expires_in` presence
-        if (TOKEN_EXPIRY_KEY.equals(key)) {
+        // handle `token_expiry_key`
+        if (getTokenExpiryKey(userConfig).equals(key)) {
           oauth_output.put(TOKEN_EXPIRY_DATE_KEY, processExpiresIn(value));
         }
 
         oauth_output.put(key, value);
       } else {
-        throw new IOException(String.format("Missing '%s' in query params from %s", key, accessTokenUrl));
+        final String message = "Missing '%s' field in the `OAuth Output`. Expected fields: %s. Fields available: %s";
+        throw new IOException(String.format(message, key, expectedOAuthOuputFields, availableOAuthOuputFields));
       }
     }
 
     return oauth_output;
+  }
+
+  /**
+   * Retrieves a list of all available keys from the given JSON node.
+   *
+   * @param data the JSON node containing the data
+   * @return a list of strings representing the keys available in the JSON node
+   */
+  private List<String> getAvailableKeysForOAuthOutput(final JsonNode data) {
+    final List<String> keys = new ArrayList<>();
+    data.fieldNames().forEachRemaining(keys::add);
+    return keys;
   }
 
   /**
@@ -490,6 +588,47 @@ public class DeclarativeOAuthSpecHandler {
    */
   private String processExpiresIn(final String value) {
     return Instant.now(clock).plusSeconds(Integer.parseInt(value)).toString();
+  }
+
+  /**
+   * Constructs a reference string by formatting the given key and value.
+   *
+   * @param key the key to be included in the reference string
+   * @param value the value to be included in the reference string
+   * @return a formatted string in the form "key=value"
+   */
+  private String makeParameter(final String key, final String value) {
+    return String.format("%s=%s", key, value);
+  }
+
+  /**
+   * Removes all whitespace characters from the given template string.
+   *
+   * @param templateString the string from which to remove whitespace characters
+   * @return a new string with all whitespace characters removed
+   * @throws IOException if an I/O error occurs
+   */
+  private String removeWhitespaces(final String templateString) throws IOException {
+    return templateString.replaceAll("\\s", "");
+  }
+
+  /**
+   * Encodes the given string using the UTF-8 encoding scheme.
+   *
+   * @param s the string to be encoded; if null, the method returns null
+   * @return the encoded string, or null if the input string is null
+   * @throws RuntimeException if the encoding process fails
+   */
+  private static String urlEncode(final String s) {
+    if (s == null) {
+      return s;
+    }
+
+    try {
+      return URLEncoder.encode(s, StandardCharsets.UTF_8);
+    } catch (final Exception e) {
+      throw new RuntimeException(e);
+    }
   }
 
 }

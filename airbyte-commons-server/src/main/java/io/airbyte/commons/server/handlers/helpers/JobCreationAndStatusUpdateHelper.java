@@ -52,7 +52,6 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -187,10 +186,6 @@ public class JobCreationAndStatusUpdateHelper {
     return String.valueOf(job.getConfig().getSync().getIsSourceCustomConnector() || job.getConfig().getSync().getIsDestinationCustomConnector());
   }
 
-  private void emitAttemptEvent(final OssMetricsRegistry metric, final Job job, final int attemptNumber) throws IOException {
-    emitAttemptEvent(metric, job, attemptNumber, imageAttrsFromJob(job));
-  }
-
   private void emitAttemptEvent(final OssMetricsRegistry metric,
                                 final Job job,
                                 final int attemptNumber,
@@ -201,12 +196,16 @@ public class JobCreationAndStatusUpdateHelper {
     final var connectionId = job.getScope() == null ? null : UUID.fromString(job.getScope());
     final var geography = connectionService.getGeographyForConnection(connectionId);
 
-    final List<MetricAttribute> baseMetricAttributes = List.of(
-        new MetricAttribute(MetricTags.GEOGRAPHY, geography == null ? null : geography.toString()),
-        new MetricAttribute(MetricTags.ATTEMPT_NUMBER, parseAttemptNumberOrNull(attemptNumber)),
-        new MetricAttribute(MetricTags.MIN_CONNECTOR_RELEASE_STATE, MetricTags.getReleaseStage(getOrNull(releaseStagesOrdered, 0))),
-        new MetricAttribute(MetricTags.MAX_CONNECTOR_RELEASE_STATE, MetricTags.getReleaseStage(getOrNull(releaseStagesOrdered, 1))),
-        new MetricAttribute(MetricTags.IS_CUSTOM_CONNECTOR_SYNC, parseIsJobRunningOnCustomConnectorForMetrics(job)));
+    final List<MetricAttribute> baseMetricAttributes = new ArrayList<>();
+    baseMetricAttributes.add(new MetricAttribute(MetricTags.GEOGRAPHY, geography == null ? null : geography.toString()));
+    baseMetricAttributes.add(new MetricAttribute(MetricTags.ATTEMPT_NUMBER, parseAttemptNumberOrNull(attemptNumber)));
+    baseMetricAttributes
+        .add(new MetricAttribute(MetricTags.MIN_CONNECTOR_RELEASE_STATE, MetricTags.getReleaseStage(getOrNull(releaseStagesOrdered, 0))));
+    baseMetricAttributes
+        .add(new MetricAttribute(MetricTags.MAX_CONNECTOR_RELEASE_STATE, MetricTags.getReleaseStage(getOrNull(releaseStagesOrdered, 1))));
+    baseMetricAttributes.add(new MetricAttribute(MetricTags.IS_CUSTOM_CONNECTOR_SYNC, parseIsJobRunningOnCustomConnectorForMetrics(job)));
+    baseMetricAttributes.addAll(imageAttrsFromJob(job));
+    baseMetricAttributes.addAll(linkAttrsFromJob(job));
 
     final MetricAttribute[] allMetricAttributes = Stream.concat(baseMetricAttributes.stream(), additionalAttributes.stream())
         .toList()
@@ -215,7 +214,7 @@ public class JobCreationAndStatusUpdateHelper {
   }
 
   public void emitAttemptCreatedEvent(final Job job, final int attemptNumber) throws IOException {
-    emitAttemptEvent(OssMetricsRegistry.ATTEMPTS_CREATED, job, attemptNumber);
+    emitAttemptEvent(OssMetricsRegistry.ATTEMPTS_CREATED, job, attemptNumber, List.of());
   }
 
   /**
@@ -255,7 +254,7 @@ public class JobCreationAndStatusUpdateHelper {
         .map(FailureReason::getExternalMessage)
         .filter(Objects::nonNull)
         // For DD, we get 200 characters between the key and value, so we keep it relatively short here.
-        .map(s -> StringUtils.abbreviate(s, 50))
+        .map(this::abbreviate)
         .findFirst());
 
     final Optional<String> internalMsg = attempt.getFailureSummary().flatMap(summary -> summary.getFailures()
@@ -263,7 +262,7 @@ public class JobCreationAndStatusUpdateHelper {
         .map(FailureReason::getInternalMessage)
         .filter(Objects::nonNull)
         // For DD, we get 200 characters between the key and value, so we keep it relatively short here.
-        .map(s -> StringUtils.abbreviate(s, 50))
+        .map(this::abbreviate)
         .findFirst());
 
     final List<MetricAttribute> additionalAttributes = new ArrayList<>();
@@ -273,8 +272,6 @@ public class JobCreationAndStatusUpdateHelper {
     additionalAttributes.add(new MetricAttribute(MetricTags.ATTEMPT_QUEUE, attempt.getProcessingTaskQueue()));
     additionalAttributes.add(new MetricAttribute(MetricTags.EXTERNAL_MESSAGE, externalMsg.orElse(null)));
     additionalAttributes.add(new MetricAttribute(MetricTags.INTERNAL_MESSAGE, internalMsg.orElse(null)));
-    additionalAttributes.addAll(imageAttrsFromJob(job));
-    additionalAttributes.addAll(linkAttrsFromJob(job));
 
     try {
       emitAttemptEvent(OssMetricsRegistry.ATTEMPTS_COMPLETED, job, attempt.getAttemptNumber(), additionalAttributes);
@@ -283,6 +280,19 @@ public class JobCreationAndStatusUpdateHelper {
     }
   }
 
+  private String abbreviate(final String s) {
+    final var length = 50;
+
+    if (s == null || s.length() <= length) {
+      return s;
+    }
+
+    return s.substring(0, length - 3) + "...";
+  }
+
+  /**
+   * Adds attributes necessary to link back to the connection from DD or otherwise.
+   */
   private List<MetricAttribute> linkAttrsFromJob(final Job job) {
     final List<MetricAttribute> attrs = new ArrayList<>();
     if (job.getConfigType() == SYNC) {
@@ -300,6 +310,9 @@ public class JobCreationAndStatusUpdateHelper {
     return attrs;
   }
 
+  /**
+   * Adds image attributes necessary to filter by via DD or otherwise.
+   */
   private List<MetricAttribute> imageAttrsFromJob(final Job job) {
     final List<MetricAttribute> attrs = new ArrayList<>();
     if (job.getConfigType() == SYNC) {

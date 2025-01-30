@@ -382,7 +382,7 @@ webapp:
 ## @section Pod Sweeper parameters
 
 pod-sweeper:
-  enabled: true
+  enabled: false
   ##  podSweeper.image.repository The image repository to use for the pod sweeper
   ##  podSweeper.image.pullPolicy The pull policy for the pod sweeper image
   ##  podSweeper.image.tag The pod sweeper image tag to use
@@ -1196,7 +1196,7 @@ temporal:
   image:
     repository: temporalio/auto-setup
     pullPolicy: IfNotPresent
-    tag: "1.23.0"
+    tag: "1.26"
 
   ##  temporal.service.type The Kubernetes Service Type
   ##  temporal.service.port The temporal port and exposed kubernetes port

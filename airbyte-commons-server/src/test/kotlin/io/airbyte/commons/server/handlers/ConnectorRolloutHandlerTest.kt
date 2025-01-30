@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
+ */
+
 package io.airbyte.commons.server.handlers
 
 import io.airbyte.api.model.generated.ConnectorRolloutFinalizeRequestBody
@@ -123,12 +127,11 @@ internal class ConnectorRolloutHandlerTest {
       listOf(ConnectorEnumRolloutState.WORKFLOW_STARTED, ConnectorEnumRolloutState.IN_PROGRESS, ConnectorEnumRolloutState.PAUSED)
 
     @JvmStatic
-    fun provideConnectorRolloutStateTerminalNonCanceled(): List<ConnectorRolloutStateTerminal> {
-      return listOf(
+    fun provideConnectorRolloutStateTerminalNonCanceled(): List<ConnectorRolloutStateTerminal> =
+      listOf(
         ConnectorRolloutStateTerminal.SUCCEEDED,
         ConnectorRolloutStateTerminal.FAILED_ROLLED_BACK,
       )
-    }
   }
 
   @BeforeEach
@@ -1066,17 +1069,15 @@ internal class ConnectorRolloutHandlerTest {
     // Rollout has been started
     connectorRollout.apply { this.state = state }
 
-    every { connectorRolloutClient.doRollout(any()) } returns ConnectorRolloutOutput(state = ConnectorEnumRolloutState.IN_PROGRESS)
+    every { connectorRolloutClient.doRollout(any()) } just Runs
     every { connectorRolloutService.getConnectorRollout(rolloutId) } returns connectorRollout
     every { actorDefinitionService.getActorDefinitionVersion(any()) } returns createMockActorDefinitionVersion()
 
-    val result = connectorRolloutHandler.manualDoConnectorRolloutUpdate(connectorRolloutWorkflowUpdate)
+    connectorRolloutHandler.manualDoConnectorRolloutUpdate(connectorRolloutWorkflowUpdate)
 
-    assertEquals(connectorRollout.id, result.id)
     verifyAll {
       connectorRolloutClient.doRollout(any())
       connectorRolloutService.getConnectorRollout(rolloutId)
-      actorDefinitionService.getActorDefinitionVersion(any())
     }
 
     // Verify that startWorkflow() was not called because the rollout is already in progress
@@ -1100,15 +1101,14 @@ internal class ConnectorRolloutHandlerTest {
     connectorRollout.apply { this.state = ConnectorEnumRolloutState.INITIALIZED }
 
     every { connectorRolloutClient.startRollout(any()) } just Runs
-    every { connectorRolloutClient.doRollout(any()) } returns ConnectorRolloutOutput(state = ConnectorEnumRolloutState.IN_PROGRESS)
+    every { connectorRolloutClient.doRollout(any()) } just Runs
     every { connectorRolloutService.getConnectorRollout(rolloutId) } returns connectorRollout
     every { actorDefinitionService.getActorDefinitionVersion(any()) } returns createMockActorDefinitionVersion()
     every { rolloutActorFinder.getActorSelectionInfo(any(), any()) } returns ActorSelectionInfo(listOf(), 0, 0, 0, 0)
     every { rolloutActorFinder.getSyncInfoForPinnedActors(any()) } returns emptyMap()
 
-    val result = connectorRolloutHandler.manualDoConnectorRolloutUpdate(connectorRolloutWorkflowUpdate)
+    connectorRolloutHandler.manualDoConnectorRolloutUpdate(connectorRolloutWorkflowUpdate)
 
-    assertEquals(connectorRollout.id, result.id)
     verifyAll {
       connectorRolloutClient.startRollout(any())
       connectorRolloutClient.doRollout(any())

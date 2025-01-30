@@ -5484,7 +5484,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ConnectorRolloutResponse"
+                $ref: "#/components/schemas/ConnectorRolloutManualRolloutResponse"
         "404":
           $ref: "#/components/responses/NotFoundResponse"
         "422":
@@ -5663,6 +5663,82 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserInvitationRead"
+
+  # Tags
+  /v1/tags/list:
+    post:
+      summary: List tags in a workspace
+      tags:
+        - tag
+      operationId: listTags
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagListRequestBody"
+      responses:
+        "200":
+          description: Successfully retrieved list of tags.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tag"
+  /v1/tags/update:
+    post:
+      summary: Update a tag
+      tags:
+        - tag
+      operationId: updateTag
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagUpdateRequestBody"
+      responses:
+        "200":
+          description: Successfully updated tag.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+  /v1/tags/delete:
+    post:
+      summary: Delete a tag
+      tags:
+        - tag
+      operationId: deleteTag
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagDeleteRequestBody"
+      responses:
+        "200":
+          description: Successfully deleted tag.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+  /v1/tags/create:
+    post:
+      summary: Create a tag
+      tags:
+        - tag
+      operationId: createTag
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagCreateRequestBody"
+      responses:
+        "200":
+          description: Successfully created tag.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
 
   /v1/diagnostic_tool/generate_report:
     post:
@@ -7950,6 +8026,14 @@ components:
         num_connections:
           type: integer
 
+    ConnectorRolloutManualRolloutResponse:
+      type: object
+      required:
+        - data
+      properties:
+        status:
+          type: string
+
     ConnectorRolloutManualFinalizeResponse:
       type: object
       required:
@@ -8472,6 +8556,8 @@ components:
           type: boolean
         securityUpdates:
           type: boolean
+        name:
+          type: string
         notifications:
           type: array
           items:
@@ -8657,6 +8743,8 @@ components:
         draftManifest:
           $ref: "#/components/schemas/DeclarativeManifest"
         yamlManifest:
+          type: string
+        componentsFileContent:
           type: string
         baseActorDefinitionVersionId:
           $ref: "#/components/schemas/NullableActorDefinitionVersionId"
@@ -9086,7 +9174,7 @@ components:
         icon:
           type: string
         resourceRequirements:
-          $ref: "#/components/schemas/ActorDefinitionResourceRequirements"
+          $ref: "#/components/schemas/ScopedResourceRequirements"
     SourceDefinitionUpdate:
       type: object
       description: Update the SourceDefinition. Currently, the only allowed attribute to update is the default docker image version.
@@ -9101,7 +9189,7 @@ components:
         dockerImageTag:
           type: string
         resourceRequirements:
-          $ref: "#/components/schemas/ActorDefinitionResourceRequirements"
+          $ref: "#/components/schemas/ScopedResourceRequirements"
     SourceDefinitionRead:
       type: object
       required:
@@ -9147,7 +9235,7 @@ components:
             - database
             - custom
         resourceRequirements:
-          $ref: "#/components/schemas/ActorDefinitionResourceRequirements"
+          $ref: "#/components/schemas/ScopedResourceRequirements"
         maxSecondsBetweenMessages:
           description: Number of seconds allowed between 2 airbyte protocol messages. The source will timeout if this delay is reach
           type: integer
@@ -9682,7 +9770,7 @@ components:
         icon:
           type: string
         resourceRequirements:
-          $ref: "#/components/schemas/ActorDefinitionResourceRequirements"
+          $ref: "#/components/schemas/ScopedResourceRequirements"
     DestinationDefinitionUpdate:
       type: object
       required:
@@ -9696,7 +9784,7 @@ components:
         dockerImageTag:
           type: string
         resourceRequirements:
-          $ref: "#/components/schemas/ActorDefinitionResourceRequirements"
+          $ref: "#/components/schemas/ScopedResourceRequirements"
     DestinationDefinitionRead:
       type: object
       required:
@@ -9735,7 +9823,7 @@ components:
           type: string
           format: date
         resourceRequirements:
-          $ref: "#/components/schemas/ActorDefinitionResourceRequirements"
+          $ref: "#/components/schemas/ScopedResourceRequirements"
         lastPublished:
           description: The time the connector was modified in the codebase.
           $ref: "#/components/schemas/ISO8601DateTime"
@@ -10330,6 +10418,10 @@ components:
           $ref: "#/components/schemas/NonBreakingChangesPreference"
         backfillPreference:
           $ref: "#/components/schemas/SchemaChangeBackfillPreference"
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
     ConnectionStateCreateOrUpdate:
       type: object
       required:
@@ -10458,6 +10550,10 @@ components:
           $ref: "#/components/schemas/NonBreakingChangesPreference"
         backfillPreference:
           $ref: "#/components/schemas/SchemaChangeBackfillPreference"
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
     ConnectionRead:
       type: object
       required:
@@ -11077,6 +11173,25 @@ components:
       properties:
         propagatedDiff:
           $ref: "#/components/schemas/CatalogDiff"
+    Tag:
+      description: A tag that can be associated with a connection. Useful for grouping and organizing connections in a workspace.
+      type: object
+      required:
+        - tagId
+        - workspaceId
+        - name
+        - color
+      properties:
+        tagId:
+          type: string
+          format: uuid
+        workspaceId:
+          $ref: "#/components/schemas/WorkspaceId"
+        name:
+          type: string
+        color:
+          type: string
+
     # Operations
     OperationId:
       type: string
@@ -12315,9 +12430,12 @@ components:
       type: object
       required:
         - connectionId
+        - isScheduled
       properties:
         connectionId:
           $ref: "#/components/schemas/ConnectionId"
+        isScheduled:
+          type: boolean
     JobListRequestBody:
       type: object
       required:
@@ -12812,8 +12930,6 @@ components:
       type: object
       required:
         - attempt
-        - logType
-        - logs
       properties:
         attempt:
           $ref: "#/components/schemas/AttemptRead"
@@ -13236,8 +13352,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/FieldName"
-    ActorDefinitionResourceRequirements:
-      description: actor definition specific resource requirements. if default is set, these are the requirements that should be set for ALL jobs run for this actor definition. it is overriden by the job type specific configurations. if not set, the platform will use defaults. these values will be overriden by configuration at the connection level.
+    ScopedResourceRequirements:
+      description: actor or actor definition specific resource requirements. if default is set, these are the requirements that should be set for ALL jobs run for this actor definition. it is overriden by the job type specific configurations. if not set, the platform will use defaults. these values will be overriden by configuration at the connection level.
       type: object
       additionalProperties: false
       properties:
@@ -13267,7 +13383,7 @@ components:
       type: string
       format: uuid
     JobTypeResourceLimit:
-      description: sets resource requirements for a specific job type for an actor definition. these values override the default, if both are set.
+      description: sets resource requirements for a specific job type for an actor or actor definition. these values override the default, if both are set.
       type: object
       additionalProperties: false
       required:
@@ -13811,6 +13927,7 @@ components:
         - schemaChange
         - sourceActorDefinitionVersion
         - destinationActorDefinitionVersion
+        - tags
       properties:
         connectionId:
           $ref: "#/components/schemas/ConnectionId"
@@ -13838,6 +13955,10 @@ components:
           $ref: "#/components/schemas/ActorDefinitionVersionRead"
         destinationActorDefinitionVersion:
           $ref: "#/components/schemas/ActorDefinitionVersionRead"
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
     WebBackendConnectionRead:
       type: object
       required:
@@ -13856,6 +13977,7 @@ components:
         - nonBreakingChangesPreference
         - sourceActorDefinitionVersion
         - destinationActorDefinitionVersion
+        - tags
       properties:
         connectionId:
           $ref: "#/components/schemas/ConnectionId"
@@ -13929,6 +14051,10 @@ components:
           $ref: "#/components/schemas/ActorDefinitionVersionRead"
         destinationActorDefinitionVersion:
           $ref: "#/components/schemas/ActorDefinitionVersionRead"
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
     WebBackendDescribeCronExpressionRequestBody:
       type: object
       required:
@@ -14255,6 +14381,8 @@ components:
         defaultRealm:
           type: string
           default: "airbyte"
+        authorizationServerUrl:
+          type: string
     LicenseStatus:
       type: string
       enum:
@@ -14607,6 +14735,54 @@ components:
         mode:
           type: string
         version:
+          type: string
+    TagListRequestBody:
+      type: object
+      required:
+        - workspaceId
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/WorkspaceId"
+    TagUpdateRequestBody:
+      type: object
+      required:
+        - tagId
+        - workspaceId
+        - name
+        - color
+      properties:
+        tagId:
+          type: string
+          format: uuid
+        workspaceId:
+          $ref: "#/components/schemas/WorkspaceId"
+        name:
+          type: string
+        color:
+          type: string
+    TagDeleteRequestBody:
+      type: object
+      required:
+        - tagId
+        - workspaceId
+      properties:
+        tagId:
+          type: string
+          format: uuid
+        workspaceId:
+          $ref: "#/components/schemas/WorkspaceId"
+    TagCreateRequestBody:
+      type: object
+      required:
+        - workspaceId
+        - name
+        - color
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/WorkspaceId"
+        name:
+          type: string
+        color:
           type: string
 
     NotFoundKnownExceptionInfo:

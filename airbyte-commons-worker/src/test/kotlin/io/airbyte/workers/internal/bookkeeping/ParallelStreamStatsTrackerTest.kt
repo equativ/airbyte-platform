@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
+ */
+
 package io.airbyte.workers.internal.bookkeeping
 
 import io.airbyte.analytics.DeploymentFetcher
@@ -27,7 +31,7 @@ import io.airbyte.workers.exception.InvalidChecksumException
 import io.airbyte.workers.general.StateCheckSumCountEventHandler
 import io.airbyte.workers.general.StateCheckSumErrorReporter
 import io.airbyte.workers.models.StateWithId
-import io.airbyte.workers.test_utils.AirbyteMessageUtils
+import io.airbyte.workers.testutils.AirbyteMessageUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.mockk.Runs
 import io.mockk.every

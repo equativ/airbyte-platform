@@ -1,7 +1,12 @@
+/*
+ * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
+ */
+
 package io.airbyte.commons.server.handlers.helpers
 
 import com.fasterxml.jackson.databind.node.ObjectNode
 import io.airbyte.api.problems.throwable.generated.MapperSecretNotFoundProblem
+import io.airbyte.api.problems.throwable.generated.RuntimeSecretsManagerRequiredProblem
 import io.airbyte.commons.constants.AirbyteSecretConstants
 import io.airbyte.commons.json.Jsons
 import io.airbyte.commons.server.helpers.ConnectionHelpers
@@ -24,6 +29,7 @@ import io.airbyte.config.secrets.SecretsRepositoryReader
 import io.airbyte.config.secrets.SecretsRepositoryWriter
 import io.airbyte.data.services.SecretPersistenceConfigService
 import io.airbyte.data.services.WorkspaceService
+import io.airbyte.featureflag.AllowMappersDefaultSecretPersistence
 import io.airbyte.featureflag.Organization
 import io.airbyte.featureflag.TestClient
 import io.airbyte.featureflag.UseRuntimeSecretPersistence
@@ -74,6 +80,7 @@ internal class MapperSecretHelperTest {
   fun setup() {
     every { workspaceService.getOrganizationIdFromWorkspaceId(WORKSPACE_ID) } returns Optional.of(ORGANIZATION_ID)
     every { featureFlagClient.boolVariation(UseRuntimeSecretPersistence, Organization(ORGANIZATION_ID)) } returns true
+    every { featureFlagClient.boolVariation(AllowMappersDefaultSecretPersistence, Organization(ORGANIZATION_ID)) } returns false
     every { secretPersistenceConfigService.get(ScopeType.ORGANIZATION, ORGANIZATION_ID) } returns mockk<SecretPersistenceConfig>()
   }
 
@@ -92,7 +99,12 @@ internal class MapperSecretHelperTest {
       )
     val catalogWithSecrets = generateCatalogWithMapper(mapperConfig)
 
-    val configSpec = encryptionMapper.spec().jsonSchema().get("properties").get("config")
+    val configSpec =
+      encryptionMapper
+        .spec()
+        .jsonSchema()
+        .get("properties")
+        .get("config")
     val configNoSecrets =
       Jsons.jsonNode(
         mapOf(
@@ -122,7 +134,13 @@ internal class MapperSecretHelperTest {
           ),
       )
 
-    assertEquals(expectedConfig, catalogWithoutSecrets.streams.first().mappers.first())
+    assertEquals(
+      expectedConfig,
+      catalogWithoutSecrets.streams
+        .first()
+        .mappers
+        .first(),
+    )
 
     verify { secretsRepositoryWriter.createFromConfig(eq(WORKSPACE_ID), eq(Jsons.jsonNode(mapperConfig.config())), eq(configSpec), any()) }
   }
@@ -134,7 +152,13 @@ internal class MapperSecretHelperTest {
     val catalog = generateCatalogWithMapper(mapperConfig)
 
     val resultingCatalog = mapperSecretHelper.createAndReplaceMapperSecrets(WORKSPACE_ID, catalog)
-    assertEquals(mapperConfig, resultingCatalog.streams.first().mappers.first())
+    assertEquals(
+      mapperConfig,
+      resultingCatalog.streams
+        .first()
+        .mappers
+        .first(),
+    )
 
     verify(exactly = 0) {
       secretPersistenceConfigService.get(any(), any())
@@ -156,7 +180,12 @@ internal class MapperSecretHelperTest {
           ),
       )
 
-    val configSpec = encryptionMapper.spec().jsonSchema().get("properties").get("config")
+    val configSpec =
+      encryptionMapper
+        .spec()
+        .jsonSchema()
+        .get("properties")
+        .get("config")
     val maskedConfig =
       Jsons.jsonNode(
         mapOf(
@@ -185,7 +214,13 @@ internal class MapperSecretHelperTest {
           ),
       )
 
-    assertEquals(expectedConfig, maskedCatalog.streams.first().mappers.first())
+    assertEquals(
+      expectedConfig,
+      maskedCatalog.streams
+        .first()
+        .mappers
+        .first(),
+    )
 
     verify { secretsProcessor.prepareSecretsForOutput(Jsons.jsonNode(mapperConfig.config()), configSpec) }
   }
@@ -229,7 +264,12 @@ internal class MapperSecretHelperTest {
 
     every { secretsRepositoryReader.hydrateConfigFromRuntimeSecretPersistence(eq(persistedConfigJson), any()) } returns hydratedPersistedConfigJson
 
-    val configSpec = encryptionMapper.spec().jsonSchema().get("properties").get("config")
+    val configSpec =
+      encryptionMapper
+        .spec()
+        .jsonSchema()
+        .get("properties")
+        .get("config")
     val resolvedUpdatedConfigJson = maskedUpdatedConfigJson.deepCopy().put("key", SECRET_VALUE)
 
     every { secretsProcessor.copySecrets(hydratedPersistedConfigJson, maskedUpdatedConfigJson, configSpec) } returns resolvedUpdatedConfigJson
@@ -243,7 +283,13 @@ internal class MapperSecretHelperTest {
       secretsRepositoryWriter.updateFromConfig(eq(WORKSPACE_ID), eq(persistedConfigJson), eq(resolvedUpdatedConfigJson), eq(configSpec), any())
     } returns Jsons.jsonNode(expectedMapperConfig.config())
     val res = mapperSecretHelper.updateAndReplaceMapperSecrets(WORKSPACE_ID, persistedCatalog, catalogWithMaskedSecrets)
-    assertEquals(expectedMapperConfig, res.streams.first().mappers.first())
+    assertEquals(
+      expectedMapperConfig,
+      res.streams
+        .first()
+        .mappers
+        .first(),
+    )
 
     verify {
       secretsRepositoryReader.hydrateConfigFromRuntimeSecretPersistence(eq(persistedConfigJson), any())
@@ -291,11 +337,107 @@ internal class MapperSecretHelperTest {
         ),
       )
 
-    val configSpec = encryptionMapper.spec().jsonSchema().get("properties").get("config")
+    val configSpec =
+      encryptionMapper
+        .spec()
+        .jsonSchema()
+        .get("properties")
+        .get("config")
     every { secretsProcessor.prepareSecretsForOutput(Jsons.jsonNode(referencedMapperConfig.config()), configSpec) } returns maskedConfig
 
     assertThrows<MapperSecretNotFoundProblem> {
       mapperSecretHelper.updateAndReplaceMapperSecrets(WORKSPACE_ID, persistedCatalog, catalogWithMaskedSecrets)
+    }
+  }
+
+  @Test
+  fun `test AES encryption mapper requires runtime persistence on cloud`() {
+    val mapperConfig =
+      EncryptionMapperConfig(
+        config =
+          AesEncryptionConfig(
+            algorithm = EncryptionConfig.ALGO_AES,
+            targetField = "target",
+            mode = AesMode.CBC,
+            padding = AesPadding.NoPadding,
+            key = AirbyteSecret.Reference(SECRET_COORDINATE),
+          ),
+      )
+
+    val requiresRuntimePersistence = mapperSecretHelper.shouldRequireRuntimePersistence(mapperConfig, ORGANIZATION_ID)
+
+    assertEquals(true, requiresRuntimePersistence)
+  }
+
+  @Test
+  fun `test runtime persistence is not required on OSS`() {
+    val ossMapperSecretHelper =
+      MapperSecretHelper(
+        mappers = listOf(encryptionMapper as Mapper<MapperConfig>),
+        workspaceService = workspaceService,
+        secretPersistenceConfigService = secretPersistenceConfigService,
+        secretsRepositoryWriter = secretsRepositoryWriter,
+        secretsRepositoryReader = secretsRepositoryReader,
+        featureFlagClient = featureFlagClient,
+        secretsProcessor = secretsProcessor,
+        deploymentMode = DeploymentMode.OSS,
+      )
+
+    val mapperConfig =
+      EncryptionMapperConfig(
+        config =
+          AesEncryptionConfig(
+            algorithm = EncryptionConfig.ALGO_AES,
+            targetField = "target",
+            mode = AesMode.CBC,
+            padding = AesPadding.NoPadding,
+            key = AirbyteSecret.Reference(SECRET_COORDINATE),
+          ),
+      )
+
+    val requiresRuntimePersistence = ossMapperSecretHelper.shouldRequireRuntimePersistence(mapperConfig, ORGANIZATION_ID)
+
+    assertEquals(false, requiresRuntimePersistence)
+  }
+
+  @Test
+  fun `test non-AES encryption mapper does not require runtime persistence`() {
+    val mapperConfig =
+      EncryptionMapperConfig(
+        config =
+          AesEncryptionConfig(
+            algorithm = "RSA",
+            targetField = "target",
+            mode = AesMode.CBC,
+            padding = AesPadding.NoPadding,
+            key = AirbyteSecret.Reference(SECRET_COORDINATE),
+          ),
+      )
+
+    val requiresRuntimePersistence = mapperSecretHelper.shouldRequireRuntimePersistence(mapperConfig, ORGANIZATION_ID)
+
+    assertEquals(false, requiresRuntimePersistence)
+  }
+
+  @Test
+  fun `test create mapper secrets with missing required runtime persistence throws`() {
+    every { featureFlagClient.boolVariation(UseRuntimeSecretPersistence, Organization(ORGANIZATION_ID)) } returns false
+
+    val mapperConfig =
+      EncryptionMapperConfig(
+        config =
+          AesEncryptionConfig(
+            algorithm = EncryptionConfig.ALGO_AES,
+            targetField = "target",
+            mode = AesMode.CBC,
+            padding = AesPadding.NoPadding,
+            key = AirbyteSecret.Hydrated(SECRET_VALUE),
+          ),
+      )
+    val catalogWithSecrets = generateCatalogWithMapper(mapperConfig)
+
+    assertThrows<RuntimeSecretsManagerRequiredProblem> {
+      mapperSecretHelper.createAndReplaceMapperSecrets(WORKSPACE_ID, catalogWithSecrets)
     }
   }
 

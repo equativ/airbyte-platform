@@ -2,10 +2,6 @@
  * Copyright (c) 2020-2025 Airbyte, Inc., all rights reserved.
  */
 
-/**
- * Feature-Flag definitions are defined in this file.
- */
-
 package io.airbyte.featureflag
 
 /**
@@ -181,3 +177,7 @@ object RunDeclarativeSourcesUpdater : Permanent<Boolean>(key = "platform.run-dec
 object AllowSpotInstances : Temporary<Boolean>(key = "platform.allow-spot-instances", default = false)
 
 object HydrateLimits : Temporary<Boolean>(key = "platform.hydrate.limits", default = false)
+
+object OnlyUseScheduledForGetTime : Temporary<Boolean>(key = "platform.only-use-scheduled", default = true)
+
+object BillingEnableTemporalIngestion : Temporary<Boolean>(key = "billing.enable-temporal-ingestion", default = false)

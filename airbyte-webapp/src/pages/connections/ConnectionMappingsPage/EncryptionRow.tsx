@@ -3,8 +3,10 @@ import { FormProvider, useForm } from "react-hook-form";
 import { FormattedMessage, useIntl } from "react-intl";
 import * as yup from "yup";
 
+import { FormControlErrorMessage } from "components/forms/FormControl";
 import { ListBox } from "components/ui/ListBox";
 import { Text } from "components/ui/Text";
+import { Tooltip } from "components/ui/Tooltip/Tooltip";
 
 import {
   EncryptionMapperAESConfigurationPadding,
@@ -13,15 +15,16 @@ import {
   EncryptionMapperAESConfigurationMode,
   EncryptionMapperConfiguration,
 } from "core/api/types/AirbyteClient";
+import { FeatureItem, useFeature } from "core/services/features";
+import { useExperiment } from "hooks/services/Experiment";
 
 import { autoSubmitResolver } from "./autoSubmitResolver";
 import { useMappingContext } from "./MappingContext";
-import { MappingFormTextInput } from "./MappingRow";
+import { MappingFormTextInput, MappingRowItem } from "./MappingRow";
 import styles from "./MappingRow.module.scss";
 import { MappingTypeListBox } from "./MappingTypeListBox";
-import { SelectFieldOption, SelectTargetField } from "./SelectTargetField";
+import { SelectTargetField } from "./SelectTargetField";
 import { StreamMapperWithId } from "./types";
-import { useGetFieldsInStream } from "./useGetFieldsInStream";
 
 const encryptionMapperSchema = yup
   .object()
@@ -55,13 +58,16 @@ const encryptionMapperSchema = yup
 interface EncryptionFormProps {
   streamDescriptorKey: string;
   mapping: StreamMapperWithId<EncryptionMapperConfiguration>;
-  targetFieldOptions: SelectFieldOption[];
 }
 
-export const EncryptionForm: React.FC<EncryptionFormProps> = ({ streamDescriptorKey, mapping, targetFieldOptions }) => {
-  const { updateLocalMapping, validateMappings } = useMappingContext();
+export const EncryptionForm: React.FC<EncryptionFormProps> = ({ streamDescriptorKey, mapping }) => {
+  const { updateLocalMapping, validatingStreams } = useMappingContext();
+  const isStreamValidating = validatingStreams.has(streamDescriptorKey);
   const { formatMessage } = useIntl();
   const [algorithm, setAlgorithm] = useState<EncryptionMapperAlgorithm>(mapping.mapperConfiguration.algorithm || "RSA");
+  const isSecretsPersistenceEnabled = useExperiment("platform.use-runtime-secret-persistence");
+  const isEnterprise = useFeature(FeatureItem.EnterpriseBranding);
+  const enableAES = isEnterprise || isSecretsPersistenceEnabled;
 
   const methods = useForm<EncryptionMapperConfiguration>({
     defaultValues: {
@@ -74,17 +80,27 @@ export const EncryptionForm: React.FC<EncryptionFormProps> = ({ streamDescriptor
       ...(mapping.mapperConfiguration.algorithm === "AES" && {
         targetField: mapping.mapperConfiguration.targetField ?? "",
         fieldNameSuffix: mapping.mapperConfiguration.fieldNameSuffix ?? "_encrypted",
+        key: mapping.mapperConfiguration.key ?? "",
+        mode: mapping.mapperConfiguration.mode ?? "CBC",
+        padding: mapping.mapperConfiguration.padding ?? "PKCS5Padding",
       }),
     },
     resolver: autoSubmitResolver<EncryptionMapperConfiguration>(encryptionMapperSchema, (formValues) => {
       updateLocalMapping(streamDescriptorKey, mapping.id, { mapperConfiguration: formValues });
-      validateMappings();
     }),
     mode: "onBlur",
   });
 
   useEffect(() => {
-    updateLocalMapping(streamDescriptorKey, mapping.id, { validationCallback: methods.trigger });
+    if (mapping.validationError && mapping.validationError.type === "FIELD_NOT_FOUND") {
+      methods.setError("targetField", { message: mapping.validationError.message });
+    } else {
+      methods.clearErrors("targetField");
+    }
+  }, [mapping.validationError, methods]);
+
+  useEffect(() => {
+    updateLocalMapping(streamDescriptorKey, mapping.id, { validationCallback: methods.trigger }, true);
   }, [methods.trigger, streamDescriptorKey, updateLocalMapping, mapping.id]);
 
   const values = methods.watch();
@@ -92,76 +108,122 @@ export const EncryptionForm: React.FC<EncryptionFormProps> = ({ streamDescriptor
   return (
     <FormProvider {...methods}>
       <form className={styles.form}>
-        <MappingTypeListBox
-          selectedValue={StreamMapperType.encryption}
-          streamDescriptorKey={streamDescriptorKey}
-          mappingId={mapping.id}
-        />
-        <SelectTargetField<EncryptionMapperConfiguration> targetFieldOptions={targetFieldOptions} name="targetField" />
-        <Text>
-          <FormattedMessage id="connections.mappings.using" />
-        </Text>
-        <ListBox
-          selectedValue={algorithm}
-          onSelect={(selectedAlgorithm: EncryptionMapperAlgorithm) => {
-            setAlgorithm(selectedAlgorithm);
-            methods.setValue("algorithm", selectedAlgorithm);
-            if (selectedAlgorithm === "AES") {
-              methods.setValue("publicKey", "");
-              methods.setValue("key", "");
-              methods.setValue("mode", "CBC");
-              methods.setValue("padding", "PKCS5Padding");
-            } else if (selectedAlgorithm === "RSA") {
-              methods.setValue("key", "");
-              methods.setValue("publicKey", "");
-            }
-          }}
-          options={[
-            { label: "AES", value: "AES" },
-            { label: "RSA", value: "RSA" },
-          ]}
-        />
+        <MappingRowItem>
+          <MappingTypeListBox
+            disabled={isStreamValidating}
+            selectedValue={StreamMapperType.encryption}
+            streamDescriptorKey={streamDescriptorKey}
+            mappingId={mapping.id}
+          />
+        </MappingRowItem>
+        <MappingRowItem>
+          <SelectTargetField<EncryptionMapperConfiguration>
+            mappingId={mapping.id}
+            streamDescriptorKey={streamDescriptorKey}
+            name="targetField"
+            disabled={isStreamValidating}
+          />
+        </MappingRowItem>
+        <MappingRowItem>
+          <Text>
+            <FormattedMessage id="connections.mappings.using" />
+          </Text>
+        </MappingRowItem>
+        <MappingRowItem>
+          <ListBox
+            selectedValue={algorithm}
+            onSelect={(selectedAlgorithm: EncryptionMapperAlgorithm) => {
+              setAlgorithm(selectedAlgorithm);
+              methods.setValue("algorithm", selectedAlgorithm);
+              if (selectedAlgorithm === "AES") {
+                methods.setValue("publicKey", "");
+                methods.setValue("key", "");
+                methods.setValue("mode", "CBC");
+                methods.setValue("padding", "PKCS5Padding");
+              } else if (selectedAlgorithm === "RSA") {
+                methods.setValue("key", "");
+                methods.setValue("publicKey", "");
+              }
+            }}
+            options={[
+              { label: "RSA", value: "RSA" },
+              {
+                label: enableAES ? (
+                  "AES"
+                ) : (
+                  <Tooltip control="AES">
+                    <FormattedMessage id="connections.mappings.aesRequiresSecrets" />
+                  </Tooltip>
+                ),
+                value: "AES",
+                disabled: !enableAES,
+              },
+            ]}
+          />
+        </MappingRowItem>
+
         {values.algorithm === "AES" && (
           <>
-            <Text>
-              <FormattedMessage id="connections.mappings.andKey" />
-            </Text>
-            <MappingFormTextInput
-              placeholder={formatMessage({ id: "connections.mappings.encryption.key" })}
-              name="key"
-            />
-            <ListBox
-              selectedValue={values.mode}
-              onSelect={(mode: EncryptionMapperAESConfigurationMode) =>
-                methods.setValue("mode", mode, { shouldValidate: true })
-              }
-              options={Object.values(EncryptionMapperAESConfigurationMode).map((mode) => ({
-                label: mode,
-                value: mode,
-              }))}
-            />
-            <ListBox
-              selectedValue={values.padding}
-              onSelect={(padding: EncryptionMapperAESConfigurationPadding) =>
-                methods.setValue("padding", padding, { shouldValidate: true })
-              }
-              options={Object.values(EncryptionMapperAESConfigurationPadding).map((padding) => ({
-                label: padding,
-                value: padding,
-              }))}
-            />
+            <MappingRowItem>
+              <Text>
+                <FormattedMessage id="connections.mappings.andKey" />
+              </Text>
+            </MappingRowItem>
+            <MappingRowItem>
+              <MappingFormTextInput
+                placeholder={formatMessage({ id: "connections.mappings.encryption.key" })}
+                name="key"
+                disabled={isStreamValidating}
+              />
+              <FormControlErrorMessage<EncryptionMapperConfiguration> name="key" />
+            </MappingRowItem>
+            <MappingRowItem>
+              <ListBox
+                selectedValue={values.mode}
+                onSelect={(mode: EncryptionMapperAESConfigurationMode) =>
+                  methods.setValue("mode", mode, { shouldValidate: true })
+                }
+                options={Object.values(EncryptionMapperAESConfigurationMode).map((mode) => ({
+                  label: mode,
+                  value: mode,
+                }))}
+              />
+            </MappingRowItem>
+            <MappingRowItem>
+              <ListBox
+                selectedValue={values.padding}
+                onSelect={(padding: EncryptionMapperAESConfigurationPadding) =>
+                  methods.setValue("padding", padding, { shouldValidate: true })
+                }
+                options={Object.values(EncryptionMapperAESConfigurationPadding).map((padding) => ({
+                  label: padding,
+                  value: padding,
+                }))}
+              />
+            </MappingRowItem>
           </>
         )}
         {values.algorithm === "RSA" && (
           <>
-            <Text>
-              <FormattedMessage id="connections.mappings.andKey" />
-            </Text>
-            <MappingFormTextInput
-              placeholder={formatMessage({ id: "connections.mappings.encryption.publicKey" })}
-              name="publicKey"
-            />
+            <MappingRowItem>
+              <Text>
+                <FormattedMessage id="connections.mappings.andKey" />
+              </Text>
+            </MappingRowItem>
+            <MappingRowItem>
+              <MappingFormTextInput
+                placeholder={formatMessage({ id: "connections.mappings.encryption.publicKey" })}
+                name="publicKey"
+                disabled={isStreamValidating}
+              />
+              <FormControlErrorMessage<EncryptionMapperConfiguration> name="publicKey" />
+            </MappingRowItem>
           </>
+        )}
+        {mapping.validationError && mapping.validationError.type !== "FIELD_NOT_FOUND" && (
+          <Text italicized color="red">
+            {mapping.validationError.message}
+          </Text>
         )}
       </form>
     </FormProvider>
@@ -172,13 +234,9 @@ export const EncryptionRow: React.FC<{
   mapping: StreamMapperWithId<EncryptionMapperConfiguration>;
   streamDescriptorKey: string;
 }> = ({ mapping, streamDescriptorKey }) => {
-  const fieldsInStream = useGetFieldsInStream(streamDescriptorKey);
-
   if (!mapping) {
     return null;
   }
 
-  return (
-    <EncryptionForm streamDescriptorKey={streamDescriptorKey} mapping={mapping} targetFieldOptions={fieldsInStream} />
-  );
+  return <EncryptionForm streamDescriptorKey={streamDescriptorKey} mapping={mapping} />;
 };

@@ -2,15 +2,51 @@
 // NOTE: this settings is only discovered when running from oss/build.gradle
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 pluginManagement {
+
+  plugins {
+    val airbyteGradlePluginsVersion: String by settings
+    id("io.airbyte.gradle.jvm") version "${airbyteGradlePluginsVersion}" apply false
+    id("io.airbyte.gradle.jvm.app") version "${airbyteGradlePluginsVersion}" apply false
+    id("io.airbyte.gradle.jvm.lib") version "${airbyteGradlePluginsVersion}" apply false
+    id("io.airbyte.gradle.docker") version "${airbyteGradlePluginsVersion}" apply false
+    id("io.airbyte.gradle.publish") version "${airbyteGradlePluginsVersion}" apply false
+    id("io.airbyte.gradle.kube-reload") version "${airbyteGradlePluginsVersion}" apply false
+
+    id("com.github.eirnym.js2p") version "1.0" apply false
+    id("org.openapi.generator") version "7.10.0" apply false
+  }
+
   repositories {
-    // uncomment for local dev
-    // maven {
-    // name = "localPluginRepo"
-    // url = uri("../.gradle-plugins-local")
-    // }
+    maven {
+      name = "localPluginRepo"
+      url = uri("../.gradle-plugins-local")
+    }
     maven(url = "https://airbyte.mycloudrepo.io/public/repositories/airbyte-public-jars")
     gradlePluginPortal()
     maven(url = "https://oss.sonatype.org/content/repositories/snapshots")
+  }
+}
+
+buildscript {
+  dependencies {
+    classpath("com.bmuschko:gradle-docker-plugin:8.0.0")
+    // Plugin `com.bmuschko:gradle-docker-plugin:8.0.0` transitively depends on jackson 2.10.3,
+    // which is not binary compatible with jackson 2.14 that is used elsewhere.
+    // This causes `NoSuchMethodError` exceptions while building.
+    //
+    // Dependency chain:
+    // `com.bmuschko:gradle-docker-plugin:8.0.0` ->
+    // `com.github.docker-java:docker-java-core:3.2.14` ->
+    // `com.fasterxml.jackson.core:jackson-databind:2.10.3`
+    //
+    // As this is a third-party dependency, we cannot (without forking) update it to use a newer jackson version.
+    // There is however a PR that was created to update this version to the latest jackson version:
+    // https://github.com/docker-java/docker-java/pull/2056
+    //
+    // TODO: once oss has been inlined, revisit where the version of jackson is defined.
+    classpath("com.fasterxml.jackson.core:jackson-core:2.14.2")
+
+    classpath("org.codehaus.groovy:groovy-yaml:3.0.3")
   }
 }
 

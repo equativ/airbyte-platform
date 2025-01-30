@@ -1,8 +1,7 @@
-import merge from "lodash/merge";
-import React, { PropsWithChildren, createContext, useCallback, useContext, useState } from "react";
+import React, { PropsWithChildren, createContext, useCallback, useContext, useEffect, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 
-import { useCurrentConnection } from "core/api";
+import { useCurrentConnection, useValidateMappers } from "core/api";
 import {
   AirbyteStream,
   HashingMapperConfigurationMethod,
@@ -20,7 +19,8 @@ interface MappingContextType {
   updateLocalMapping: (
     streamDescriptorKey: string,
     mappingId: string,
-    updatedMapping: Partial<StreamMapperWithId>
+    updatedMapping: Partial<StreamMapperWithId>,
+    skipDirty?: boolean
   ) => void;
   reorderMappings: (streamDescriptorKey: string, newOrder: StreamMapperWithId[]) => void;
   clear: () => void;
@@ -28,8 +28,10 @@ interface MappingContextType {
   removeMapping: (streamDescriptorKey: string, mappingId: string) => void;
   addStreamToMappingsList: (streamDescriptorKey: string) => void;
   addMappingForStream: (streamDescriptorKey: string) => void;
-  validateMappings: () => void;
+  validateMappings: (streamDescriptorKey: string) => void;
+  validatingStreams: Set<string>;
   key: number;
+  hasMappingsChanged: boolean;
 }
 
 export const MAPPING_VALIDATION_ERROR_KEY = "mapping-validation-error";
@@ -48,22 +50,57 @@ export const getStreamDescriptorForKey = (key: string): StreamDescriptor => {
 export const MappingContextProvider: React.FC<PropsWithChildren> = ({ children }) => {
   const connection = useCurrentConnection();
   const savedStreamsWithMappings = useGetMappingsForCurrentConnection();
+  const { fetchQuery: validateMappingsFunc } = useValidateMappers();
   const { updateMappings } = useUpdateMappingsForCurrentConnection(connection.connectionId);
   const [streamsWithMappings, setStreamsWithMappings] = useState(savedStreamsWithMappings);
+  const [validatingStreams, setValidatingStreams] = useState<Set<string>>(new Set());
+  const [hasMappingsChanged, setHasMappingsChanged] = useState(false);
+
   // Key is used to force mapping forms to re-render if a user chooses to reset the form state
   const [key, setKey] = useState(1);
   const { unregisterNotificationById } = useNotificationService();
 
-  const validateMappings = () => {
-    console.log(`validateMappings`, streamsWithMappings);
-    // TOOD: actually validate mappings via the API :-)
-  };
+  const validateMappings = useCallback(
+    async (streamDescriptorKey: string) => {
+      const streamDescriptor = getStreamDescriptorForKey(streamDescriptorKey);
+
+      const validationResults = await validateMappingsFunc(streamDescriptor, streamsWithMappings[streamDescriptorKey]);
+
+      setValidatingStreams((prev) => {
+        if (!prev.has(streamDescriptorKey)) {
+          return prev;
+        }
+        const newSet = new Set(prev);
+        newSet.delete(streamDescriptorKey);
+        return newSet;
+      });
+
+      setStreamsWithMappings((prevMappings) => ({
+        ...prevMappings,
+        [streamDescriptorKey]: prevMappings[streamDescriptorKey].map((mapping) => ({
+          ...mapping,
+          validationError: validationResults.mappers.find((validationResult) => validationResult.id === mapping.id)
+            ?.validationError,
+        })),
+      }));
+    },
+    [streamsWithMappings, validateMappingsFunc]
+  );
+
+  useEffect(() => {
+    if (validatingStreams.size > 0) {
+      validatingStreams.forEach((streamDescriptorKey) => validateMappings(streamDescriptorKey));
+    }
+  }, [validateMappings, validatingStreams]);
 
   // Updates a specific mapping in the local state
   const updateLocalMapping = useCallback(
-    (streamDescriptorKey: string, mappingId: string, updatedMapping: Partial<StreamMapperWithId>) => {
-      console.log(`updating local mapping for stream ${streamDescriptorKey}`, updatedMapping);
-
+    (
+      streamDescriptorKey: string,
+      mappingId: string,
+      updatedMapping: Partial<StreamMapperWithId>,
+      skipDirty?: boolean
+    ) => {
       setStreamsWithMappings((prevMappings) => ({
         ...prevMappings,
         [streamDescriptorKey]: prevMappings[streamDescriptorKey].map((mapping) => {
@@ -71,17 +108,21 @@ export const MappingContextProvider: React.FC<PropsWithChildren> = ({ children }
             if (updatedMapping.type && updatedMapping.type !== mapping.type) {
               return updatedMapping as StreamMapperWithId;
             }
-            const merged = merge({}, mapping, updatedMapping);
-            return merged;
+            return { ...mapping, ...updatedMapping };
           }
           return mapping;
         }),
       }));
+
+      if (skipDirty !== true) {
+        setHasMappingsChanged(true);
+      }
+      setValidatingStreams((prev) => new Set(prev).add(streamDescriptorKey));
     },
     []
   );
 
-  const addMappingForStream = (streamDescriptorKey: string) => {
+  const addMappingForStream = useCallback((streamDescriptorKey: string) => {
     setStreamsWithMappings((prevMappings) => ({
       ...prevMappings,
       [streamDescriptorKey]: [
@@ -98,19 +139,23 @@ export const MappingContextProvider: React.FC<PropsWithChildren> = ({ children }
         },
       ],
     }));
-  };
+    setHasMappingsChanged(true);
+  }, []);
 
   // Reorders the mappings for a specific stream
-  const reorderMappings = (streamDescriptorKey: string, newOrder: StreamMapperWithId[]) => {
+  const reorderMappings = useCallback((streamDescriptorKey: string, newOrder: StreamMapperWithId[]) => {
     setStreamsWithMappings((prevMappings) => ({
       ...prevMappings,
       [streamDescriptorKey]: newOrder,
     }));
-  };
+    setHasMappingsChanged(true);
+    setValidatingStreams((prev) => new Set(prev).add(streamDescriptorKey));
+  }, []);
 
   // Clears the mappings back to the saved state
   const clear = () => {
     setKey((prevKey) => prevKey + 1);
+    setHasMappingsChanged(false);
     setStreamsWithMappings(savedStreamsWithMappings);
     unregisterNotificationById(MAPPING_VALIDATION_ERROR_KEY);
   };
@@ -124,11 +169,16 @@ export const MappingContextProvider: React.FC<PropsWithChildren> = ({ children }
         [streamDescriptorKey]: mappingsForStream,
       };
     });
+    setHasMappingsChanged(true);
+    setValidatingStreams((prev) => new Set(prev).add(streamDescriptorKey));
   };
 
   // Submits the current mappings state to the backend
   const submitMappings = async () => {
-    await updateMappings(streamsWithMappings);
+    const result = await updateMappings(streamsWithMappings);
+    if (result.success === true) {
+      setHasMappingsChanged(false);
+    }
     return Promise.resolve();
   };
 
@@ -147,10 +197,12 @@ export const MappingContextProvider: React.FC<PropsWithChildren> = ({ children }
         },
       ],
     };
+
     setStreamsWithMappings((prevMappings) => ({
       ...prevMappings,
       ...newMapping,
     }));
+    setHasMappingsChanged(true);
   };
 
   return (
@@ -165,7 +217,9 @@ export const MappingContextProvider: React.FC<PropsWithChildren> = ({ children }
         addStreamToMappingsList,
         addMappingForStream,
         validateMappings,
+        validatingStreams,
         key,
+        hasMappingsChanged,
       }}
     >
       {children}

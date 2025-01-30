@@ -1,5 +1,5 @@
 [versions]
-airbyte-protocol = "0.14.1"
+airbyte-protocol = "0.14.2"
 azure-kevault-secrets = "4.3.5"
 azure-identity = "1.3.5"
 azure-storage = "12.27.1"
@@ -21,12 +21,12 @@ jooq = "3.19.7"
 junit-jupiter = "5.11.3"
 keycloak = "25.0.2" # should be kept in sync with airbyte-keycloak/Dockerfile base image version
 kotest = "5.9.1"
-kotlin-logging = "5.1.0"
+kotlin-logging = "7.0.3"
 kubernetes-client = "7.0.1"
 logback = "1.5.15"
-micronaut = "4.7.3"
+micronaut = "4.7.4"
 micronaut-cache = "5.1.0"
-micronaut-core = "4.7.10"
+micronaut-core = "4.7.11"
 micronaut-data = "4.10.5"
 micronaut-email = "2.7.0"
 micronaut-jaxrs = "4.7.2"
@@ -59,7 +59,6 @@ apache-ant = { module = "org.apache.ant:ant", version = "1.10.14" }
 apache-commons = { module = "org.apache.commons:commons-compress", version = "1.26.1" }
 apache-commons-cli = { module = "commons-cli:commons-cli", version = "1.4" }
 apache-commons-collections = { module = "org.apache.commons:commons-collections4", version = "4.4" }
-apache-commons-lang = { module = "org.apache.commons:commons-lang3", version = "3.11" }
 apache-commons-text = { module = "org.apache.commons:commons-text", version = "1.10.0" }
 apache-cxf-core = { module = "org.apache.cxf:cxf-core", version = "3.4.2" }
 apache-mime4j-core = { module = "org.apache.james:apache-mime4j-core", version = "0.8.10" } # Transitive dependency of keycloak. Forced upgrade to 0.8.10 from 0.8.9
@@ -141,13 +140,14 @@ junit-pioneer = { module = "org.junit-pioneer:junit-pioneer", version = "1.7.1" 
 keycloak-admin-client = { module = "org.keycloak:keycloak-admin-client", version.ref = "keycloak" }
 keycloak-client-registration-api = { module = "org.keycloak:keycloak-client-registration-api", version.ref = "keycloak" }
 kotest-assertions = { module = "io.kotest:kotest-assertions-core", version.ref = "kotest" }
-kotlin-coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = "1.9.0" }
+kotlin-coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version = "1.10.1" }
 kotlin-logging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlin-logging" }
-kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version = "1.9.10" }
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version = "2.1.0" }
 kotlin-test-runner-junit5 = { module = "io.kotlintest:kotlintest-runner-junit5", version = "3.4.2" }
 kubernetes-client = { module = "io.fabric8:kubernetes-client", version.ref = "kubernetes-client" }
 kubernetes-client-api = { module = "io.fabric8:kubernetes-client-api", version.ref = "kubernetes-client" }
 kubernetes-httpclient-okhttp = { module = "io.fabric8:kubernetes-httpclient-okhttp", version.ref = "kubernetes-client" }
+kubernetes-mock-server = { module = "io.fabric8:kubernetes-server-mock", version.ref = "kubernetes-client" }
 launchdarkly = { module = "com.launchdarkly:launchdarkly-java-server-sdk", version = "7.2.6" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 logback-core = { module = "ch.qos.logback:logback-core", version.ref = "logback" }
@@ -254,7 +254,7 @@ micronaut-test-junit5 = { module = "io.micronaut.test:micronaut-test-junit5", ve
 micronaut-validation = { module = "io.micronaut.validation:micronaut-validation", version = "4.8.0" }
 
 [bundles]
-apache = ["apache-commons", "apache-commons-lang"]
+apache = ["apache-commons"]
 bouncycastle = ["bouncycastle-bcprov", "bouncycastle-bcpkix"]
 datadog = ["datadog-trace-api", "datadog-trace-ot"]
 flyway = ["flyway-core", "flyway-postgresql"]
