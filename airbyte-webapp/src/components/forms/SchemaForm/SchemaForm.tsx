@@ -2,8 +2,9 @@ import { ExtendedJSONSchema } from "json-schema-to-ts";
 import isBoolean from "lodash/isBoolean";
 import { createContext, useCallback, useContext, useMemo, useRef } from "react";
 import { DefaultValues, FieldValues, FormProvider, get, useForm, useFormContext } from "react-hook-form";
+import { useIntl } from "react-intl";
 
-import { DynamicValidator } from "./DynamicValidator";
+import { dynamicValidator } from "./dynamicValidator";
 import { RefsHandlerProvider } from "./RefsHandler";
 import {
   AirbyteJsonSchema,
@@ -12,49 +13,35 @@ import {
   resolveTopLevelRef,
   isEmptyObject,
   AirbyteJsonSchemaExtention,
-  unnestPath,
 } from "./utils";
 import { FormSubmissionHandler } from "../Form";
 
-type SchemaFormProps<JsonSchema extends AirbyteJsonSchema, TsSchema extends FieldValues> =
-  | RootSchemaFormProps<JsonSchema, TsSchema>
-  | NestedSchemaFormProps<JsonSchema>;
-export const SchemaForm = <JsonSchema extends AirbyteJsonSchema, TsSchema extends FieldValues>(
-  props: React.PropsWithChildren<SchemaFormProps<JsonSchema, TsSchema>>
-) => {
-  if ("nestedUnderPath" in props) {
-    return <NestedSchemaForm {...props} />;
-  }
-
-  return <RootSchemaForm {...props} />;
-};
-
-interface BaseSchemaFormProps<JsonSchema extends AirbyteJsonSchema> {
+interface SchemaFormProps<JsonSchema extends AirbyteJsonSchema, TsSchema extends FieldValues> {
   schema: JsonSchema;
-  refTargetPath?: string;
-  onlyShowErrorIfTouched?: boolean;
-}
-
-type RootSchemaFormProps<
-  JsonSchema extends AirbyteJsonSchema,
-  TsSchema extends FieldValues,
-> = BaseSchemaFormProps<JsonSchema> & {
   onSubmit?: FormSubmissionHandler<TsSchema>;
   onSuccess?: (values: TsSchema) => void;
   onError?: (e: Error, values: TsSchema) => void;
   initialValues?: DefaultValues<TsSchema>;
-};
+  formClassName?: string;
+  refTargetPath?: string;
+  onlyShowErrorIfTouched?: boolean;
+  disableFormControlsUnderPath?: string;
+  disableValidation?: boolean;
+}
 
-const RootSchemaForm = <JsonSchema extends AirbyteJsonSchema, TsSchema extends FieldValues>({
+export const SchemaForm = <JsonSchema extends AirbyteJsonSchema, TsSchema extends FieldValues>({
   children,
   schema,
   onSubmit,
   onSuccess,
   onError,
   initialValues,
+  formClassName,
   refTargetPath,
   onlyShowErrorIfTouched,
-}: React.PropsWithChildren<RootSchemaFormProps<JsonSchema, TsSchema>>) => {
+  disableFormControlsUnderPath,
+}: React.PropsWithChildren<SchemaFormProps<JsonSchema, TsSchema>>) => {
+  const { formatMessage } = useIntl();
   const rawStartingValues = useMemo(
     () => initialValues ?? extractDefaultValuesFromSchema<TsSchema>(schema, schema),
     [initialValues, schema]
@@ -64,6 +51,7 @@ const RootSchemaForm = <JsonSchema extends AirbyteJsonSchema, TsSchema extends F
     criteriaMode: "all",
     mode: "onChange",
     defaultValues: resolvedStartingValues,
+    resolver: dynamicValidator(schema, formatMessage),
   });
 
   const processSubmission = useCallback(
@@ -89,48 +77,24 @@ const RootSchemaForm = <JsonSchema extends AirbyteJsonSchema, TsSchema extends F
 
   return (
     <FormProvider {...methods}>
-      <SchemaFormProvider schema={schema} onlyShowErrorIfTouched={onlyShowErrorIfTouched}>
-        <DynamicValidator />
+      <SchemaFormProvider
+        schema={schema}
+        onlyShowErrorIfTouched={onlyShowErrorIfTouched}
+        disableFormControlsUnderPath={disableFormControlsUnderPath}
+      >
         <RefsHandlerProvider values={rawStartingValues} refTargetPath={refTargetPath}>
-          <form onSubmit={methods.handleSubmit(processSubmission)}>{children}</form>
+          <form className={formClassName} onSubmit={methods.handleSubmit(processSubmission)}>
+            {children}
+          </form>
         </RefsHandlerProvider>
       </SchemaFormProvider>
     </FormProvider>
   );
 };
 
-type NestedSchemaFormProps<JsonSchema extends AirbyteJsonSchema> = BaseSchemaFormProps<JsonSchema> & {
-  nestedUnderPath: string;
-};
-
-const NestedSchemaForm = <JsonSchema extends AirbyteJsonSchema>({
-  children,
-  schema,
-  nestedUnderPath,
-  refTargetPath,
-  onlyShowErrorIfTouched,
-}: React.PropsWithChildren<NestedSchemaFormProps<JsonSchema>>) => {
-  const { getValues } = useFormContext();
-  const rawStartingValues = useMemo(() => getValues(nestedUnderPath), [getValues, nestedUnderPath]);
-
-  return (
-    <SchemaFormProvider
-      schema={schema}
-      nestedUnderPath={nestedUnderPath}
-      onlyShowErrorIfTouched={onlyShowErrorIfTouched}
-    >
-      <DynamicValidator nestedUnderPath={nestedUnderPath} />
-      <RefsHandlerProvider values={rawStartingValues} refTargetPath={refTargetPath}>
-        {children}
-      </RefsHandlerProvider>
-    </SchemaFormProvider>
-  );
-};
-
 interface SchemaFormContextValue {
   schema: AirbyteJsonSchema;
   onlyShowErrorIfTouched?: boolean;
-  nestedUnderPath?: string;
   extractDefaultValuesFromSchema: <T extends FieldValues>(fieldSchema: AirbyteJsonSchema) => DefaultValues<T>;
   verifyArrayItems: (
     items:
@@ -147,6 +111,7 @@ interface SchemaFormContextValue {
   registerRenderedPath: (path: string) => void;
   isPathRendered: (path: string) => boolean;
   isRequired: (path: string) => boolean;
+  disableFormControlsUnderPath?: string;
 }
 const SchemaFormContext = createContext<SchemaFormContextValue | undefined>(undefined);
 export const useSchemaForm = () => {
@@ -160,13 +125,13 @@ export const useSchemaForm = () => {
 interface SchemaFormProviderProps {
   schema: AirbyteJsonSchema;
   onlyShowErrorIfTouched?: boolean;
-  nestedUnderPath?: string;
+  disableFormControlsUnderPath?: string;
 }
 const SchemaFormProvider: React.FC<React.PropsWithChildren<SchemaFormProviderProps>> = ({
   children,
   schema,
   onlyShowErrorIfTouched,
-  nestedUnderPath,
+  disableFormControlsUnderPath,
 }) => {
   const { getValues } = useFormContext();
   // Use a ref instead of state for rendered paths to prevent temporarily rendering fields twice
@@ -213,14 +178,8 @@ const SchemaFormProvider: React.FC<React.PropsWithChildren<SchemaFormProviderPro
 
   const getSchemaAtPathCallback = useCallback(
     (path: string, resolveMultiOptionSchema?: boolean) =>
-      getSchemaAtPath(
-        path,
-        schema,
-        nestedUnderPath ? getValues(nestedUnderPath) : getValues(),
-        nestedUnderPath,
-        resolveMultiOptionSchema
-      ),
-    [schema, getValues, nestedUnderPath]
+      getSchemaAtPath(path, schema, getValues(), resolveMultiOptionSchema),
+    [schema, getValues]
   );
 
   const isRequired = useCallback(
@@ -231,9 +190,6 @@ const SchemaFormProvider: React.FC<React.PropsWithChildren<SchemaFormProviderPro
         return true;
       }
       const parentPath = pathParts.slice(0, -1).join(".");
-      if (nestedUnderPath && nestedUnderPath.startsWith(parentPath)) {
-        return true;
-      }
       const parentSchema = getSchemaAtPathCallback(parentPath, true);
       if (parentSchema?.required?.includes(fieldName)) {
         return true;
@@ -241,7 +197,7 @@ const SchemaFormProvider: React.FC<React.PropsWithChildren<SchemaFormProviderPro
 
       return false;
     },
-    [getSchemaAtPathCallback, nestedUnderPath]
+    [getSchemaAtPathCallback]
   );
 
   return (
@@ -249,7 +205,6 @@ const SchemaFormProvider: React.FC<React.PropsWithChildren<SchemaFormProviderPro
       value={{
         schema,
         onlyShowErrorIfTouched,
-        nestedUnderPath,
         extractDefaultValuesFromSchema: extractDefaultValuesFromSchemaCallback,
         verifyArrayItems: verifyArrayItemsCallback,
         getSelectedOptionSchema: getSelectedOptionSchemaCallback,
@@ -258,6 +213,7 @@ const SchemaFormProvider: React.FC<React.PropsWithChildren<SchemaFormProviderPro
         registerRenderedPath,
         isPathRendered,
         isRequired,
+        disableFormControlsUnderPath,
       }}
     >
       {children}
@@ -331,7 +287,7 @@ const extractDefaultValuesFromSchema = <T extends FieldValues>(
     }
 
     const nestedDefaultValue = extractDefaultValuesFromSchema(resolvedProperty, rootSchema);
-    if (nestedDefaultValue !== undefined && nestedDefaultValue !== null && !isEmptyObject(nestedDefaultValue)) {
+    if (nestedDefaultValue !== undefined && !isEmptyObject(nestedDefaultValue)) {
       defaultValues[key] = nestedDefaultValue;
     }
   });
@@ -467,15 +423,13 @@ export const getSchemaAtPath = (
   path: string,
   rootSchema: AirbyteJsonSchema,
   data: FieldValues,
-  nestedUnderPath?: string,
   resolveMultiOptionSchema?: boolean
 ): AirbyteJsonSchema => {
-  const targetPath = unnestPath(path, nestedUnderPath);
-  if (!targetPath) {
+  if (!path) {
     return rootSchema;
   }
 
-  const pathParts = targetPath.split(".");
+  const pathParts = path.split(".");
   let currentProperty = rootSchema;
   let currentPath = "";
 
@@ -485,7 +439,7 @@ export const getSchemaAtPath = (
     while (optionSchemas && !currentProperty.properties) {
       const selectedOption = getSelectedOptionSchema(optionSchemas, get(data, currentPath), rootSchema);
       if (!selectedOption) {
-        throw new Error(`No matching schema found for path: ${currentPath}`);
+        return currentProperty;
       }
       currentProperty = resolveTopLevelRef(rootSchema, selectedOption);
       optionSchemas = currentProperty.oneOf ?? currentProperty.anyOf;
@@ -504,12 +458,12 @@ export const getSchemaAtPath = (
         ) {
           // For arbitrary keys, use the additionalProperties schema
           nextProperty = currentProperty.additionalProperties;
-        } else if (currentProperty.additionalProperties === true) {
+        } else if (currentProperty.additionalProperties !== false) {
           // Empty schema will cause no validation to be performed as desired
           return {};
         } else {
           throw new Error(
-            `Invalid schema path: ${targetPath}. No properties or additionalProperties found at subpath ${currentPath}`
+            `Invalid schema path: '${path}'. No properties found or additionalProperties not allowed at subpath '${currentPath}'`
           );
         }
       } else {
@@ -521,7 +475,7 @@ export const getSchemaAtPath = (
         throw new Error(`Invalid schema path: ${currentPath}. Property ${part} not found.`);
       }
       if (typeof nextProperty === "boolean") {
-        throw new Error(`Invalid schema path: ${targetPath}. Property ${part} is a boolean, not an object.`);
+        throw new Error(`Invalid schema path: ${path}. Property ${part} is a boolean, not an object.`);
       }
 
       currentProperty = resolveTopLevelRef(rootSchema, nextProperty);

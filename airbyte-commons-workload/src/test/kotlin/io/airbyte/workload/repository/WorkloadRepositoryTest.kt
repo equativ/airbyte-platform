@@ -20,6 +20,7 @@ import org.jooq.SQLDialect
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -318,6 +319,175 @@ class WorkloadRepositoryTest {
   }
 
   @ParameterizedTest
+  @EnumSource(WorkloadStatus::class, names = ["CLAIMED", "LAUNCHED", "RUNNING"])
+  fun `heartbeat a workload updates the status if the workload was previously claimed, launched or running`(status: WorkloadStatus) {
+    val workloadId = Fixtures.newWorkloadId()
+    val workload =
+      Fixtures.workload(
+        id = workloadId,
+        dataplaneId = null,
+        status = status,
+        deadline = OffsetDateTime.now(),
+      )
+    workloadRepo.save(workload)
+
+    val safeguardWorkloadId = Fixtures.newWorkloadId()
+    val safeguardWorkload = workload.copy(id = safeguardWorkloadId)
+    workloadRepo.save(safeguardWorkload)
+
+    val newDeadline = OffsetDateTime.now().plusMinutes(10)
+    val actualWorkload = workloadRepo.heartbeat(workloadId, deadline = newDeadline)
+
+    assertEquals(workloadId, actualWorkload?.id)
+    assertEquals(WorkloadStatus.RUNNING, actualWorkload?.status)
+    assertEquals(newDeadline.truncateToTestPrecision(), actualWorkload?.deadline?.truncateToTestPrecision())
+    assertNotEquals(workload.lastHeartbeatAt?.truncateToTestPrecision(), actualWorkload?.lastHeartbeatAt?.truncateToTestPrecision())
+
+    val safeguardCheck = workloadRepo.findById(safeguardWorkloadId)
+    assertEquals(safeguardWorkload.status, safeguardCheck.get().status)
+  }
+
+  @ParameterizedTest
+  @EnumSource(WorkloadStatus::class, names = ["PENDING", "CANCELLED", "FAILURE", "SUCCESS"])
+  fun `heartbeat a workload that isn't claimed or launched doesn't update the workload and returns null`(status: WorkloadStatus) {
+    val workloadId = Fixtures.newWorkloadId()
+    val workload =
+      Fixtures.workload(
+        id = workloadId,
+        dataplaneId = null,
+        status = status,
+        deadline = OffsetDateTime.now(),
+      )
+    workloadRepo.save(workload)
+    val expected = workloadRepo.findById(workloadId).get()
+
+    val safeguardWorkloadId = Fixtures.newWorkloadId()
+    val safeguardWorkload = workload.copy(id = safeguardWorkloadId)
+    workloadRepo.save(safeguardWorkload)
+
+    val response = workloadRepo.heartbeat(workloadId, OffsetDateTime.now().plusMinutes(5))
+    assertNull(response)
+
+    val actualWorkload = workloadRepo.findById(workloadId).get()
+    assertEquals(expected, actualWorkload)
+
+    val safeguardCheck = workloadRepo.findById(safeguardWorkloadId)
+    assertEquals(safeguardWorkload.status, safeguardCheck.get().status)
+  }
+
+  @ParameterizedTest
+  @EnumSource(WorkloadStatus::class, names = ["CLAIMED", "LAUNCHED"])
+  fun `launch a workload updates the status if the workload was previously claimed or launched`(status: WorkloadStatus) {
+    val workloadId = Fixtures.newWorkloadId()
+    val workload =
+      Fixtures.workload(
+        id = workloadId,
+        dataplaneId = null,
+        status = status,
+        deadline = OffsetDateTime.now(),
+      )
+    workloadRepo.save(workload)
+
+    val safeguardWorkloadId = Fixtures.newWorkloadId()
+    val safeguardWorkload = workload.copy(id = safeguardWorkloadId)
+    workloadRepo.save(safeguardWorkload)
+
+    val newDeadline = OffsetDateTime.now().plusMinutes(10)
+    val actualWorkload = workloadRepo.launch(workloadId, deadline = newDeadline)
+
+    assertEquals(workloadId, actualWorkload?.id)
+    assertEquals(WorkloadStatus.LAUNCHED, actualWorkload?.status)
+    assertEquals(newDeadline.truncateToTestPrecision(), actualWorkload?.deadline?.truncateToTestPrecision())
+
+    val safeguardCheck = workloadRepo.findById(safeguardWorkloadId)
+    assertEquals(safeguardWorkload.status, safeguardCheck.get().status)
+  }
+
+  @ParameterizedTest
+  @EnumSource(WorkloadStatus::class, names = ["PENDING", "RUNNING", "CANCELLED", "FAILURE", "SUCCESS"])
+  fun `launch a workload that isn't claimed or launched doesn't update the workload and returns null`(status: WorkloadStatus) {
+    val workloadId = Fixtures.newWorkloadId()
+    val workload =
+      Fixtures.workload(
+        id = workloadId,
+        dataplaneId = null,
+        status = status,
+        deadline = OffsetDateTime.now(),
+      )
+    workloadRepo.save(workload)
+    val expected = workloadRepo.findById(workloadId).get()
+
+    val safeguardWorkloadId = Fixtures.newWorkloadId()
+    val safeguardWorkload = workload.copy(id = safeguardWorkloadId)
+    workloadRepo.save(safeguardWorkload)
+
+    val response = workloadRepo.launch(workloadId, OffsetDateTime.now().plusMinutes(5))
+    assertNull(response)
+
+    val actualWorkload = workloadRepo.findById(workloadId).get()
+    assertEquals(expected, actualWorkload)
+
+    val safeguardCheck = workloadRepo.findById(safeguardWorkloadId)
+    assertEquals(safeguardWorkload.status, safeguardCheck.get().status)
+  }
+
+  @ParameterizedTest
+  @EnumSource(WorkloadStatus::class, names = ["CLAIMED", "LAUNCHED", "RUNNING"])
+  fun `running updates the status if the workload was previously claimed, launched or running`(status: WorkloadStatus) {
+    val workloadId = Fixtures.newWorkloadId()
+    val workload =
+      Fixtures.workload(
+        id = workloadId,
+        dataplaneId = null,
+        status = status,
+        deadline = OffsetDateTime.now(),
+      )
+    workloadRepo.save(workload)
+
+    val safeguardWorkloadId = Fixtures.newWorkloadId()
+    val safeguardWorkload = workload.copy(id = safeguardWorkloadId)
+    workloadRepo.save(safeguardWorkload)
+
+    val newDeadline = OffsetDateTime.now().plusMinutes(10)
+    val actualWorkload = workloadRepo.running(workloadId, deadline = newDeadline)
+
+    assertEquals(workloadId, actualWorkload?.id)
+    assertEquals(WorkloadStatus.RUNNING, actualWorkload?.status)
+    assertEquals(newDeadline.truncateToTestPrecision(), actualWorkload?.deadline?.truncateToTestPrecision())
+
+    val safeguardCheck = workloadRepo.findById(safeguardWorkloadId)
+    assertEquals(safeguardWorkload.status, safeguardCheck.get().status)
+  }
+
+  @ParameterizedTest
+  @EnumSource(WorkloadStatus::class, names = ["PENDING", "CANCELLED", "FAILURE", "SUCCESS"])
+  fun `running for a workload that isn't claimed, launched or running doesn't update the workload and returns null`(status: WorkloadStatus) {
+    val workloadId = Fixtures.newWorkloadId()
+    val workload =
+      Fixtures.workload(
+        id = workloadId,
+        dataplaneId = null,
+        status = status,
+        deadline = OffsetDateTime.now(),
+      )
+    workloadRepo.save(workload)
+    val expected = workloadRepo.findById(workloadId).get()
+
+    val safeguardWorkloadId = Fixtures.newWorkloadId()
+    val safeguardWorkload = workload.copy(id = safeguardWorkloadId)
+    workloadRepo.save(safeguardWorkload)
+
+    val response = workloadRepo.running(workloadId, OffsetDateTime.now().plusMinutes(5))
+    assertNull(response)
+
+    val actualWorkload = workloadRepo.findById(workloadId).get()
+    assertEquals(expected, actualWorkload)
+
+    val safeguardCheck = workloadRepo.findById(safeguardWorkloadId)
+    assertEquals(safeguardWorkload.status, safeguardCheck.get().status)
+  }
+
+  @ParameterizedTest
   @EnumSource(WorkloadStatus::class, names = ["PENDING", "CLAIMED", "LAUNCHED", "RUNNING"])
   fun `succeeding a non terminal workload updates the status to cancel and clears the deadline`(status: WorkloadStatus) {
     val workloadId = Fixtures.newWorkloadId()
@@ -370,80 +540,6 @@ class WorkloadRepositoryTest {
 
     val safeguardCheck = workloadRepo.findById(safeguardWorkloadId)
     assertEquals(safeguardWorkload.status, safeguardCheck.get().status)
-  }
-
-  @Test
-  fun `updating a workload status and deadline should update the workload`() {
-    val workloadId = Fixtures.newWorkloadId()
-    val workload =
-      Fixtures.workload(
-        id = workloadId,
-        dataplaneId = null,
-        status = WorkloadStatus.PENDING,
-      )
-    val newDeadline = Fixtures.newTimestamp().plusMinutes(10)
-    workloadRepo.save(workload)
-    workloadRepo.update(workloadId, WorkloadStatus.RUNNING, newDeadline)
-    var persistedWorkload = workloadRepo.findById(workloadId)
-    assertTrue(persistedWorkload.isPresent)
-    assertEquals(WorkloadStatus.RUNNING, persistedWorkload.get().status)
-    assertEquals(newDeadline.toEpochSecond(), persistedWorkload.get().deadline!!.toEpochSecond())
-
-    val newDeadline2 = Fixtures.newTimestamp().plusMinutes(20)
-    workloadRepo.update(workloadId, WorkloadStatus.FAILURE, newDeadline2)
-    persistedWorkload = workloadRepo.findById(workloadId)
-    assertTrue(persistedWorkload.isPresent)
-    assertEquals(WorkloadStatus.FAILURE, persistedWorkload.get().status)
-    assertEquals(newDeadline2.toEpochSecond(), persistedWorkload.get().deadline!!.toEpochSecond())
-  }
-
-  @Test
-  fun `heartbeat should update deadline and lastHeartbeatAt`() {
-    val workloadId = Fixtures.newWorkloadId()
-    val workload =
-      Fixtures.workload(
-        id = workloadId,
-        dataplaneId = null,
-        status = WorkloadStatus.PENDING,
-      )
-    workloadRepo.save(workload)
-    val now = Fixtures.newTimestamp()
-    workloadRepo.update(workloadId, WorkloadStatus.RUNNING, now, now)
-    var persistedWorkload = workloadRepo.findById(workloadId)
-    assertTrue(persistedWorkload.isPresent)
-    // Using .toEpochSecond() here because of dagger, it is passing locally but there is nano second errors on dagger
-    assertEquals(now.toEpochSecond(), persistedWorkload.get().lastHeartbeatAt?.toEpochSecond())
-    assertEquals(now.toEpochSecond(), persistedWorkload.get().deadline?.toEpochSecond())
-    assertEquals(WorkloadStatus.RUNNING, persistedWorkload.get().status)
-
-    val nowPlusOneMinute = now.plus(1, ChronoUnit.MINUTES)
-    workloadRepo.update(workloadId, WorkloadStatus.RUNNING, nowPlusOneMinute, nowPlusOneMinute)
-    persistedWorkload = workloadRepo.findById(workloadId)
-    assertTrue(persistedWorkload.isPresent)
-    assertEquals(nowPlusOneMinute.toEpochSecond(), persistedWorkload.get().lastHeartbeatAt?.toEpochSecond())
-    assertEquals(nowPlusOneMinute.toEpochSecond(), persistedWorkload.get().deadline?.toEpochSecond())
-  }
-
-  // TODO: we should delete this once we are using atomic claims by default because it should be the only way to set a dataplane.
-  @Test
-  fun `updating a workload with a dataplane should update the workload`() {
-    val workloadId = Fixtures.newWorkloadId()
-    val workload =
-      Fixtures.workload(
-        id = workloadId,
-        dataplaneId = null,
-        status = WorkloadStatus.PENDING,
-      )
-    workloadRepo.save(workload)
-    workloadRepo.update(workloadId, "dataplaneId1", WorkloadStatus.RUNNING, defaultDeadline)
-    var persistedWorkload = workloadRepo.findById(workloadId)
-    assertTrue(persistedWorkload.isPresent)
-    assertEquals("dataplaneId1", persistedWorkload.get().dataplaneId)
-
-    workloadRepo.update(workloadId, "dataplaneId2", WorkloadStatus.RUNNING, defaultDeadline)
-    persistedWorkload = workloadRepo.findById(workloadId)
-    assertTrue(persistedWorkload.isPresent)
-    assertEquals("dataplaneId2", persistedWorkload.get().dataplaneId)
   }
 
   @Test

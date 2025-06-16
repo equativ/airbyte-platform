@@ -1,15 +1,21 @@
 import { useMemo } from "react";
+import { useWatch } from "react-hook-form";
+import { FormattedMessage } from "react-intl";
+import { ReactMarkdown } from "react-markdown/lib/react-markdown";
 
 import { LabelInfo } from "components/Label";
+import { Badge } from "components/ui/Badge";
+import { Tooltip } from "components/ui/Tooltip";
 
 import { ArrayOfObjectsControl } from "./ArrayOfObjectsControl";
 import { MultiOptionControl } from "./MultiOptionControl";
 import { ObjectControl } from "./ObjectControl";
+import styles from "./SchemaFormControl.module.scss";
 import { OverrideByPath, BaseControlProps } from "./types";
 import { FormControl } from "../../FormControl";
 import { LinkComponentsToggle } from "../LinkComponentsToggle";
 import { useSchemaForm } from "../SchemaForm";
-import { AirbyteJsonSchema, displayName, nestPath, resolveTopLevelRef } from "../utils";
+import { AirbyteJsonSchema, displayName, resolveTopLevelRef } from "../utils";
 
 interface SchemaFormControlProps {
   /**
@@ -68,12 +74,10 @@ export const SchemaFormControl = ({
     getSchemaAtPath,
     registerRenderedPath,
     onlyShowErrorIfTouched,
-    nestedUnderPath,
     verifyArrayItems,
     isRequired: isPathRequired,
+    disableFormControlsUnderPath,
   } = useSchemaForm();
-
-  const targetPath = useMemo(() => nestPath(path, nestedUnderPath), [nestedUnderPath, path]);
 
   // Register this path synchronously during render
   if (!skipRenderedPathRegistration && path) {
@@ -87,12 +91,14 @@ export const SchemaFormControl = ({
       return !isRequired;
     }
 
-    if (!path || targetPath === nestedUnderPath) {
+    if (!path) {
       return false;
     }
 
     return !isPathRequired(path);
-  }, [isPathRequired, isRequired, nestedUnderPath, path, targetPath]);
+  }, [isPathRequired, isRequired, path]);
+
+  const value = useWatch({ name: path });
 
   // ~ declarative_component_schema type $parameters handling ~
   if (path.includes("$parameters")) {
@@ -104,22 +110,28 @@ export const SchemaFormControl = ({
     return overrideByPath[path];
   }
 
-  if (targetSchema.deprecated) {
+  if (targetSchema.deprecated && value === undefined) {
     return null;
   }
 
   const baseProps: BaseControlProps = {
-    name: targetPath,
+    name: path,
     label: titleOverride ? titleOverride : titleOverride === null ? undefined : displayName(path, targetSchema.title),
     labelTooltip:
       targetSchema.description || targetSchema.examples ? (
         <LabelInfo description={targetSchema.description} examples={targetSchema.examples} />
       ) : undefined,
     optional: isOptional,
-    header: <LinkComponentsToggle path={path} fieldSchema={targetSchema} />,
+    header: targetSchema.deprecated ? (
+      <DeprecatedBadge message={targetSchema.deprecation_message} />
+    ) : (
+      <LinkComponentsToggle path={path} fieldSchema={targetSchema} />
+    ),
     containerControlClassName: className,
     onlyShowErrorIfTouched,
     placeholder,
+    "data-field-path": path,
+    disabled: !!disableFormControlsUnderPath && path.startsWith(disableFormControlsUnderPath),
   };
 
   if (targetSchema.oneOf || targetSchema.anyOf) {
@@ -188,4 +200,16 @@ export const SchemaFormControl = ({
   }
 
   return null;
+};
+
+const DeprecatedBadge = ({ message }: { message?: string }) => {
+  return message ? (
+    <Tooltip control={<Badge variant="grey">Deprecated</Badge>} placement="top">
+      <ReactMarkdown className={styles.deprecatedTooltip}>{message}</ReactMarkdown>
+    </Tooltip>
+  ) : (
+    <Badge variant="grey">
+      <FormattedMessage id="form.deprecated" />
+    </Badge>
+  );
 };

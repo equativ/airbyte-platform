@@ -13,7 +13,7 @@ object LogConnectorMessages : EnvVar(envVar = "LOG_CONNECTOR_MESSAGES")
 
 object RemoveValidationLimit : Temporary<Boolean>(key = "validation.removeValidationLimit", default = false)
 
-object FieldSelectionEnabled : Temporary<Boolean>(key = "connection.columnSelection", default = false)
+object FieldSelectionEnabled : Temporary<Boolean>(key = "connection.columnSelection", default = true)
 
 object CheckWithCatalog : Temporary<Boolean>(key = "check-with-catalog", default = false)
 
@@ -68,6 +68,8 @@ object HideActorDefinitionFromList : Permanent<Boolean>(key = "connectors.hideAc
 object EnableAsyncProfiler : Permanent<Boolean>(key = "platform.enable.async.profiler", default = false)
 
 object SocketTest : Temporary<Boolean>(key = "platform.socket-test", default = false)
+
+object SocketFormat : Temporary<String>(key = "platform.socket-format", default = "")
 
 object SocketCount : Temporary<Int>(key = "platform.socket-count", default = -1)
 
@@ -198,14 +200,14 @@ object ReadSecretReferenceIdsInConfigs : Temporary<Boolean>(key = "platform.read
 
 object EnableDefaultSecretStorage : Temporary<Boolean>(key = "platform.use-default-secret-storage", default = false)
 
+object CleanupDanglingSecretConfigs : Temporary<Boolean>(key = "platform.cleanup-dangling-secret-configs", default = false)
+
 object CanCleanWorkloadQueue : Temporary<Boolean>(key = "platform.can-clean-workload-queue", default = false)
 
 object StoreAuditLogs : Temporary<Boolean>(key = "platform.store-audit-logs", default = false)
 
 object UseCommandCheck : Temporary<Boolean>(key = "platform.use-command-check", default = false)
 
-object ProxyObjectStorage : Temporary<Boolean>("platform.proxy-object-storage", default = false)
-
 object UseSyncV2 : Temporary<Boolean>(key = "platform.use-sync-v2", default = false)
 
-object UseAtomicWorkloadStateTransitions : Temporary<Boolean>(key = "platform.use-atomic-workload-state-transitions", default = false)
+object EnableDestinationCatalogValidation : Temporary<Boolean>(key = "platform.enable-destination-catalog-validation", default = false)

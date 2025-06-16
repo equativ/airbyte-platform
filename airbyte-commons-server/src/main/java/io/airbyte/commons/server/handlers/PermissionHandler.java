@@ -106,13 +106,6 @@ public class PermissionHandler {
         .withPermissionType(Permission.PermissionType.INSTANCE_ADMIN));
   }
 
-  public void createDataplane(final UUID userId) throws PermissionRedundantException {
-    permissionDao.createPermission(new Permission()
-        .withPermissionId(uuidGenerator.get())
-        .withUserId(userId)
-        .withPermissionType(Permission.PermissionType.DATAPLANE));
-  }
-
   public Permission getPermissionById(final UUID permissionId) throws ConfigNotFoundException, IOException {
     final Optional<Permission> permission =
         permissionPersistence.getPermission(permissionId);
@@ -433,6 +426,10 @@ public class PermissionHandler {
 
   public List<Permission> getPermissionsByAuthUserId(final String authUserId) {
     return permissionDao.getPermissionsByAuthUserId(authUserId);
+  }
+
+  public List<Permission> getPermissionsByServiceAccountId(final UUID serviceAccountId) {
+    return permissionDao.getPermissionsByServiceAccountId(serviceAccountId);
   }
 
   public List<UserPermission> listUsersInOrganization(final UUID organizationId) throws IOException {

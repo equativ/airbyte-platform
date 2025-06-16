@@ -7,10 +7,12 @@
  */
 
 export interface Experiments {
+  "authPage.embedded.rightSideUrl": string | undefined;
   "authPage.rightSideUrl": string | undefined;
   "billing.early-sync-enabled": boolean;
   "connection.allowToSupportAllSyncModes": boolean;
   "connection.columnSelection": boolean;
+  "connection.dataActivationUI": boolean;
   "connection.hashingUI": boolean;
   "connection.mappingsUI": boolean;
   "connection.onboarding.destinations": string;
@@ -27,6 +29,8 @@ export interface Experiments {
   "connectorBuilder.dynamicStreams": boolean;
   "connectorBuilder.generateConnectorFromParams": boolean;
   "connectorBuilder.schemaForm": boolean;
+  "embedded.operatorOnboarding.destinations": string;
+  "embedded.operatorOnboarding": boolean;
   "embedded.templateCreateButton": boolean;
   "platform.allow-config-template-endpoints": boolean;
   "platform.llm-sync-job-failure-explanation": boolean;
@@ -40,10 +44,12 @@ export interface Experiments {
 }
 
 export const defaultExperimentValues: Experiments = {
+  "authPage.embedded.rightSideUrl": undefined,
   "authPage.rightSideUrl": undefined,
   "billing.early-sync-enabled": false,
   "connection.allowToSupportAllSyncModes": false,
   "connection.columnSelection": true,
+  "connection.dataActivationUI": false,
   "connection.hashingUI": true, // also requires FeatureItem.FieldHashing
   "connection.mappingsUI": true, // requires FeatureItem.MappingsUI to enable configuration
   "connection.onboarding.destinations": "",
@@ -61,6 +67,9 @@ export const defaultExperimentValues: Experiments = {
   "connectorBuilder.dynamicStreams": false,
   "connectorBuilder.generateConnectorFromParams": false,
   "connectorBuilder.schemaForm": false,
+  "embedded.operatorOnboarding": false,
+  "embedded.operatorOnboarding.destinations":
+    "4816b78f-1489-44c1-9060-4b19d5fa9362, a7bcc9d8-13b3-4e49-b80d-d020b90045e3",
   "embedded.templateCreateButton": false,
   "platform.allow-config-template-endpoints": false,
   "platform.llm-sync-job-failure-explanation": false,

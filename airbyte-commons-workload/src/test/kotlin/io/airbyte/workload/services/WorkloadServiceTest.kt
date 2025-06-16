@@ -5,7 +5,6 @@
 package io.airbyte.workload.services
 
 import io.airbyte.featureflag.TestClient
-import io.airbyte.featureflag.UseAtomicWorkloadStateTransitions
 import io.airbyte.workload.common.DefaultDeadlineValues
 import io.airbyte.workload.repository.WorkloadQueueRepository
 import io.airbyte.workload.repository.WorkloadRepository
@@ -19,6 +18,7 @@ import io.mockk.verify
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.time.OffsetDateTime
 import java.util.Optional
 import java.util.UUID
 
@@ -40,13 +40,17 @@ class WorkloadServiceTest {
         workloadQueueRepository = workloadQueueRepository,
         signalSender = signalSender,
         defaultDeadlineValues = DefaultDeadlineValues(),
-        featureFlagClient =
-          TestClient(
-            mapOf(
-              UseAtomicWorkloadStateTransitions.key to true,
-            ),
-          ),
+        featureFlagClient = TestClient(emptyMap()),
       )
+  }
+
+  @Test
+  fun `cancelling an unknown workload throws a NotFoundException`() {
+    every { workloadRepository.cancel(defaultWorkloadId, any(), any()) } returns null
+    every { workloadRepository.findById(defaultWorkloadId) } returns Optional.empty()
+    assertThrows<NotFoundException> {
+      workloadService.cancelWorkload(defaultWorkloadId, "oops", "not found")
+    }
   }
 
   @Test
@@ -80,6 +84,15 @@ class WorkloadServiceTest {
   }
 
   @Test
+  fun `failing an unknown workload throws a NotFoundException`() {
+    every { workloadRepository.fail(defaultWorkloadId, any(), any()) } returns null
+    every { workloadRepository.findById(defaultWorkloadId) } returns Optional.empty()
+    assertThrows<NotFoundException> {
+      workloadService.failWorkload(defaultWorkloadId, "oops", "not found")
+    }
+  }
+
+  @Test
   fun `failing a workload successfully sends a signal and acks from the queue`() {
     val failedWorkload = defaultWorkload.copy(status = WorkloadStatus.FAILURE)
     val reason = "failure reason"
@@ -107,6 +120,120 @@ class WorkloadServiceTest {
 
     verify(exactly = 0) { signalSender.sendSignal(any(), any()) }
     verify(exactly = 0) { workloadQueueRepository.ackWorkloadQueueItem(defaultWorkloadId) }
+  }
+
+  @Test
+  fun `heartbeat an unknown workload throws a NotFoundException`() {
+    every { workloadRepository.heartbeat(defaultWorkloadId, any()) } returns null
+    every { workloadRepository.findById(defaultWorkloadId) } returns Optional.empty()
+    assertThrows<NotFoundException> {
+      workloadService.heartbeatWorkload(defaultWorkloadId, OffsetDateTime.now())
+    }
+  }
+
+  @Test
+  fun `heartbeat a workload to running does nothing else`() {
+    val launchedWorkload = defaultWorkload.copy(status = WorkloadStatus.RUNNING)
+    every { workloadRepository.heartbeat(defaultWorkloadId, any()) } returns launchedWorkload
+    every { workloadQueueRepository.ackWorkloadQueueItem(defaultWorkloadId) } returns Unit
+
+    workloadService.heartbeatWorkload(defaultWorkloadId, OffsetDateTime.now().plusMinutes(5))
+
+    verify(exactly = 0) { signalSender.sendSignal(any(), any()) }
+    verify(exactly = 0) { workloadQueueRepository.ackWorkloadQueueItem(any()) }
+  }
+
+  @Test
+  fun `heartbeat a workload to running only throws when it fails`() {
+    val failedWorkload = defaultWorkload.copy(status = WorkloadStatus.FAILURE)
+    every { workloadRepository.heartbeat(defaultWorkloadId, any()) } returns null
+    every { workloadRepository.findById(defaultWorkloadId) } returns Optional.of(failedWorkload)
+
+    assertThrows<InvalidStatusTransitionException> {
+      workloadService.heartbeatWorkload(defaultWorkloadId, OffsetDateTime.now().plusMinutes(5))
+    }
+
+    verify(exactly = 0) { signalSender.sendSignal(any(), any()) }
+    verify(exactly = 0) { workloadQueueRepository.ackWorkloadQueueItem(defaultWorkloadId) }
+  }
+
+  @Test
+  fun `setting an unknown workload to launch throws a NotFoundException`() {
+    every { workloadRepository.launch(defaultWorkloadId, any()) } returns null
+    every { workloadRepository.findById(defaultWorkloadId) } returns Optional.empty()
+    assertThrows<NotFoundException> {
+      workloadService.launchWorkload(defaultWorkloadId, OffsetDateTime.now())
+    }
+  }
+
+  @Test
+  fun `setting a workload to launched does nothing else`() {
+    val launchedWorkload = defaultWorkload.copy(status = WorkloadStatus.LAUNCHED)
+    every { workloadRepository.launch(defaultWorkloadId, any()) } returns launchedWorkload
+    every { workloadQueueRepository.ackWorkloadQueueItem(defaultWorkloadId) } returns Unit
+
+    workloadService.launchWorkload(defaultWorkloadId, OffsetDateTime.now().plusMinutes(5))
+
+    verify(exactly = 0) { signalSender.sendSignal(any(), any()) }
+    verify(exactly = 0) { workloadQueueRepository.ackWorkloadQueueItem(any()) }
+  }
+
+  @Test
+  fun `setting a workload to launched only throws when it fails`() {
+    val failedWorkload = defaultWorkload.copy(status = WorkloadStatus.FAILURE)
+    every { workloadRepository.launch(defaultWorkloadId, any()) } returns null
+    every { workloadRepository.findById(defaultWorkloadId) } returns Optional.of(failedWorkload)
+
+    assertThrows<InvalidStatusTransitionException> {
+      workloadService.launchWorkload(defaultWorkloadId, OffsetDateTime.now().plusMinutes(5))
+    }
+
+    verify(exactly = 0) { signalSender.sendSignal(any(), any()) }
+    verify(exactly = 0) { workloadQueueRepository.ackWorkloadQueueItem(defaultWorkloadId) }
+  }
+
+  @Test
+  fun `setting an unknown workload to running throws a NotFoundException`() {
+    every { workloadRepository.running(defaultWorkloadId, any()) } returns null
+    every { workloadRepository.findById(defaultWorkloadId) } returns Optional.empty()
+    assertThrows<NotFoundException> {
+      workloadService.runningWorkload(defaultWorkloadId, OffsetDateTime.now())
+    }
+  }
+
+  @Test
+  fun `setting a workload to running does nothing else`() {
+    val launchedWorkload = defaultWorkload.copy(status = WorkloadStatus.RUNNING)
+    every { workloadRepository.running(defaultWorkloadId, any()) } returns launchedWorkload
+    every { workloadQueueRepository.ackWorkloadQueueItem(defaultWorkloadId) } returns Unit
+
+    workloadService.runningWorkload(defaultWorkloadId, OffsetDateTime.now().plusMinutes(5))
+
+    verify(exactly = 0) { signalSender.sendSignal(any(), any()) }
+    verify(exactly = 0) { workloadQueueRepository.ackWorkloadQueueItem(any()) }
+  }
+
+  @Test
+  fun `setting a workload to running only throws when it fails`() {
+    val failedWorkload = defaultWorkload.copy(status = WorkloadStatus.FAILURE)
+    every { workloadRepository.running(defaultWorkloadId, any()) } returns null
+    every { workloadRepository.findById(defaultWorkloadId) } returns Optional.of(failedWorkload)
+
+    assertThrows<InvalidStatusTransitionException> {
+      workloadService.runningWorkload(defaultWorkloadId, OffsetDateTime.now().plusMinutes(5))
+    }
+
+    verify(exactly = 0) { signalSender.sendSignal(any(), any()) }
+    verify(exactly = 0) { workloadQueueRepository.ackWorkloadQueueItem(defaultWorkloadId) }
+  }
+
+  @Test
+  fun `succeeding an unknown workload throws a NotFoundException`() {
+    every { workloadRepository.succeed(defaultWorkloadId) } returns null
+    every { workloadRepository.findById(defaultWorkloadId) } returns Optional.empty()
+    assertThrows<NotFoundException> {
+      workloadService.succeedWorkload(defaultWorkloadId)
+    }
   }
 
   @Test

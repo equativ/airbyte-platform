@@ -32,6 +32,11 @@ interface PermissionDao {
   fun getPermissionsByAuthUserId(authUserId: String): List<Permission>
 
   /**
+   * Get all permissions for a given service account id.
+   */
+  fun getPermissionsByServiceAccountId(serviceAccountId: UUID): List<Permission>
+
+  /**
    * Delete a permission by its unique id.
    */
   @Throws(RemoveLastOrgAdminPermissionException::class)
@@ -48,6 +53,11 @@ interface PermissionDao {
    */
   @Throws(PermissionRedundantException::class)
   fun createPermission(permission: Permission): Permission
+
+  /**
+   * Create a permission for a service account.
+   */
+  fun createServiceAccountPermission(permission: Permission): Permission
 
   /**
    * Update a permission
@@ -67,5 +77,9 @@ class PermissionRedundantException(
  * Exception thrown when attempting an operation on a permission that would result in an organization without any org-admin.
  */
 class RemoveLastOrgAdminPermissionException(
+  message: String,
+) : Exception(message)
+
+class InvalidServiceAccountPermissionRequestException(
   message: String,
 ) : Exception(message)

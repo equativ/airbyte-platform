@@ -6,6 +6,10 @@ package io.airbyte.container.orchestrator.config
 
 import io.airbyte.commons.concurrency.VoidCallable
 import io.airbyte.commons.json.Jsons
+import io.airbyte.commons.logging.LOG_SOURCE_MDC_KEY
+import io.airbyte.commons.logging.LogMdcHelper
+import io.airbyte.commons.logging.LogSource
+import io.airbyte.commons.logging.MdcScope
 import io.airbyte.commons.storage.DocumentType
 import io.airbyte.commons.storage.StorageClient
 import io.airbyte.commons.storage.StorageClientFactory
@@ -25,7 +29,6 @@ import io.airbyte.featureflag.ReplicationBufferOverride
 import io.airbyte.persistence.job.models.JobRunConfig
 import io.airbyte.persistence.job.models.ReplicationInput
 import io.airbyte.protocol.models.v0.AirbyteMessage
-import io.airbyte.workers.internal.NamespacingMapper
 import io.airbyte.workers.pod.FileConstants
 import io.micronaut.context.annotation.Factory
 import io.micronaut.context.annotation.Value
@@ -153,14 +156,6 @@ class CommonBeanFactory {
   }
 
   @Singleton
-  fun namespaceMapper(replicationInput: ReplicationInput) =
-    NamespacingMapper(
-      replicationInput.namespaceDefinition,
-      replicationInput.namespaceFormat,
-      replicationInput.prefix,
-    )
-
-  @Singleton
   fun replicationContext(
     replicationContextProvider: ReplicationContextProvider,
     replicationInput: ReplicationInput,
@@ -197,4 +192,19 @@ class CommonBeanFactory {
   @Singleton
   @Named("sourceMessageQueue")
   fun sourceMessageQueue(context: ReplicationWorkerContext) = ClosableChannelQueue<AirbyteMessage>(context.bufferConfiguration.sourceMaxBufferSize)
+
+  @Singleton
+  @Named("replicationMdcScopeBuilder")
+  fun replicationMdcScopeBuilder(
+    @Named("jobRoot") jobRoot: Path,
+    logMdcHelper: LogMdcHelper,
+  ): MdcScope.Builder =
+    MdcScope
+      .Builder()
+      .setExtraMdcEntries(
+        mapOf(
+          LOG_SOURCE_MDC_KEY to LogSource.REPLICATION_ORCHESTRATOR.displayName,
+          logMdcHelper.getJobLogPathMdcKey() to logMdcHelper.fullLogPath(jobRoot),
+        ),
+      )
 }

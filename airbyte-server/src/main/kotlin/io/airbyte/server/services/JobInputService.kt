@@ -5,7 +5,6 @@
 package io.airbyte.server.services
 
 import com.fasterxml.jackson.databind.JsonNode
-import com.google.common.base.Charsets
 import com.google.common.hash.Hashing
 import io.airbyte.commons.converters.ConfigReplacer
 import io.airbyte.commons.json.Jsons
@@ -36,9 +35,8 @@ import io.airbyte.config.SyncResourceRequirements
 import io.airbyte.config.helpers.ResourceRequirementsUtils
 import io.airbyte.config.persistence.ActorDefinitionVersionHelper
 import io.airbyte.config.persistence.ConfigInjector
-import io.airbyte.config.secrets.ConfigWithSecretReferences
 import io.airbyte.config.secrets.InlinedConfigWithSecretRefs
-import io.airbyte.config.secrets.toConfigWithRefs
+import io.airbyte.config.secrets.toInlined
 import io.airbyte.data.repositories.ActorDefinitionRepository
 import io.airbyte.data.repositories.ActorRepository
 import io.airbyte.data.services.AttemptService
@@ -200,6 +198,7 @@ class JobInputService(
       isReset = currentJob.config.configType == JobConfig.ConfigType.RESET_CONNECTION || currentJob.config.configType == JobConfig.ConfigType.CLEAR,
       namespaceDefinition = jobConfigData.namespaceDefinition,
       namespaceFormat = jobConfigData.namespaceFormat,
+      prefix = jobConfigData.prefix,
       connectionContext = contextBuilder.fromConnectionId(connectionId),
       signalInput = signalInput,
       networkSecurityTokens = getNetworkSecurityTokens(workspaceId = source.workspaceId),
@@ -218,6 +217,7 @@ class JobInputService(
     val syncResourceRequirements: SyncResourceRequirements,
     val namespaceDefinition: JobSyncConfig.NamespaceDefinitionType?,
     val namespaceFormat: String?,
+    val prefix: String?,
     val includeFiles: Boolean,
     val omitFileTransferEnvVar: Boolean,
   )
@@ -238,6 +238,7 @@ class JobInputService(
           syncResourceRequirements = currentJob.config.sync.syncResourceRequirements,
           namespaceDefinition = currentJob.config.sync.namespaceDefinition,
           namespaceFormat = currentJob.config.sync.namespaceFormat,
+          prefix = currentJob.config.sync.prefix,
           includeFiles = includeFiles || isDeprecatedFileTransfer,
           omitFileTransferEnvVar = includeFiles,
         )
@@ -252,6 +253,7 @@ class JobInputService(
           syncResourceRequirements = currentJob.config.refresh.syncResourceRequirements,
           namespaceDefinition = currentJob.config.refresh.namespaceDefinition,
           namespaceFormat = currentJob.config.refresh.namespaceFormat,
+          prefix = currentJob.config.refresh.prefix,
           includeFiles = includeFile || isDeprecatedFileTransfer,
           omitFileTransferEnvVar = includeFile,
         )
@@ -265,7 +267,8 @@ class JobInputService(
         JobConfigData(
           syncResourceRequirements = currentJob.config.resetConnection.syncResourceRequirements,
           namespaceDefinition = currentJob.config.resetConnection.namespaceDefinition,
-          namespaceFormat = currentJob.config.refresh.namespaceFormat,
+          namespaceFormat = currentJob.config.resetConnection.namespaceFormat,
+          prefix = currentJob.config.resetConnection.prefix,
           includeFiles = includeFile || isDeprecatedFileTransfer,
           omitFileTransferEnvVar = includeFile,
         )
@@ -419,9 +422,9 @@ class JobInputService(
     val configWithOauthParams: JsonNode =
       oAuthConfigSupplier.injectSourceOAuthParameters(
         sourceDefinition.sourceDefinitionId,
-        source!!.sourceId,
-        source!!.workspaceId,
-        source!!.configuration,
+        source.sourceId,
+        source.workspaceId,
+        source.configuration,
       )
 
     return buildJobCheckConnectionConfig(
@@ -446,7 +449,7 @@ class JobInputService(
     workspaceId: UUID,
     configuration: JsonNode,
   ): CheckConnectionInput {
-    val (_, sourceDefinition, sourceDefinitionVersion, resourceRequirements) = getSourceInformationByDefinitionId(sourceDefinitionId, workspaceId)
+    val (sourceDefinition, sourceDefinitionVersion, resourceRequirements) = getSourceInformationByDefinitionId(sourceDefinitionId, workspaceId)
 
     val dockerImage = ActorDefinitionVersionHelper.getDockerImageName(sourceDefinitionVersion)
     val configWithOauthParams: JsonNode =
@@ -568,17 +571,16 @@ class JobInputService(
   ): CheckConnectionInput {
     val injectedConfig: JsonNode = configInjector.injectConfig(configuration, definitionId)
 
-    val inlinedConfigWithSecretRefs = InlinedConfigWithSecretRefs(injectedConfig)
-
-    val configWithSecrets: ConfigWithSecretReferences =
+    val inlinedConfigWithSecrets: InlinedConfigWithSecretRefs =
       if (actorId == null) {
-        inlinedConfigWithSecretRefs.toConfigWithRefs()
+        InlinedConfigWithSecretRefs(injectedConfig)
       } else {
-        secretReferenceService.getConfigWithSecretReferences(
-          ActorId(actorId),
-          injectedConfig,
-          WorkspaceId(workspaceId),
-        )
+        secretReferenceService
+          .getConfigWithSecretReferences(
+            ActorId(actorId),
+            injectedConfig,
+            WorkspaceId(workspaceId),
+          ).toInlined()
       }
 
     val jobId = jobId ?: UUID.randomUUID().toString()
@@ -604,7 +606,7 @@ class JobInputService(
         StandardCheckConnectionInput()
           .withActorType(actorType)
           .withActorId(actorId)
-          .withConnectionConfiguration(configWithSecrets.config)
+          .withConnectionConfiguration(inlinedConfigWithSecrets.value)
           .withResourceRequirements(resourceRequirements)
           .withActorContext(actorContext)
           .withNetworkSecurityTokens(getNetworkSecurityTokens(workspaceId)),
@@ -637,6 +639,7 @@ class JobInputService(
     actorId: UUID?,
     workspaceId: UUID,
     configuration: JsonNode,
+    hashedConfiguration: String,
     dockerImage: String,
     dockerTag: String,
     protocolVersion: Version,
@@ -650,17 +653,16 @@ class JobInputService(
   ): DiscoverCommandInput.DiscoverCatalogInput {
     val injectedConfig: JsonNode = configInjector.injectConfig(configuration, definitionId)
 
-    val inlinedConfigWithSecretRefs = InlinedConfigWithSecretRefs(injectedConfig)
-
-    val configWithSecrets: ConfigWithSecretReferences =
+    val inlinedConfigWithSecrets: InlinedConfigWithSecretRefs =
       if (actorId == null) {
-        inlinedConfigWithSecretRefs.toConfigWithRefs()
+        InlinedConfigWithSecretRefs(injectedConfig)
       } else {
-        secretReferenceService.getConfigWithSecretReferences(
-          ActorId(actorId),
-          injectedConfig,
-          WorkspaceId(workspaceId),
-        )
+        secretReferenceService
+          .getConfigWithSecretReferences(
+            ActorId(actorId),
+            injectedConfig,
+            WorkspaceId(workspaceId),
+          ).toInlined()
       }
 
     val configReplacer = ConfigReplacer()
@@ -683,15 +685,9 @@ class JobInputService(
         StandardDiscoverCatalogInput()
           .withSourceId(actorId.toString())
           .withConnectorVersion(dockerTag)
-          .withConnectionConfiguration(configWithSecrets.config)
-          .withConfigHash(
-            HASH_FUNCTION
-              .hashBytes(
-                Jsons.serialize(configWithSecrets.config).toByteArray(
-                  Charsets.UTF_8,
-                ),
-              ).toString(),
-          ).withManual(isManual)
+          .withConnectionConfiguration(inlinedConfigWithSecrets.value)
+          .withConfigHash(hashedConfiguration)
+          .withManual(isManual)
           .withResourceRequirements(resourceRequirements)
           .withActorContext(actorContext)
           .withNetworkSecurityTokens(getNetworkSecurityTokens(workspaceId)),
@@ -710,10 +706,11 @@ class JobInputService(
     val configWithOauthParams: JsonNode =
       oAuthConfigSupplier.injectSourceOAuthParameters(
         sourceDefinition.sourceDefinitionId,
-        source!!.sourceId,
-        source!!.workspaceId,
-        source!!.configuration,
+        source.sourceId,
+        source.workspaceId,
+        source.configuration,
       )
+    val hashedConfiguration = HASH_FUNCTION.hashBytes(Jsons.serialize(source.configuration).toByteArray(Charsets.UTF_8)).toString()
 
     return buildJobDiscoverConfig(
       actorType = io.airbyte.config.ActorType.SOURCE,
@@ -721,6 +718,7 @@ class JobInputService(
       actorId = source.sourceId,
       workspaceId = source.workspaceId,
       configuration = configWithOauthParams,
+      hashedConfiguration = hashedConfiguration,
       dockerImage = dockerImage,
       dockerTag = sourceDefinitionVersion.dockerImageTag,
       protocolVersion = Version(sourceDefinitionVersion.protocolVersion),
@@ -746,7 +744,13 @@ class JobInputService(
     }
 
   private data class SourceInformation(
-    val source: SourceConnection?,
+    val source: SourceConnection,
+    val sourceDefinition: StandardSourceDefinition,
+    val sourceDefinitionVersion: ActorDefinitionVersion,
+    val resourceRequirements: ResourceRequirements?,
+  )
+
+  private data class SourceDefinitionInformation(
     val sourceDefinition: StandardSourceDefinition,
     val sourceDefinitionVersion: ActorDefinitionVersion,
     val resourceRequirements: ResourceRequirements?,
@@ -773,7 +777,7 @@ class JobInputService(
   private fun getSourceInformationByDefinitionId(
     sourceDefinitionId: UUID,
     workspaceId: UUID,
-  ): SourceInformation {
+  ): SourceDefinitionInformation {
     val sourceDefinition = sourceService.getStandardSourceDefinition(sourceDefinitionId)
     val sourceDefinitionVersion = actorDefinitionVersionHelper.getSourceVersion(sourceDefinition, workspaceId, null)
     val resourceRequirements =
@@ -782,8 +786,7 @@ class JobInputService(
         JobTypeResourceLimit.JobType.CHECK_CONNECTION,
       )
 
-    return SourceInformation(
-      null,
+    return SourceDefinitionInformation(
       sourceDefinition,
       sourceDefinitionVersion,
       resourceRequirements,
