@@ -11,6 +11,7 @@ import io.airbyte.config.secrets.persistence.RuntimeSecretPersistence
 import io.airbyte.config.secrets.persistence.SecretPersistence
 import io.micronaut.context.annotation.Requires
 import jakarta.inject.Singleton
+import java.util.UUID
 
 private const val SECRET_KEY = "_secret"
 
@@ -41,6 +42,10 @@ open class SecretsRepositoryReader(
    * @param secretCoordinate secret coordinate
    * @return JsonNode representing the fetched secret
    */
+  @Deprecated(
+    "Use fetchSecretFromSecretPersistence instead",
+    ReplaceWith("fetchSecretFromSecretPersistence(secretCoordinate, secretPersistence)", "io.airbyte.config.secrets.SecretsRepositoryReader"),
+  )
   fun fetchSecretFromRuntimeSecretPersistence(
     secretCoordinate: SecretCoordinate,
     runtimeSecretPersistence: RuntimeSecretPersistence,
@@ -48,6 +53,15 @@ open class SecretsRepositoryReader(
     val node = JsonNodeFactory.instance.objectNode()
     node.put(SECRET_KEY, secretCoordinate.fullCoordinate)
     return secretsHydrator.hydrateSecretCoordinateFromRuntimeSecretPersistence(node, runtimeSecretPersistence)
+  }
+
+  fun fetchSecretFromSecretPersistence(
+    secretCoordinate: SecretCoordinate,
+    secretPersistence: SecretPersistence,
+  ): JsonNode {
+    val node = JsonNodeFactory.instance.objectNode()
+    node.put(SECRET_KEY, secretCoordinate.fullCoordinate)
+    return secretsHydrator.hydrateSecretCoordinate(node, secretPersistence)
   }
 
   /**
@@ -87,6 +101,16 @@ open class SecretsRepositoryReader(
   ): JsonNode? =
     if (configuration != null) {
       secretsHydrator.hydrate(configuration, secretPersistence)
+    } else {
+      null
+    }
+
+  fun hydrateConfig(
+    configuration: ConfigWithSecretReferences?,
+    secretPersistenceMap: Map<UUID?, SecretPersistence>,
+  ): JsonNode? =
+    if (configuration != null) {
+      secretsHydrator.hydrate(configuration, secretPersistenceMap)
     } else {
       null
     }

@@ -107,6 +107,7 @@ class CatalogClientConverters(
       sourceDefinedPrimaryKey = stream.sourceDefinedPrimaryKey ?: emptyList(),
       namespace = stream.namespace,
       isResumable = stream.isResumable,
+      isFileBased = stream.isFileBased,
     )
   }
 
@@ -141,6 +142,7 @@ class CatalogClientConverters(
       .generationId(config.generationId)
       .minimumGenerationId(config.minimumGenerationId)
       .syncId(config.syncId)
+      .includeFiles(config.includeFiles ?: false)
       .fields(fieldGenerator.getFieldsFromSchema(convertedStream.jsonSchema))
       .mappers(toConfiguredMappers(config.mappers))
       .build()
@@ -175,6 +177,7 @@ class CatalogClientConverters(
       primaryKey = stream.sourceDefinedPrimaryKey,
       aliasName = Names.toAlphanumericAndUnderscore(stream.name),
       selected = true,
+      includeFiles = false,
       suggested = null,
       fieldSelectionEnabled = null,
       selectedFields = null,
@@ -200,4 +203,5 @@ private fun ProtocolAirbyteStream.toAirbyteStreamClientApi(): ClientAirbyteStrea
     sourceDefinedPrimaryKey = sourceDefinedPrimaryKey,
     namespace = namespace,
     isResumable = isResumable,
+    isFileBased = isFileBased,
   )

@@ -5,8 +5,9 @@
 package io.airbyte.commons.server.handlers;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -28,6 +29,7 @@ import io.airbyte.config.ActorDefinitionVersion;
 import io.airbyte.config.ActorType;
 import io.airbyte.config.AttemptSyncConfig;
 import io.airbyte.config.ConfiguredAirbyteCatalog;
+import io.airbyte.config.ConfiguredAirbyteStream;
 import io.airbyte.config.DestinationConnection;
 import io.airbyte.config.Job;
 import io.airbyte.config.JobConfig;
@@ -52,7 +54,6 @@ import io.airbyte.data.services.ConnectionService;
 import io.airbyte.data.services.DestinationService;
 import io.airbyte.data.services.ScopedConfigurationService;
 import io.airbyte.data.services.SourceService;
-import io.airbyte.domain.models.SecretReferenceScopeType;
 import io.airbyte.domain.services.secrets.SecretReferenceService;
 import io.airbyte.featureflag.FeatureFlagClient;
 import io.airbyte.featureflag.TestClient;
@@ -66,6 +67,7 @@ import io.airbyte.workers.models.SyncJobCheckConnectionInputs;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Assertions;
@@ -95,7 +97,7 @@ class JobInputHandlerTest {
           "injected", "value"));
   private static final ConfigWithSecretReferences SOURCE_CONFIG_WITH_REFS =
       new ConfigWithSecretReferences(SOURCE_CONFIG_WITH_OAUTH_AND_INJECTED_CONFIG,
-          Map.of("$.source_secret", new SecretReferenceConfig(new AirbyteManagedSecretCoordinate(), null)));
+          Map.of("$.source_secret", new SecretReferenceConfig(new AirbyteManagedSecretCoordinate(), null, null)));
   private static final JsonNode INLINED_SOURCE_CONFIG_WITH_REFS = InlinedConfigWithSecretRefsKt.toInlined(SOURCE_CONFIG_WITH_REFS);
   private static final JsonNode DESTINATION_CONFIGURATION =
       Jsons.jsonNode(Map.of("destination_key", "destination_value", "destination_secret", Map.of("_secret_reference_id", SECRET_REF_ID)));
@@ -103,7 +105,7 @@ class JobInputHandlerTest {
       Jsons.jsonNode(Map.of("destination_key", "destination_value", "destination_secret", Map.of("_secret_reference_id", SECRET_REF_ID), "oauth",
           "oauth_value"));
   private static final ConfigWithSecretReferences DESTINATION_CONFIG_WITH_REFS = new ConfigWithSecretReferences(DESTINATION_CONFIG_WITH_OAUTH,
-      Map.of("$.destination_secret", new SecretReferenceConfig(new AirbyteManagedSecretCoordinate(), null)));
+      Map.of("$.destination_secret", new SecretReferenceConfig(new AirbyteManagedSecretCoordinate(), null, null)));
   private static final JsonNode INLINED_DESTINATION_CONFIG_WITH_REFS = InlinedConfigWithSecretRefsKt.toInlined(DESTINATION_CONFIG_WITH_REFS);
   private static final State STATE = new State().withState(Jsons.jsonNode(Map.of("state_key", "state_value")));
 
@@ -164,8 +166,8 @@ class JobInputHandlerTest {
 
     when(jobPersistence.getJob(JOB_ID)).thenReturn(job);
     when(configInjector.injectConfig(any(), any())).thenAnswer(i -> i.getArguments()[0]);
-    when(secretReferenceService.getConfigWithSecretReferences(eq(SecretReferenceScopeType.ACTOR), any(), any()))
-        .thenAnswer(i -> new ConfigWithSecretReferences(i.getArgument(2), Map.of()));
+    when(secretReferenceService.getConfigWithSecretReferences(any(), any(), any()))
+        .thenAnswer(i -> new ConfigWithSecretReferences(i.getArgument(1), Map.of()));
 
     final DestinationConnection destinationConnection = new DestinationConnection()
         .withDestinationId(DESTINATION_ID)
@@ -203,9 +205,9 @@ class JobInputHandlerTest {
     when(configInjector.injectConfig(SOURCE_CONFIG_WITH_OAUTH, sourceDefinitionId))
         .thenReturn(SOURCE_CONFIG_WITH_OAUTH_AND_INJECTED_CONFIG);
     when(
-        secretReferenceService.getConfigWithSecretReferences(SecretReferenceScopeType.ACTOR, SOURCE_ID, SOURCE_CONFIG_WITH_OAUTH_AND_INJECTED_CONFIG))
+        secretReferenceService.getConfigWithSecretReferences(SOURCE_ID, SOURCE_CONFIG_WITH_OAUTH_AND_INJECTED_CONFIG, WORKSPACE_ID))
             .thenReturn(SOURCE_CONFIG_WITH_REFS);
-    when(secretReferenceService.getConfigWithSecretReferences(SecretReferenceScopeType.ACTOR, DESTINATION_ID, DESTINATION_CONFIG_WITH_OAUTH))
+    when(secretReferenceService.getConfigWithSecretReferences(DESTINATION_ID, DESTINATION_CONFIG_WITH_OAUTH, WORKSPACE_ID))
         .thenReturn(DESTINATION_CONFIG_WITH_REFS);
 
     when(sourceService.getStandardSourceDefinition(sourceDefinitionId)).thenReturn(mock(StandardSourceDefinition.class));
@@ -239,7 +241,8 @@ class JobInputHandlerTest {
         .withDestinationConfiguration(INLINED_DESTINATION_CONFIG_WITH_REFS)
         .withIsReset(false)
         .withUseAsyncReplicate(true)
-        .withUseAsyncActivities(true);
+        .withUseAsyncActivities(true)
+        .withIncludesFiles(false);
 
     final JobRunConfig expectedJobRunConfig = new JobRunConfig()
         .withJobId(String.valueOf(JOB_ID))
@@ -276,9 +279,8 @@ class JobInputHandlerTest {
 
     verify(oAuthConfigSupplier).injectSourceOAuthParameters(sourceDefinitionId, SOURCE_ID, WORKSPACE_ID, SOURCE_CONFIGURATION);
     verify(oAuthConfigSupplier).injectDestinationOAuthParameters(DESTINATION_DEFINITION_ID, DESTINATION_ID, WORKSPACE_ID, DESTINATION_CONFIGURATION);
-    verify(secretReferenceService).getConfigWithSecretReferences(SecretReferenceScopeType.ACTOR, DESTINATION_ID, DESTINATION_CONFIG_WITH_OAUTH);
-    verify(secretReferenceService).getConfigWithSecretReferences(SecretReferenceScopeType.ACTOR, SOURCE_ID,
-        SOURCE_CONFIG_WITH_OAUTH_AND_INJECTED_CONFIG);
+    verify(secretReferenceService).getConfigWithSecretReferences(DESTINATION_ID, DESTINATION_CONFIG_WITH_OAUTH, WORKSPACE_ID);
+    verify(secretReferenceService).getConfigWithSecretReferences(SOURCE_ID, SOURCE_CONFIG_WITH_OAUTH_AND_INJECTED_CONFIG, WORKSPACE_ID);
 
     verify(attemptHandler).saveSyncConfig(new SaveAttemptSyncConfigRequestBody()
         .jobId(JOB_ID)
@@ -318,7 +320,8 @@ class JobInputHandlerTest {
         .withWebhookOperationConfigs(jobResetConfig.getWebhookOperationConfigs())
         .withIsReset(true)
         .withUseAsyncReplicate(true)
-        .withUseAsyncActivities(true);
+        .withUseAsyncActivities(true)
+        .withIncludesFiles(false);
 
     final JobRunConfig expectedJobRunConfig = new JobRunConfig()
         .withJobId(String.valueOf(JOB_ID))
@@ -375,9 +378,9 @@ class JobInputHandlerTest {
     when(sourceService.getStandardSourceDefinition(sourceDefId)).thenReturn(mock(StandardSourceDefinition.class));
     when(oAuthConfigSupplier.injectSourceOAuthParameters(sourceDefId, SOURCE_ID, WORKSPACE_ID, SOURCE_CONFIGURATION))
         .thenReturn(SOURCE_CONFIG_WITH_OAUTH);
-    when(secretReferenceService.getConfigWithSecretReferences(SecretReferenceScopeType.ACTOR, SOURCE_ID, SOURCE_CONFIG_WITH_OAUTH))
+    when(secretReferenceService.getConfigWithSecretReferences(SOURCE_ID, SOURCE_CONFIG_WITH_OAUTH, WORKSPACE_ID))
         .thenReturn(SOURCE_CONFIG_WITH_REFS);
-    when(secretReferenceService.getConfigWithSecretReferences(SecretReferenceScopeType.ACTOR, DESTINATION_ID, DESTINATION_CONFIG_WITH_OAUTH))
+    when(secretReferenceService.getConfigWithSecretReferences(DESTINATION_ID, DESTINATION_CONFIG_WITH_OAUTH, WORKSPACE_ID))
         .thenReturn(DESTINATION_CONFIG_WITH_REFS);
 
     final JobSyncConfig jobSyncConfig = new JobSyncConfig()
@@ -434,6 +437,33 @@ class JobInputHandlerTest {
 
     final Object checkInputs = jobInputHandler.getCheckJobInput(syncInput);
     Assertions.assertEquals(expectedCheckInputs, checkInputs);
+  }
+
+  @Test
+  void testIncludesFilesIsTrueIfConnectorsSupportFilesAndFileIsConfigured() {
+    final ConfiguredAirbyteStream streamWithFilesEnabled = mock(ConfiguredAirbyteStream.class);
+    when(streamWithFilesEnabled.getIncludeFiles()).thenReturn(true);
+
+    final ActorDefinitionVersion sourceAdv = mock(ActorDefinitionVersion.class);
+    final ActorDefinitionVersion destinationAdv = mock(ActorDefinitionVersion.class);
+    final JobSyncConfig jobSyncConfig = new JobSyncConfig()
+        .withConfiguredAirbyteCatalog(new ConfiguredAirbyteCatalog().withStreams(
+            List.of(
+                mock(ConfiguredAirbyteStream.class),
+                streamWithFilesEnabled)));
+    assertTrue(jobInputHandler.shouldIncludeFiles(jobSyncConfig, sourceAdv, destinationAdv));
+  }
+
+  @Test
+  void testIncludesFilesIsFalseIfConnectorsSupportFilesAndFileIsNotConfigured() {
+    final ActorDefinitionVersion sourceAdv = mock(ActorDefinitionVersion.class);
+    final ActorDefinitionVersion destinationAdv = mock(ActorDefinitionVersion.class);
+    final JobSyncConfig jobSyncConfig = new JobSyncConfig()
+        .withConfiguredAirbyteCatalog(new ConfiguredAirbyteCatalog().withStreams(
+            List.of(
+                mock(ConfiguredAirbyteStream.class),
+                mock(ConfiguredAirbyteStream.class))));
+    assertFalse(jobInputHandler.shouldIncludeFiles(jobSyncConfig, sourceAdv, destinationAdv));
   }
 
 }

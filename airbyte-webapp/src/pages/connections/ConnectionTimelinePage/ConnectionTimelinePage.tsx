@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { FormattedMessage } from "react-intl";
 
 import { ConnectionSyncContextProvider } from "components/connection/ConnectionSync/ConnectionSyncContext";
@@ -61,7 +61,7 @@ export const ConnectionTimelinePage = () => {
 
   const { closeDrawer } = useDrawerActions();
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     return () => {
       closeDrawer();
     };
@@ -71,30 +71,28 @@ export const ConnectionTimelinePage = () => {
     <ScrollParent>
       <PageContainer centered>
         <ConnectionSyncContextProvider>
-          <Box pb="xl">
-            <Card noPadding>
-              <Box p="lg">
-                <FlexContainer direction="column">
-                  <FlexContainer justifyContent="space-between" alignItems="center">
-                    <Heading as="h5" size="sm" data-testid="connectionTimelinePageHeader">
-                      <FormattedMessage id="connection.timeline" />
-                    </Heading>
-                  </FlexContainer>
-                  <ConnectionTimelineFilters
-                    filterValues={filterValues}
-                    setFilterValue={setFilterValue}
-                    resetFilters={resetFilters}
-                    filtersAreDefault={filtersAreDefault}
-                  />
+          <Card noPadding>
+            <Box p="lg">
+              <FlexContainer direction="column">
+                <FlexContainer justifyContent="space-between" alignItems="center">
+                  <Heading as="h5" size="sm" data-testid="connectionTimelinePageHeader">
+                    <FormattedMessage id="connection.timeline" />
+                  </Heading>
                 </FlexContainer>
-              </Box>
-              {filterValues.eventId ? (
-                <OneEventItem eventId={filterValues.eventId} connectionId={connection.connectionId} />
-              ) : (
-                <ConnectionTimelineAllEventsList filterValues={filterValues} />
-              )}
-            </Card>
-          </Box>
+                <ConnectionTimelineFilters
+                  filterValues={filterValues}
+                  setFilterValue={setFilterValue}
+                  resetFilters={resetFilters}
+                  filtersAreDefault={filtersAreDefault}
+                />
+              </FlexContainer>
+            </Box>
+            {filterValues.eventId ? (
+              <OneEventItem eventId={filterValues.eventId} connectionId={connection.connectionId} />
+            ) : (
+              <ConnectionTimelineAllEventsList filterValues={filterValues} />
+            )}
+          </Card>
         </ConnectionSyncContextProvider>
       </PageContainer>
     </ScrollParent>

@@ -5,6 +5,7 @@
 package io.airbyte.data.services;
 
 import io.airbyte.config.ConfiguredAirbyteCatalog;
+import io.airbyte.config.ConnectionSummary;
 import io.airbyte.config.StandardSync;
 import io.airbyte.config.StreamDescriptor;
 import io.airbyte.config.StreamDescriptorForDestination;
@@ -60,11 +61,16 @@ public interface ConnectionService {
                                                                boolean includeInactive)
       throws IOException;
 
+  List<ConnectionSummary> listConnectionSummaryByActorDefinitionIdAndActorIds(final UUID actorDefinitionId,
+                                                                              final String actorTypeValue,
+                                                                              final List<UUID> actorIds)
+      throws IOException;
+
   List<StreamDescriptor> getAllStreamsForConnection(UUID connectionId) throws ConfigNotFoundException, IOException;
 
   ConfiguredAirbyteCatalog getConfiguredCatalogForConnection(UUID connectionId) throws JsonValidationException, ConfigNotFoundException, IOException;
 
-  String getGeographyForConnection(UUID connectionId) throws IOException;
+  String getDataplaneGroupNameForConnection(UUID connectionId) throws IOException;
 
   boolean getConnectionHasAlphaOrBetaConnector(UUID connectionId) throws IOException;
 

@@ -1,91 +1,58 @@
-import { useSearchParams } from "react-router-dom";
-
-import { Box } from "components/ui/Box";
-import { Button } from "components/ui/Button";
-import { Heading } from "components/ui/Heading";
-
 import { useCreatePartialUserConfig, useGetConfigTemplate } from "core/api";
-import { SourceDefinitionSpecificationDraft } from "core/domain/connector";
-import { Controls } from "views/Connector/ConnectorCard/components/Controls";
-import { ConnectorForm, ConnectorFormValues } from "views/Connector/ConnectorForm";
+import { SourceDefinitionSpecification } from "core/api/types/AirbyteClient";
+import { IsAirbyteEmbeddedContext } from "core/services/embedded";
+import { ConnectorFormValues } from "views/Connector/ConnectorForm";
 
-export const MaskCreateForm: React.FC = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const selectedTemplateId = searchParams.get("selectedTemplateId");
-  const workspaceId = searchParams.get("workspaceId") ?? "";
-  const { mutate: createPartialUserConfig } = useCreatePartialUserConfig();
-  const configTemplate = useGetConfigTemplate(selectedTemplateId ?? "");
-  const maskDefinitionSpecification: SourceDefinitionSpecificationDraft = {
-    connectionSpecification: configTemplate.configTemplateSpec.connectionSpecification,
+import { PartialUserConfigForm } from "./PartialUserConfigForm";
+import { PartialUserConfigSuccessView } from "./PartialUserConfigSuccessView";
+import { useEmbeddedSourceParams } from "../hooks/useEmbeddedSourceParams";
+
+export const PartialUserConfigCreateForm: React.FC = () => {
+  const { workspaceId, selectedTemplateId } = useEmbeddedSourceParams();
+  const { mutate: createPartialUserConfig, isSuccess } = useCreatePartialUserConfig();
+  const configTemplate = useGetConfigTemplate(selectedTemplateId ?? "", workspaceId);
+
+  const sourceDefinitionSpecification: SourceDefinitionSpecification = {
+    ...configTemplate.configTemplateSpec,
+    advancedAuth: configTemplate.advancedAuth,
+    sourceDefinitionId: configTemplate.sourceDefinitionId,
   };
 
   const onSubmit = (values: ConnectorFormValues) => {
-    createPartialUserConfig({
-      workspaceId: workspaceId ?? "",
-      configTemplateId: selectedTemplateId ?? "",
-      partialUserConfigProperties: values,
+    return new Promise<void>((resolve, reject) => {
+      createPartialUserConfig(
+        {
+          workspaceId,
+          configTemplateId: selectedTemplateId ?? "",
+          connectionConfiguration: values.connectionConfiguration,
+        },
+        {
+          onSuccess: () => resolve(),
+          onError: (error) => reject(error),
+        }
+      );
     });
   };
 
+  if (isSuccess) {
+    return (
+      <PartialUserConfigSuccessView
+        successType="create"
+        connectorName={configTemplate.name}
+        icon={configTemplate.icon}
+      />
+    );
+  }
+
   return (
-    <>
-      <Heading as="h1" size="sm">
-        {configTemplate.name}
-      </Heading>
-      <Box py="sm">
-        <Button
-          variant="light"
-          onClick={() => {
-            setSearchParams((params) => {
-              params.delete("selectedTemplateId");
-              return params;
-            });
-          }}
-        >
-          Back
-        </Button>
-      </Box>
-      <div>
-        <ConnectorForm
-          trackDirtyChanges
-          formType="source"
-          selectedConnectorDefinitionSpecification={maskDefinitionSpecification}
-          onSubmit={async (values: ConnectorFormValues) => {
-            onSubmit(values);
-          }}
-          canEdit
-          renderFooter={({ dirty, isSubmitting, isValid, resetConnectorForm }) =>
-            configTemplate && (
-              <>
-                {/* //todo: ip allowlist banner? */}
-                <Controls
-                  isEditMode={false}
-                  isTestConnectionInProgress={false}
-                  onCancelTesting={() => {
-                    return null;
-                  }}
-                  isSubmitting={isSubmitting}
-                  formType="source"
-                  hasDefinition={false}
-                  onRetestClick={() => {
-                    return null;
-                  }}
-                  onDeleteClick={() => {
-                    return null;
-                  }}
-                  isValid={isValid}
-                  dirty={dirty}
-                  job={undefined}
-                  onCancelClick={() => {
-                    resetConnectorForm();
-                  }}
-                  connectionTestSuccess={false}
-                />
-              </>
-            )
-          }
-        />
-      </div>
-    </>
+    <IsAirbyteEmbeddedContext.Provider value>
+      <PartialUserConfigForm
+        isEditMode={false}
+        connectorName={configTemplate.name}
+        icon={configTemplate.icon}
+        onSubmit={onSubmit}
+        sourceDefinitionSpecification={sourceDefinitionSpecification}
+      />
+    </IsAirbyteEmbeddedContext.Provider>
   );
 };

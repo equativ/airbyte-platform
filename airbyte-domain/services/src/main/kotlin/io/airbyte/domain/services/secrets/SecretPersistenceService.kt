@@ -11,6 +11,7 @@ import io.airbyte.config.secrets.ConfigWithSecretReferences
 import io.airbyte.config.secrets.SecretsHelpers
 import io.airbyte.config.secrets.persistence.RuntimeSecretPersistence
 import io.airbyte.config.secrets.persistence.SecretPersistence
+import io.airbyte.data.services.OrganizationService
 import io.airbyte.data.services.SecretPersistenceConfigService
 import io.airbyte.domain.models.OrganizationId
 import io.airbyte.domain.models.SecretStorageId
@@ -48,9 +49,13 @@ class SecretPersistenceService(
   private val secretPersistenceConfigService: SecretPersistenceConfigService,
   private val metricClient: MetricClient,
   private val featureFlagClient: FeatureFlagClient,
+  private val organizationService: OrganizationService,
 ) {
-  private fun getPersistenceByStorageId(secretStorageId: SecretStorageId): SecretPersistence {
+  fun getPersistenceByStorageId(secretStorageId: SecretStorageId): SecretPersistence {
     val secretStorage = secretStorageService.getById(secretStorageId)
+    if (secretStorage.isDefault()) {
+      return defaultSecretPersistence
+    }
     val secretStorageConfig = secretStorageService.hydrateStorageConfig(secretStorage).config
     val secretPersistenceConfig =
       SecretPersistenceConfig()
@@ -78,16 +83,38 @@ class SecretPersistenceService(
     return RuntimeSecretPersistence(secretPersistenceConfig, metricClient)
   }
 
-  fun getPersistenceFromConfig(
+  fun getPersistenceMapFromConfig(
     config: ConfigWithSecretReferences,
     context: SecretHydrationContext,
-  ): SecretPersistence {
-    val secretStorageId = SecretsHelpers.SecretReferenceHelpers.getSecretStorageIdFromConfig(config)?.let { SecretStorageId(it) }
+  ): Map<UUID?, SecretPersistence> {
+    val secretStorageIds = SecretsHelpers.SecretReferenceHelpers.getSecretStorageIdsFromConfig(config)
     val useRuntimeSecretPersistence = featureFlagClient.boolVariation(UseRuntimeSecretPersistence, Organization(context.organizationId.value))
-    return when {
-      secretStorageId != null -> getPersistenceByStorageId(secretStorageId)
-      useRuntimeSecretPersistence -> getLegacyByOrganizationId(context.organizationId)
-      else -> defaultSecretPersistence
+    return secretStorageIds.associate { secretStorageId ->
+      val persistence =
+        when {
+          secretStorageId != null -> getPersistenceByStorageId(SecretStorageId(secretStorageId))
+          useRuntimeSecretPersistence -> getLegacyByOrganizationId(context.organizationId)
+          else -> defaultSecretPersistence
+        }
+      secretStorageId to persistence
+    }
+  }
+
+  @JvmName("getPersistenceFromWorkspaceId")
+  fun getPersistenceFromWorkspaceId(workspaceId: WorkspaceId): SecretPersistence {
+    secretStorageService.getByWorkspaceId(workspaceId)?.let {
+      return getPersistenceByStorageId(it.id)
+    }
+    val organizationId =
+      organizationService
+        .getOrganizationForWorkspaceId(workspaceId.value)
+        .orElseThrow { IllegalStateException("No organization found for workspace $workspaceId") }
+        .organizationId
+    val useRuntimeSecretPersistence = featureFlagClient.boolVariation(UseRuntimeSecretPersistence, Organization(organizationId))
+    return if (useRuntimeSecretPersistence) {
+      getLegacyByOrganizationId(OrganizationId(organizationId))
+    } else {
+      defaultSecretPersistence
     }
   }
 }

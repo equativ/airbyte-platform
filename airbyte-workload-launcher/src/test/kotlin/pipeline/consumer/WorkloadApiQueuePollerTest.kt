@@ -5,8 +5,6 @@
 package io.airbyte.workload.launcher.pipeline.consumer
 
 import io.airbyte.featureflag.FeatureFlagClient
-import io.airbyte.featureflag.PlaneName
-import io.airbyte.featureflag.UseWorkloadQueueTableConsumer
 import io.airbyte.metrics.MetricClient
 import io.airbyte.workload.api.client.model.generated.Workload
 import io.airbyte.workload.api.client.model.generated.WorkloadLabel
@@ -48,14 +46,10 @@ class WorkloadApiQueuePollerTest {
 
   private val priority: WorkloadPriority = WorkloadPriority.DEFAULT
 
-  private val dataplaneName: String = "dataplane-name"
-
   lateinit var poller: WorkloadApiQueuePoller
 
   @BeforeEach
   fun setup() {
-    every { featureFlagClient.boolVariation(UseWorkloadQueueTableConsumer, PlaneName(dataplaneName)) } returns true
-
     poller =
       WorkloadApiQueuePoller(
         workloadApiClient,
@@ -64,7 +58,6 @@ class WorkloadApiQueuePollerTest {
         pollSizeItems,
         pollIntervalSeconds,
         priority,
-        dataplaneName,
       )
   }
 
@@ -135,39 +128,6 @@ class WorkloadApiQueuePollerTest {
   }
 
   @Test
-  fun `does not poll if FF disabled`() {
-    every { workloadApiClient.pollQueue(groupId, priority, pollSizeItems) } returns
-      listOf(
-        workload1,
-        workload2,
-      ) andThen
-      listOf(
-        workload3,
-        workload4,
-      )
-
-    StepVerifier
-      .withVirtualTime {
-        poller.initialize(groupId)
-        poller.resumePolling()
-        poller.flux.take(4)
-      }.thenAwait(Duration.ofSeconds(pollIntervalSeconds))
-      .expectNext(workload1.toLauncherInput())
-      .expectNext(workload2.toLauncherInput())
-      .then {
-        every { featureFlagClient.boolVariation(UseWorkloadQueueTableConsumer, PlaneName(dataplaneName)) } returns false
-      }.expectNoEvent(Duration.ofSeconds(pollIntervalSeconds * 2))
-      .then {
-        every { featureFlagClient.boolVariation(UseWorkloadQueueTableConsumer, PlaneName(dataplaneName)) } returns true
-      }.thenAwait(Duration.ofSeconds(pollIntervalSeconds))
-      .expectNext(workload3.toLauncherInput())
-      .expectNext(workload4.toLauncherInput())
-      .verifyComplete()
-
-    verify(exactly = 2) { workloadApiClient.pollQueue(groupId, priority, pollSizeItems) }
-  }
-
-  @Test
   fun `handles errors and continues polling`() {
     every { workloadApiClient.pollQueue(groupId, priority, pollSizeItems) } returns
       listOf(
@@ -210,7 +170,6 @@ class WorkloadApiQueuePollerTest {
       labels: List<WorkloadLabel> = listOf(),
       inputPayload: String = "payload",
       logPath: String = "/path",
-      geography: String = "AUTO",
       type: WorkloadType = WorkloadType.SYNC,
       autoId: UUID = UUID.randomUUID(),
     ): Workload =
@@ -219,7 +178,6 @@ class WorkloadApiQueuePollerTest {
         labels = labels,
         inputPayload = inputPayload,
         logPath = logPath,
-        geography = geography,
         type = type,
         autoId = autoId,
       )

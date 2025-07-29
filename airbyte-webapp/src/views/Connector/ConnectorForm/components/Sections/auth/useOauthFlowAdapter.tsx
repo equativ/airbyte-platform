@@ -6,8 +6,8 @@ import { useState } from "react";
 import { FieldPath, useFormContext } from "react-hook-form";
 import { FormattedMessage } from "react-intl";
 
-import { AdvancedAuth, CompleteOAuthResponseAuthPayload } from "core/api/types/AirbyteClient";
-import { ConnectorDefinition, ConnectorDefinitionSpecificationRead } from "core/domain/connector";
+import { CompleteOAuthResponseAuthPayload } from "core/api/types/AirbyteClient";
+import { ConnectorDefinitionSpecificationRead } from "core/domain/connector";
 import { useRunOauthFlow, useRunOauthFlowBuilder } from "hooks/services/useConnectorAuth";
 import { useAuthentication } from "views/Connector/ConnectorForm/useAuthentication";
 
@@ -16,20 +16,13 @@ import { useConnectorForm } from "../../../connectorFormContext";
 import { ConnectorFormValues } from "../../../types";
 import { makeConnectionConfigurationPath, serverProvidedOauthPaths, userProvidedOauthInputPaths } from "../../../utils";
 
-interface Credentials {
-  credentials: AdvancedAuth;
-}
-
-export function useFormOauthAdapter(
-  connector: ConnectorDefinitionSpecificationRead,
-  connectorDefinition?: ConnectorDefinition
-): {
+export function useFormOauthAdapter(connector: ConnectorDefinitionSpecificationRead): {
   loading: boolean;
   done?: boolean;
   hasRun: boolean;
   run: () => Promise<void>;
 } {
-  const { setValue, getValues: getRawValues, formState } = useFormContext<ConnectorFormValues<Credentials>>();
+  const { setValue, getValues: getRawValues, formState } = useFormContext<ConnectorFormValues>();
   const [hasRun, setHasRun] = useState(false);
 
   const { getValues } = useConnectorForm();
@@ -47,7 +40,7 @@ export function useFormOauthAdapter(
     );
 
     Object.entries(newValues).forEach(([key, value]) => {
-      setValue(key as keyof ConnectorFormValues<Credentials>, value, {
+      setValue(key as keyof ConnectorFormValues, value, {
         shouldDirty: true,
         shouldTouch: true,
         // do not validate, otherwise all unfilled fields will be marked as invalid
@@ -65,7 +58,7 @@ export function useFormOauthAdapter(
     setHasRun(true);
   };
 
-  const { run, loading, done } = useRunOauthFlow({ connector, connectorDefinition, onDone });
+  const { run, loading, done } = useRunOauthFlow({ connector, onDone });
 
   const { hasAuthFieldValues } = useAuthentication();
 
@@ -83,15 +76,11 @@ export function useFormOauthAdapter(
           ) ?? [];
 
         oauthInputFields.forEach((path) =>
-          setValue(
-            path as FieldPath<ConnectorFormValues<Credentials>>,
-            getRawValues(path as FieldPath<ConnectorFormValues<Credentials>>),
-            {
-              shouldDirty: true,
-              shouldTouch: true,
-              shouldValidate: true,
-            }
-          )
+          setValue(path as FieldPath<ConnectorFormValues>, getRawValues(path as FieldPath<ConnectorFormValues>), {
+            shouldDirty: true,
+            shouldTouch: true,
+            shouldValidate: true,
+          })
         );
 
         const oAuthErrors = pick(formState.errors, oauthInputFields);
@@ -101,7 +90,7 @@ export function useFormOauthAdapter(
         }
       }
 
-      const preparedValues = getValues<Credentials>(getRawValues());
+      const preparedValues = getValues(getRawValues());
       const oauthInputParams = Object.entries(oauthInputProperties).reduce(
         (acc, property) => {
           acc[property[0]] = get(preparedValues, makeConnectionConfigurationPath(property[1].path_in_connector_config));

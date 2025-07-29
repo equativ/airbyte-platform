@@ -34,7 +34,7 @@ spec:
         {{- include "airbyte.tplvalues.render" (dict "value" .Values.temporal.podAnnotations "context" $) | nindent 8 }}
       {{- end }}
     spec:
-      serviceAccountName: {{ .Values.global.serviceAccountName }}
+      serviceAccountName: {{ default .Values.global.serviceAccountName .Values.temporal.serviceAccountName }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- range .Values.global.imagePullSecrets }}
@@ -59,8 +59,8 @@ spec:
         image: {{ include "imageUrl" (list .Values.temporal.image $) }}
         imagePullPolicy: {{ .Values.temporal.image.pullPolicy }}
         env:
-
           {{- include "airbyte.temporal.envs" . | nindent 10 }}
+          {{- include "airbyte.temporal.database.envs" . | nindent 10 }}
 
         {{- if .Values.temporal.extraEnv }}
         {{ .Values.temporal.extraEnv | toYaml | nindent 10 }}

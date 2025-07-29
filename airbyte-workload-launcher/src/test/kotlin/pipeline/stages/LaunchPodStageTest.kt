@@ -31,7 +31,7 @@ class LaunchPodStageTest {
     val launcher: KubePodClient = mockk()
     every { launcher.launchReplication(any(), any()) } returns Unit
 
-    val stage = LaunchPodStage(launcher, mockk(), "dataplane-id")
+    val stage = LaunchPodStage(launcher, mockk())
     val workloadId = UUID.randomUUID().toString()
     val msg = RecordFixtures.launcherInput(workloadId)
     val io = LaunchStageIO(msg = msg, payload = payload)
@@ -39,7 +39,7 @@ class LaunchPodStageTest {
     val result = stage.applyStage(io)
 
     verify {
-      launcher.launchReplication(replInput, msg)
+      launcher.launchReplication(payload, msg)
     }
 
     assert(result.payload == payload)
@@ -53,7 +53,7 @@ class LaunchPodStageTest {
     val launcher: KubePodClient = mockk()
     every { launcher.launchReset(any(), any()) } returns Unit
 
-    val stage = LaunchPodStage(launcher, mockk(), "dataplane-id")
+    val stage = LaunchPodStage(launcher, mockk())
     val workloadId = UUID.randomUUID().toString()
     val msg = RecordFixtures.launcherInput(workloadId)
     val io = LaunchStageIO(msg = msg, payload = payload)
@@ -61,7 +61,7 @@ class LaunchPodStageTest {
     val result = stage.applyStage(io)
 
     verify {
-      launcher.launchReset(replInput, msg)
+      launcher.launchReset(payload, msg)
     }
 
     assert(result.payload == payload)
@@ -82,7 +82,7 @@ class LaunchPodStageTest {
     val launcher: KubePodClient = mockk()
     every { launcher.launchCheck(any(), any()) } returns Unit
 
-    val stage = LaunchPodStage(launcher, mockk(), "dataplane-id")
+    val stage = LaunchPodStage(launcher, mockk())
     val workloadId = UUID.randomUUID().toString()
     val msg = RecordFixtures.launcherInput(workloadId)
     val io = LaunchStageIO(msg = msg, payload = payload)
@@ -109,7 +109,7 @@ class LaunchPodStageTest {
     val launcher: KubePodClient = mockk()
     every { launcher.launchDiscover(any(), any()) } returns Unit
 
-    val stage = LaunchPodStage(launcher, mockk(), "dataplane-id")
+    val stage = LaunchPodStage(launcher, mockk())
     val workloadId = UUID.randomUUID().toString()
     val msg = RecordFixtures.launcherInput(workloadId)
     val io = LaunchStageIO(msg = msg, payload = payload)

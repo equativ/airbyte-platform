@@ -8,40 +8,46 @@ import com.fasterxml.jackson.databind.JsonNode
 import java.util.UUID
 
 /**
- * Entity for manipulating PartialUserConfigs
+ * Config model for manipulating PartialUserConfigs
  *
  * The partialUserConfigProperties field is expected to contain a JSON string
  * representing specific user configuration properties.
  *
- * This will be deprecated in favor of the version with sourceId in https://github.com/airbytehq/airbyte-internal-issues/issues/12247
  */
 
 data class PartialUserConfig(
   val id: UUID,
   val workspaceId: UUID,
   val configTemplateId: UUID,
-  /**
-   * JSON string containing user-specific configuration properties that will be
-   * applied to the template configuration
-   */
-  val partialUserConfigProperties: JsonNode,
+  val actorId: UUID? = null,
 )
 
 /**
- * Entity for manipulating PartialUserConfigs with sourceId
- *
- * The partialUserConfigProperties field is expected to contain a JSON string
- * representing specific user configuration properties.
- *
+ * Config model for manipulating PartialUserConfigs with actor details
  */
-data class PartialUserConfigWithSourceId(
-  val id: UUID,
-  val workspaceId: UUID,
+
+data class PartialUserConfigWithActorDetails(
+  val partialUserConfig: PartialUserConfig,
+  val actorIcon: String,
+  val actorName: String,
   val configTemplateId: UUID,
-  /**
-   * JSON string containing user-specific configuration properties that will be
-   * applied to the template configuration
-   */
-  val partialUserConfigProperties: JsonNode,
-  val sourceId: UUID,
+)
+
+/**
+ * Config model for manipulating PartialUserConfigs with config template details
+ */
+
+data class PartialUserConfigWithConfigTemplateAndActorDetails(
+  val partialUserConfig: PartialUserConfig,
+  val configTemplate: ConfigTemplate,
+  val actorName: String,
+  val actorIcon: String,
+)
+
+data class PartialUserConfigWithFullDetails(
+  val partialUserConfig: PartialUserConfig,
+  val configTemplate: ConfigTemplate,
+  val connectionConfiguration: JsonNode,
+  val actorName: String,
+  val actorIcon: String,
 )

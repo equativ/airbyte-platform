@@ -26,6 +26,7 @@ import io.airbyte.config.SupportLevel;
 import io.airbyte.config.VersionBreakingChange;
 import io.airbyte.protocol.models.v0.ConnectorSpecification;
 import jakarta.annotation.Nullable;
+import java.time.OffsetDateTime;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
@@ -133,7 +134,10 @@ public class ConnectorRegistryConverters {
         .withLastPublished(lastModified)
         .withCdkVersion(cdkVersion)
         .withSuggestedStreams(def.getSuggestedStreams())
-        .withLanguage(def.getLanguage());
+        .withLanguage(def.getLanguage())
+        .withSupportsFileTransfer(def.getSupportsFileTransfer())
+        .withConnectorIPCOptions(def.getConnectorIPCOptions());
+
   }
 
   /**
@@ -173,7 +177,10 @@ public class ConnectorRegistryConverters {
         .withCdkVersion(cdkVersion)
         .withSupportsRefreshes(def.getSupportsRefreshes() != null && def.getSupportsRefreshes())
         .withLanguage(def.getLanguage())
-        .withSupportsFileTransfer(def.getSupportsFileTransfer());
+        .withSupportsFileTransfer(def.getSupportsFileTransfer())
+        .withSupportsDataActivation(def.getSupportsDataActivation())
+        .withConnectorIPCOptions(def.getConnectorIPCOptions());
+
   }
 
   /**
@@ -272,25 +279,33 @@ public class ConnectorRegistryConverters {
                                                      final ActorDefinitionVersion rcAdv,
                                                      final ActorDefinitionVersion initialAdv,
                                                      final boolean hasBreakingChange) {
-    ConnectorRollout connectorRollout = new ConnectorRollout()
-        .withId(UUID.randomUUID())
-        .withActorDefinitionId(rcAdv.getActorDefinitionId())
-        .withReleaseCandidateVersionId(rcAdv.getVersionId())
-        .withInitialVersionId(initialAdv.getVersionId())
-        .withState(ConnectorEnumRolloutState.INITIALIZED)
-        .withHasBreakingChanges(hasBreakingChange);
+    ConnectorRollout connectorRollout = new ConnectorRollout(
+        UUID.randomUUID(),
+        null,
+        rcAdv.getActorDefinitionId(),
+        rcAdv.getVersionId(),
+        initialAdv.getVersionId(),
+        ConnectorEnumRolloutState.INITIALIZED,
+        (rolloutConfiguration != null ? rolloutConfiguration.getInitialPercentage() : DEFAULT_ROLLOUT_CONFIGURATION.getInitialPercentage())
+            .intValue(),
+        null,
+        (rolloutConfiguration != null ? rolloutConfiguration.getMaxPercentage() : DEFAULT_ROLLOUT_CONFIGURATION.getMaxPercentage()).intValue(),
+        hasBreakingChange,
+        null,
+        (rolloutConfiguration != null ? rolloutConfiguration.getAdvanceDelayMinutes() : DEFAULT_ROLLOUT_CONFIGURATION.getAdvanceDelayMinutes())
+            .intValue(),
+        null,
+        OffsetDateTime.now().toEpochSecond(),
+        OffsetDateTime.now().toEpochSecond(),
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null);
 
-    if (rolloutConfiguration == null) {
-      return connectorRollout
-          .withInitialRolloutPct(DEFAULT_ROLLOUT_CONFIGURATION.getInitialPercentage())
-          .withFinalTargetRolloutPct(DEFAULT_ROLLOUT_CONFIGURATION.getMaxPercentage())
-          .withMaxStepWaitTimeMins(DEFAULT_ROLLOUT_CONFIGURATION.getAdvanceDelayMinutes());
-    }
-
-    return connectorRollout
-        .withInitialRolloutPct(rolloutConfiguration.getInitialPercentage())
-        .withFinalTargetRolloutPct(rolloutConfiguration.getMaxPercentage())
-        .withMaxStepWaitTimeMins(rolloutConfiguration.getAdvanceDelayMinutes());
+    return connectorRollout;
   }
 
   public static List<ConnectorRegistrySourceDefinition> toRcSourceDefinitions(@Nullable final ConnectorRegistrySourceDefinition def) {

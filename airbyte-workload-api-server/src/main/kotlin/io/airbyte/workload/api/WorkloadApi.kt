@@ -21,12 +21,14 @@ import io.airbyte.workload.api.domain.WorkloadHeartbeatRequest
 import io.airbyte.workload.api.domain.WorkloadLaunchedRequest
 import io.airbyte.workload.api.domain.WorkloadListRequest
 import io.airbyte.workload.api.domain.WorkloadListResponse
+import io.airbyte.workload.api.domain.WorkloadQueueCleanLimit
 import io.airbyte.workload.api.domain.WorkloadQueuePollRequest
 import io.airbyte.workload.api.domain.WorkloadQueueQueryRequest
 import io.airbyte.workload.api.domain.WorkloadQueueStatsResponse
 import io.airbyte.workload.api.domain.WorkloadRunningRequest
 import io.airbyte.workload.api.domain.WorkloadSuccessRequest
-import io.airbyte.workload.handler.DefaultDeadlineValues
+import io.airbyte.workload.common.DefaultDeadlineValues
+import io.airbyte.workload.common.WorkloadQueueService
 import io.airbyte.workload.handler.WorkloadHandler
 import io.micronaut.http.HttpResponse
 import io.micronaut.http.HttpStatus
@@ -102,6 +104,8 @@ open class WorkloadApi(
       workloadCreateRequest.workloadId,
       workloadCreateRequest.labels,
       workloadCreateRequest.workloadInput,
+      workloadCreateRequest.workspaceId,
+      workloadCreateRequest.organizationId,
       workloadCreateRequest.logPath,
       workloadCreateRequest.mutexKey,
       workloadCreateRequest.type,
@@ -587,5 +591,25 @@ open class WorkloadApi(
   open fun getWorkloadQueueStats(): WorkloadQueueStatsResponse {
     val stats = workloadHandler.getWorkloadQueueStats()
     return WorkloadQueueStatsResponse(stats)
+  }
+
+  @POST
+  @Path("/queue/clean")
+  @Consumes("application/json")
+  @Operation(summary = "Remove the queue entries which are older than a week up to a certain limit", tags = ["workload"])
+  @ApiResponses(
+    value = [
+      ApiResponse(
+        responseCode = "204",
+        description = "Cleaning workload queue successfull",
+      ),
+    ],
+  )
+  open fun workloadQueueClean(
+    @RequestBody(
+      content = [Content(schema = Schema(implementation = WorkloadQueueCleanLimit::class))],
+    ) @Body req: WorkloadQueueCleanLimit,
+  ) {
+    workloadHandler.cleanWorkloadQueue(req.limit)
   }
 }

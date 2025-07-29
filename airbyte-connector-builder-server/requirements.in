@@ -1,1 +1,2 @@
-airbyte-cdk==6.41.5
+airbyte-cdk==6.48.15
+certifi==2025.01.31

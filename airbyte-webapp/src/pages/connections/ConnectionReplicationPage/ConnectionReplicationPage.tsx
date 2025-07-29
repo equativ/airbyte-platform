@@ -6,18 +6,13 @@ import { FormattedMessage, useIntl } from "react-intl";
 import { useLocation } from "react-router-dom";
 import { useUnmount } from "react-use";
 
-import {
-  FormConnectionFormValues,
-  useConnectionValidationSchema,
-  useInitialFormValues,
-} from "components/connection/ConnectionForm/formConfig";
+import { FormConnectionFormValues, useInitialFormValues } from "components/connection/ConnectionForm/formConfig";
 import { useRefreshSourceSchemaWithConfirmationOnDirty } from "components/connection/ConnectionForm/refreshSourceSchemaWithConfirmationOnDirty";
 import { SchemaChangeBackdrop } from "components/connection/ConnectionForm/SchemaChangeBackdrop";
 import { SchemaRefreshing } from "components/connection/ConnectionForm/SchemaRefreshing";
-import { useReplicationConnectionValidationZodSchema } from "components/connection/ConnectionForm/schemas/zodSchema";
+import { useReplicationConnectionValidationZodSchema } from "components/connection/ConnectionForm/schemas/connectionSchema";
 import { SyncCatalogTable } from "components/connection/SyncCatalogTable";
 import { Form } from "components/forms";
-import { Box } from "components/ui/Box";
 import { Card } from "components/ui/Card";
 import { FlexContainer } from "components/ui/Flex";
 import { ExternalLink } from "components/ui/Link";
@@ -32,12 +27,12 @@ import {
   useGetStateTypeQuery,
 } from "core/api";
 import { PageTrackingCodes, useTrackPage } from "core/services/analytics";
+import { useFormMode } from "core/services/ui/FormModeContext";
 import { trackError } from "core/utils/datadog";
 import { useConfirmCatalogDiff } from "hooks/connection/useConfirmCatalogDiff";
 import { useSchemaChanges } from "hooks/connection/useSchemaChanges";
 import { useConnectionEditService } from "hooks/services/ConnectionEdit/ConnectionEditService";
 import { useConnectionFormService } from "hooks/services/ConnectionForm/ConnectionFormService";
-import { useExperiment } from "hooks/services/Experiment";
 import { ModalResult, useModalService } from "hooks/services/Modal";
 import { useNotificationService } from "hooks/services/Notification";
 
@@ -92,14 +87,14 @@ export const ConnectionReplicationPage: React.FC = () => {
   useTrackPage(PageTrackingCodes.CONNECTIONS_ITEM_REPLICATION);
   const { trackSchemaEdit } = useAnalyticsTrackFunctions();
   const getStateType = useGetStateTypeQuery();
-  const isZodSchemaValidatorEnabled = useExperiment("connection.zodSchemaValidator");
 
   const { formatMessage } = useIntl();
   const { registerNotification, unregisterNotificationById } = useNotificationService();
   const { openModal } = useModalService();
 
   const { connection, updateConnection, discardRefreshedSchema } = useConnectionEditService();
-  const { setSubmitError, refreshSchema, mode } = useConnectionFormService();
+  const { setSubmitError, refreshSchema } = useConnectionFormService();
+  const { mode } = useFormMode();
   const initialValues = useInitialFormValues(connection, mode);
 
   const { supportsRefreshes: destinationSupportsRefreshes } = useDestinationDefinitionVersion(
@@ -107,7 +102,6 @@ export const ConnectionReplicationPage: React.FC = () => {
   );
 
   type RelevantConnectionValues = Pick<ConnectionValues, (typeof relevantConnectionKeys)[number]>;
-  const validationSchema = useConnectionValidationSchema().pick(relevantConnectionKeys);
   const zodValidationSchema = useReplicationConnectionValidationZodSchema();
 
   const saveConnection = useCallback(
@@ -277,8 +271,7 @@ export const ConnectionReplicationPage: React.FC = () => {
         <Form<RelevantConnectionValues>
           defaultValues={initialValues}
           reinitializeDefaultValues
-          schema={validationSchema}
-          zodSchema={isZodSchemaValidatorEnabled ? zodValidationSchema : undefined}
+          zodSchema={zodValidationSchema}
           onSubmit={onFormSubmit}
           trackDirtyChanges
           onError={onError}
@@ -288,10 +281,8 @@ export const ConnectionReplicationPage: React.FC = () => {
             <SchemaChangeMessage />
             <SchemaChangeBackdrop>
               <SchemaRefreshing>
-                <Card noPadding title={formatMessage({ id: "connection.schema" })}>
-                  <Box mb="xl">
-                    <SyncCatalogTable />
-                  </Box>
+                <Card title={formatMessage({ id: "connection.schema" })} noPadding className={styles.syncCatalogCard}>
+                  <SyncCatalogTable />
                 </Card>
               </SchemaRefreshing>
             </SchemaChangeBackdrop>

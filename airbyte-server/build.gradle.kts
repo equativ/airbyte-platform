@@ -57,6 +57,7 @@ dependencies {
   implementation(project(":oss:airbyte-commons-temporal-core"))
   implementation(project(":oss:airbyte-commons-server"))
   implementation(project(":oss:airbyte-commons-with-dependencies"))
+  implementation(project(":oss:airbyte-commons-workload"))
   implementation(project(":oss:airbyte-domain:services"))
   implementation(project(":oss:airbyte-domain:models"))
   implementation(project(":oss:airbyte-config:init"))
@@ -64,6 +65,7 @@ dependencies {
   implementation(project(":oss:airbyte-config:config-persistence"))
   implementation(project(":oss:airbyte-config:config-secrets"))
   implementation(project(":oss:airbyte-config:specs"))
+  implementation(project(":oss:airbyte-worker-models"))
 
   // TODO airybte-server should not depend directly on airbyte-data. All data access should go
   // through airbyte-domain.
@@ -125,10 +127,27 @@ val copySeed =
     dependsOn(project(":oss:airbyte-config:init").tasks.named("processResources"))
   }
 
+val copyWebapp =
+  tasks.register<Copy>("copyWebapp") {
+    from("${project(":oss:airbyte-webapp").layout.buildDirectory.get()}/app")
+    into("${project.layout.projectDirectory}/src/main/resources/webapp")
+    dependsOn(
+      project(":oss:airbyte-webapp").tasks.named("build"),
+      "spotlessStyling",
+    )
+  }
+
+tasks.named("dockerBuildImage") {
+  dependsOn(copyWebapp)
+}
+
 // need to make sure that the files are in the resource directory before copying.)
 // tests require the seed to exist.)
 tasks.named("test") {
   dependsOn(copySeed)
+}
+tasks.named("processResources") {
+  dependsOn(copyWebapp)
 }
 tasks.named("assemble") {
   dependsOn(copySeed)

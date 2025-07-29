@@ -4,7 +4,11 @@
 
 package io.airbyte.bootloader
 
+import io.airbyte.bootloader.K8sSecretHelper.base64Decode
 import io.airbyte.commons.random.randomAlphanumeric
+import io.airbyte.commons.version.AirbyteVersion
+import io.fabric8.kubernetes.api.model.authorization.v1.SelfSubjectAccessReview
+import io.fabric8.kubernetes.api.model.authorization.v1.SelfSubjectAccessReviewBuilder
 import io.fabric8.kubernetes.client.KubernetesClient
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.ConfigurationProperties
@@ -29,6 +33,34 @@ class AuthKubernetesSecretInitializer(
     logger.info { "Initializing auth secret in Kubernetes..." }
     K8sSecretHelper.createOrUpdateSecret(kubernetesClient, secretName, getSecretDataMap())
     logger.info { "Finished initializing auth secret." }
+  }
+
+  fun checkAccessToSecrets(airbyteVersion: AirbyteVersion) {
+    kubernetesClient.authorization().v1().subjectAccessReview()
+    val namespace: String = kubernetesClient.namespace // the namespace the client is operating in
+    val review: SelfSubjectAccessReview =
+      SelfSubjectAccessReviewBuilder()
+        .withNewSpec()
+        .withNewResourceAttributes()
+        .withNamespace(namespace)
+        .withVerb("create")
+        .withResource("secrets")
+        .endResourceAttributes()
+        .endSpec()
+        .build()
+    val response: SelfSubjectAccessReview =
+      kubernetesClient
+        .authorization()
+        .v1()
+        .selfSubjectAccessReview()
+        .create(review)
+    if (!response.status.allowed) {
+      throw IllegalStateException(
+        """
+Upgrade to version $airbyteVersion failed. As of version 1.6 of the Airbyte Platform, we require your Service Account permissions to include access to the "secrets" resource. To learn more, please visit our documentation page at https://docs.airbyte.com/enterprise-setup/upgrade-service-account.
+        """.trimIndent(),
+      )
+    }
   }
 
   private fun getSecretDataMap(): Map<String, String> {
@@ -70,18 +102,14 @@ class AuthKubernetesSecretInitializer(
     defaultValue: String,
   ): String {
     if (!providedValue.isNullOrBlank()) {
-      // if a value is provided directly, simply return it, regardless of what may be
-      // present in the secret.
       logger.info { "Using provided value for secret key $secretKey" }
       return providedValue
     } else {
       val secret = kubernetesClient.secrets().withName(secretName).get()
       if (secret != null && secretKey != null && secret.data.containsKey(secretKey)) {
-        // if a value is present in the secret, simply return it without overwriting it.
         logger.info { "Using existing value for secret key $secretKey" }
-        return secret.data[secretKey]!!
+        return base64Decode(secret.data[secretKey]!!)
       } else {
-        // if no value is provided or present in the secret, generate a new value and return it.
         logger.info { "Using generated/default value for secret key $secretKey" }
         return defaultValue
       }

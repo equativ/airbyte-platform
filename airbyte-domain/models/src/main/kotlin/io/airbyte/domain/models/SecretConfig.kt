@@ -18,8 +18,16 @@ data class SecretConfig(
   val externalCoordinate: String,
   val tombstone: Boolean = false,
   val airbyteManaged: Boolean,
-  val createdBy: UUID,
-  val updatedBy: UUID,
+  val createdBy: UUID?,
+  val updatedBy: UUID?,
   val createdAt: OffsetDateTime?,
   val updatedAt: OffsetDateTime?,
+)
+
+data class SecretConfigCreate(
+  val secretStorageId: SecretStorageId,
+  val descriptor: String,
+  val externalCoordinate: String,
+  val airbyteManaged: Boolean,
+  val createdBy: UserId?,
 )

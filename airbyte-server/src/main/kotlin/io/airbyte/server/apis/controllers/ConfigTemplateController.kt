@@ -4,104 +4,92 @@
 
 package io.airbyte.server.apis.controllers
 
-import io.airbyte.api.client.model.generated.ConfigTemplateUpdateRequestBody
-import io.airbyte.api.model.generated.ConfigTemplateCreateRequestBody
-import io.airbyte.api.model.generated.ConfigTemplateCreateResponse
+import com.fasterxml.jackson.databind.JsonNode
+import io.airbyte.api.generated.ConfigTemplateApi
 import io.airbyte.api.model.generated.ConfigTemplateList
 import io.airbyte.api.model.generated.ConfigTemplateListItem
-import io.airbyte.api.model.generated.ConfigTemplateListRequest
 import io.airbyte.api.model.generated.ConfigTemplateRead
 import io.airbyte.api.model.generated.ConfigTemplateRequestBody
-import io.airbyte.commons.auth.AuthRoleConstants.ADMIN
-import io.airbyte.commons.server.scheduling.AirbyteTaskExecutors
-import io.airbyte.config.ConfigTemplate
+import io.airbyte.api.model.generated.ListConfigTemplatesRequestBody
+import io.airbyte.commons.auth.generated.Intent
+import io.airbyte.commons.auth.permissions.RequiresIntent
+import io.airbyte.commons.entitlements.Entitlement
+import io.airbyte.commons.entitlements.LicenseEntitlementChecker
 import io.airbyte.config.ConfigTemplateWithActorDetails
 import io.airbyte.data.services.ConfigTemplateService
-import io.airbyte.domain.models.ActorDefinitionId
+import io.airbyte.data.services.impls.data.mappers.objectMapper
 import io.airbyte.domain.models.OrganizationId
-import io.micronaut.http.annotation.Body
+import io.airbyte.persistence.job.WorkspaceHelper
+import io.airbyte.server.helpers.ConfigTemplateAdvancedAuthHelper
 import io.micronaut.http.annotation.Controller
-import io.micronaut.http.annotation.Post
-import io.micronaut.scheduling.annotation.ExecuteOn
-import io.micronaut.security.annotation.Secured
 
-@Controller("/api/v1/config_templates")
-class ConfigTemplateController(
+@Controller
+open class ConfigTemplateController(
   private val configTemplateService: ConfigTemplateService,
-) {
-  @Post("/list")
-  @Secured(ADMIN)
-  @ExecuteOn(AirbyteTaskExecutors.IO)
-  fun listConfigTemplates(
-    @Body configTemplateListRequest: ConfigTemplateListRequest,
-  ): ConfigTemplateList =
-    configTemplateListToApiModel(configTemplateService.listConfigTemplatesForOrganization(OrganizationId(configTemplateListRequest.organizationId)))
+  val workspaceHelper: WorkspaceHelper,
+  private val licenseEntitlementChecker: LicenseEntitlementChecker,
+) : ConfigTemplateApi {
+  @RequiresIntent(Intent.ViewConfigTemplates)
+  override fun getConfigTemplate(req: ConfigTemplateRequestBody): ConfigTemplateRead {
+    val organizationId = workspaceHelper.getOrganizationForWorkspace(req.workspaceId)
 
-  @Post("/get")
-  @Secured(ADMIN)
-  @ExecuteOn(AirbyteTaskExecutors.IO)
-  fun getConfigTemplate(
-    @Body configTemplateRequestBody: ConfigTemplateRequestBody,
-  ): ConfigTemplateRead = configTemplateToApiModel(configTemplateService.getConfigTemplate(configTemplateRequestBody.configTemplateId))
+    licenseEntitlementChecker.ensureEntitled(
+      organizationId,
+      Entitlement.CONFIG_TEMPLATE_ENDPOINTS,
+    )
 
-  private fun configTemplateListToApiModel(configTemplateListItems: List<ConfigTemplateWithActorDetails>): ConfigTemplateList {
-    val configTemplateList = ConfigTemplateList()
-    configTemplateList.configTemplates =
-      configTemplateListItems
-        .map { item ->
-          ConfigTemplateListItem()
-            .id(item.configTemplate.id)
-            .name(item.actorName)
-            .icon(item.actorIcon)
-        }
-    return configTemplateList
+    return configTemplateService
+      .getConfigTemplate(req.configTemplateId, req.workspaceId)
+      .toApiModel()
   }
 
-  @Post("/create")
-  @Secured(ADMIN)
-  @ExecuteOn(AirbyteTaskExecutors.IO)
-  fun createConfigTemplate(
-    @Body createConfigTemplateRequestBody: ConfigTemplateCreateRequestBody,
-  ): ConfigTemplateCreateResponse {
-    val configTemplate =
-      configTemplateService.createTemplate(
-        organizationId = OrganizationId(createConfigTemplateRequestBody.organizationId),
-        actorDefinitionId = ActorDefinitionId(createConfigTemplateRequestBody.actorDefinitionId),
-        partialDefaultConfig = createConfigTemplateRequestBody.partialDefaultConfig,
-        userConfigSpec = createConfigTemplateRequestBody.partialUserConfigSpec,
+  @RequiresIntent(Intent.ViewConfigTemplates)
+  override fun listConfigTemplates(req: ListConfigTemplatesRequestBody): ConfigTemplateList {
+    val organizationId = workspaceHelper.getOrganizationForWorkspace(req.workspaceId)
+
+    licenseEntitlementChecker.ensureEntitled(
+      organizationId,
+      Entitlement.CONFIG_TEMPLATE_ENDPOINTS,
+    )
+
+    return ConfigTemplateList()
+      .configTemplates(
+        configTemplateService
+          .listConfigTemplatesForOrganization(
+            OrganizationId(
+              organizationId,
+            ),
+          ).map { it.toListItem() },
       )
-
-    return configTemplate.toApiModel()
   }
-
-  @Post("/update")
-  @Secured(ADMIN)
-  @ExecuteOn(AirbyteTaskExecutors.IO)
-  fun updateConfigTemplate(
-    @Body updateConfigTemplateRequestBody: ConfigTemplateUpdateRequestBody,
-  ): ConfigTemplateCreateResponse {
-    val configTemplate =
-      configTemplateService.updateTemplate(
-        configTemplateId = updateConfigTemplateRequestBody.configTemplateId,
-        name = updateConfigTemplateRequestBody.name,
-        partialDefaultConfig = updateConfigTemplateRequestBody.partialDefaultConfig,
-        userConfigSpec = updateConfigTemplateRequestBody.partialUserConfigSpec,
-      )
-
-    return configTemplate.toApiModel()
-  }
-
-  private fun ConfigTemplate.toApiModel(): ConfigTemplateCreateResponse {
-    val configTemplateCreateResponse = ConfigTemplateCreateResponse()
-    configTemplateCreateResponse.id = this.id
-    return configTemplateCreateResponse
-  }
-
-  private fun configTemplateToApiModel(configTemplate: ConfigTemplateWithActorDetails): ConfigTemplateRead =
-    ConfigTemplateRead()
-      .id(configTemplate.configTemplate.id)
-      .name(configTemplate.actorName)
-      .icon(configTemplate.actorIcon)
-      .sourceDefinitionId(configTemplate.configTemplate.actorDefinitionId)
-      .configTemplateSpec(configTemplate.configTemplate.userConfigSpec)
 }
+
+private fun ConfigTemplateWithActorDetails.toApiModel(): ConfigTemplateRead {
+  val configTemplate =
+    ConfigTemplateRead()
+      .sourceDefinitionId(this.configTemplate.actorDefinitionId)
+      .configTemplateSpec(
+        this.configTemplate.userConfigSpec.let {
+          objectMapper.valueToTree<JsonNode>(it)
+        },
+      ).icon(this.actorIcon)
+      .name(this.actorName)
+      .id(this.configTemplate.id)
+
+  if (this.configTemplate.advancedAuth != null) {
+    configTemplate.advancedAuth(
+      ConfigTemplateAdvancedAuthHelper.mapAdvancedAuth(this.configTemplate.advancedAuth!!),
+    )
+    // Use the appropriate method signature for setting global credentials
+    configTemplate.advancedAuthGlobalCredentialsAvailable(
+      this.configTemplate.advancedAuthGlobalCredentialsAvailable,
+    )
+  }
+  return configTemplate
+}
+
+private fun ConfigTemplateWithActorDetails.toListItem() =
+  ConfigTemplateListItem()
+    .id(this.configTemplate.id)
+    .icon(this.actorIcon)
+    .name(this.actorName)

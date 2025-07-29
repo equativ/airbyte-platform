@@ -73,6 +73,7 @@ import io.airbyte.workers.models.RefreshSchemaActivityOutput;
 import io.airbyte.workers.models.ReplicationActivityInput;
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.assertj.core.api.CollectionAssert;
 import org.junit.jupiter.api.BeforeEach;
@@ -106,10 +107,13 @@ class ReplicationInputHydratorTest {
               null,
               null,
               TEST_STREAM_NAMESPACE,
+              null,
               null),
           new AirbyteStreamConfiguration(
               SyncMode.INCREMENTAL,
               DestinationSyncMode.APPEND,
+              null,
+              null,
               null,
               null,
               null,
@@ -269,7 +273,14 @@ class ReplicationInputHydratorTest {
         null, // unused
         new ConnectionContext().withWorkspaceId(UUID.randomUUID()).withOrganizationId(UUID.randomUUID()),
         null,
-        List.of());
+        List.of(),
+        false,
+        false,
+        Map.of(),
+        null,
+        false,
+        null,
+        null);
   }
 
   @ParameterizedTest
@@ -447,8 +458,8 @@ class ReplicationInputHydratorTest {
     if (withRefresh) {
       when(connectionApi.getConnectionForJob(new ConnectionAndJobIdRequestBody(CONNECTION_ID, JOB_ID)))
           .thenReturn(new ConnectionRead(CONNECTION_ID, CONNECTION_NAME, SOURCE_ID, DESTINATION_ID, SYNC_CATALOG, ConnectionStatus.ACTIVE, false,
-              null, null, null, null, null, null, null, null, null, null, null, null, null, null, SchemaChangeBackfillPreference.ENABLED, null,
-              null, null));
+              null, null, null, null, null, null, null, null, null, null, null, null, null, null, SchemaChangeBackfillPreference.ENABLED, null, null,
+              null));
     } else {
       when(connectionApi.getConnection(new ConnectionIdRequestBody(CONNECTION_ID)))
           .thenReturn(new ConnectionRead(CONNECTION_ID, CONNECTION_NAME, SOURCE_ID, DESTINATION_ID, SYNC_CATALOG, ConnectionStatus.ACTIVE, false,
@@ -467,7 +478,8 @@ class ReplicationInputHydratorTest {
         "dockerRepo",
         "dockerTag",
         true,
-        false));
+        false,
+        false, null));
   }
 
   private void mockNonRefresh() throws IOException {
@@ -480,7 +492,9 @@ class ReplicationInputHydratorTest {
         "dockerRepo",
         "dockerTag",
         false,
-        false));
+        false,
+        false,
+        null));
   }
 
 }

@@ -20,6 +20,7 @@ import {
   getDeclarativeManifestBaseImage,
   createForkedConnectorBuilderProject,
   getConnectorBuilderProjectIdForDefinitionId,
+  fullResolveManifestBuilderProject,
 } from "../generated/AirbyteClient";
 import { SCOPE_WORKSPACE } from "../scopes";
 import {
@@ -27,6 +28,7 @@ import {
   DeclarativeManifestVersionRead,
   ConnectorBuilderProjectRead,
   SourceDefinitionIdBody,
+  ConnectorBuilderProjectFullResolveRequestBody,
   ConnectorBuilderProjectStreamReadRequestBody,
   ConnectorBuilderProjectStreamRead,
   ConnectorBuilderProjectTestingValuesUpdate,
@@ -63,6 +65,7 @@ const connectorBuilderProjectsKeys = {
   getBaseImage: (version: string) => [...connectorBuilderProjectsKeys.all, "getBaseImage", version] as const,
   getProjectForDefinition: (sourceDefinitionId: string | undefined) =>
     [...connectorBuilderProjectsKeys.all, "getProjectByDefinition", sourceDefinitionId] as const,
+  fullResolve: (projectId?: string) => ["builder_project_full_resolve", projectId] as const,
 };
 
 export interface BuilderProject {
@@ -518,6 +521,21 @@ export const useBuilderProjectReadStream = (
   );
 };
 
+export const useBuilderProjectFullResolveManifest = (params: ConnectorBuilderProjectFullResolveRequestBody) => {
+  const requestOptions = useRequestOptions();
+
+  const projectId = params.builderProjectId;
+
+  return useQuery(
+    connectorBuilderProjectsKeys.fullResolve(projectId),
+    () => fullResolveManifestBuilderProject(params, requestOptions),
+    {
+      enabled: false,
+      refetchOnWindowFocus: false,
+    }
+  );
+};
+
 export const useCancelBuilderProjectStreamRead = (builderProjectId: string, streamName: string) => {
   const queryClient = useQueryClient();
   return () => {
@@ -615,6 +633,7 @@ export const useGetBuilderProjectBaseImage = (params: DeclarativeManifestRequest
   const requestOptions = useRequestOptions();
 
   return useQuery<DeclarativeManifestBaseImageRead>(
+    // @ts-expect-error TODO: connector builder team to fix this https://github.com/airbytehq/airbyte-internal-issues/issues/12252
     connectorBuilderProjectsKeys.getBaseImage(params.manifest.version),
     () => getDeclarativeManifestBaseImage(params, requestOptions)
   );

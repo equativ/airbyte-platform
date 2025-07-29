@@ -62,10 +62,15 @@ export const enum Action {
   USER_INPUT_CREATE = "UserInputCreate",
   USER_INPUT_EDIT = "UserInputEdit",
   USER_INPUT_DELETE = "UserInputDelete",
+  DYNAMIC_STREAM_SELECT = "DynamicStreamSelect",
   STREAM_SELECT = "StreamSelect",
+  DYNAMIC_STREAM_CREATE = "DynamicStreamCreate",
   STREAM_CREATE = "StreamCreate",
   STREAM_COPY = "StreamCopy",
   STREAM_DELETE = "StreamDelete",
+  DYNAMIC_STREAM_DELETE = "DynamicStreamDelete",
+  DYNAMIC_STREAM_GENERATE = "DynamicStreamGenerate",
+  DYNAMIC_STREAM_PREVIEW_ENDPOINT = "DynamicStreamPreviewEndpoint",
   STREAM_TEST = "StreamTest",
   STREAM_TEST_SUCCESS = "StreamTestSuccess",
   STREAM_TEST_FAILURE = "StreamTestFailure",
@@ -101,6 +106,8 @@ export const enum Action {
   // Connections Actions
   CONNECTIONS_GRAPH_DRAWER_OPENED = "ConnectionGraphDrawerOpened",
   CONNECTIONS_GRAPH_DRAWER_LOADED = "ConnectionGraphDrawerLoaded",
+  SYNC_FAILURE_EXPLANATION_OPENED = "SyncFailureExplanationOpened",
+  REFRESH_FAILURE_EXPLANATION_OPENED = "RefreshFailureExplanationOpened",
 }
 
 export type EventParams = Record<string, unknown>;

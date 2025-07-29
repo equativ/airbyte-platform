@@ -45,8 +45,8 @@ import io.airbyte.config.StandardSync.Status;
 import io.airbyte.config.StreamDescriptor;
 import io.airbyte.config.helpers.CatalogHelpers;
 import io.airbyte.config.helpers.FieldGenerator;
-import io.airbyte.protocol.models.Field;
 import io.airbyte.protocol.models.JsonSchemaType;
+import io.airbyte.protocol.models.v0.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -173,7 +173,7 @@ public class ConnectionHelpers {
                                                               final UUID destinationId,
                                                               final List<UUID> operationIds,
                                                               final UUID sourceCatalogId,
-                                                              final String geography,
+                                                              final UUID dataplaneGroupId,
                                                               final boolean breaking,
                                                               final Boolean notifySchemaChange,
                                                               final Boolean notifySchemaChangeByEmail,
@@ -199,7 +199,7 @@ public class ConnectionHelpers {
             .memoryRequest(TESTING_RESOURCE_REQUIREMENTS.getMemoryRequest())
             .memoryLimit(TESTING_RESOURCE_REQUIREMENTS.getMemoryLimit()))
         .sourceCatalogId(sourceCatalogId)
-        .geography(geography)
+        .dataplaneGroupId(dataplaneGroupId)
         .breakingChange(breaking)
         .notifySchemaChanges(notifySchemaChange)
         .notifySchemaChangesByEmail(notifySchemaChangeByEmail)
@@ -214,7 +214,7 @@ public class ConnectionHelpers {
         standardSync.getDestinationId(),
         standardSync.getOperationIds(),
         standardSync.getSourceCatalogId(),
-        standardSync.getGeography(),
+        standardSync.getDataplaneGroupId(),
         standardSync.getBreakingChange(),
         standardSync.getNotifySchemaChanges(),
         standardSync.getNotifySchemaChangesByEmail(),
@@ -251,7 +251,7 @@ public class ConnectionHelpers {
         .namespaceFormat(standardSync.getNamespaceFormat())
         .prefix(standardSync.getPrefix())
         .sourceCatalogId(standardSync.getSourceCatalogId())
-        .geography(standardSync.getGeography())
+        .dataplaneGroupId(standardSync.getDataplaneGroupId())
         .breakingChange(standardSync.getBreakingChange())
         .notifySchemaChanges(standardSync.getNotifySchemaChanges())
         .notifySchemaChangesByEmail(standardSync.getNotifySchemaChangesByEmail());
@@ -419,6 +419,7 @@ public class ConnectionHelpers {
         .aliasName(Names.toAlphanumericAndUnderscore(nameSuffix == null ? STREAM_NAME : STREAM_NAME_BASE + nameSuffix))
         .selected(true)
         .suggested(false)
+        .includeFiles(false)
         .fieldSelectionEnabled(false)
         .selectedFields(new ArrayList<>());
   }

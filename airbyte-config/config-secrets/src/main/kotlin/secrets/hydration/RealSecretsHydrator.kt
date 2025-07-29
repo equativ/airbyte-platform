@@ -13,6 +13,7 @@ import io.airbyte.config.secrets.persistence.SecretPersistence
 import io.airbyte.config.secrets.toConfigWithRefs
 import io.micronaut.context.annotation.Requires
 import jakarta.inject.Singleton
+import java.util.UUID
 
 /**
  * Adds secrets to a partial config based off a persistence.
@@ -33,6 +34,11 @@ class RealSecretsHydrator(
   override fun hydrateSecretCoordinateFromDefaultSecretPersistence(secretCoordinate: JsonNode): JsonNode =
     SecretsHelpers.hydrateSecretCoordinate(secretCoordinate, defaultSecretPersistence)
 
+  override fun hydrateSecretCoordinate(
+    secretCoordinate: JsonNode,
+    secretPersistence: SecretPersistence,
+  ): JsonNode = SecretsHelpers.hydrateSecretCoordinate(secretCoordinate, secretPersistence)
+
   override fun hydrateSecretCoordinateFromRuntimeSecretPersistence(
     secretCoordinate: JsonNode,
     runtimeSecretPersistence: RuntimeSecretPersistence,
@@ -42,4 +48,9 @@ class RealSecretsHydrator(
     config: ConfigWithSecretReferences,
     secretPersistence: SecretPersistence,
   ): JsonNode = SecretsHelpers.combineConfig(config, secretPersistence)
+
+  override fun hydrate(
+    config: ConfigWithSecretReferences,
+    secretPersistenceMap: Map<UUID?, SecretPersistence>,
+  ): JsonNode = SecretsHelpers.combineConfig(config, secretPersistenceMap)
 }

@@ -4,12 +4,8 @@ import React, { useCallback } from "react";
 import { UseFormReturn } from "react-hook-form";
 import { FormattedMessage, useIntl } from "react-intl";
 
-import {
-  FormConnectionFormValues,
-  useConnectionValidationSchema,
-  useInitialFormValues,
-} from "components/connection/ConnectionForm/formConfig";
-import { useConnectionValidationZodSchema } from "components/connection/ConnectionForm/schemas/zodSchema";
+import { FormConnectionFormValues, useInitialFormValues } from "components/connection/ConnectionForm/formConfig";
+import { useConnectionValidationZodSchema } from "components/connection/ConnectionForm/schemas/connectionSchema";
 import { ConnectionSyncContextProvider } from "components/connection/ConnectionSync/ConnectionSyncContext";
 import { I18N_KEY_UNDER_ONE_HOUR_NOT_ALLOWED } from "components/connection/CreateConnectionForm/SimplifiedConnectionCreation/SimplifiedConnectionScheduleFormField";
 import { SimplifiedConnectionsSettingsCard } from "components/connection/CreateConnectionForm/SimplifiedConnectionCreation/SimplifiedConnectionSettingsCard";
@@ -21,13 +17,12 @@ import { ScrollParent } from "components/ui/ScrollParent";
 import { Spinner } from "components/ui/Spinner";
 
 import { ConnectionActionsBlock } from "area/connection/components/ConnectionActionsBlock";
-import { HttpError, HttpProblem, useCurrentWorkspace } from "core/api";
+import { HttpError, HttpProblem, useCurrentWorkspace, useGetDataplaneGroup } from "core/api";
 import { WebBackendConnectionUpdate } from "core/api/types/AirbyteClient";
 import { PageTrackingCodes, useTrackPage } from "core/services/analytics";
+import { useFormMode } from "core/services/ui/FormModeContext";
 import { trackError } from "core/utils/datadog";
 import { useConnectionEditService } from "hooks/services/ConnectionEdit/ConnectionEditService";
-import { useConnectionFormService } from "hooks/services/ConnectionForm/ConnectionFormService";
-import { useExperiment } from "hooks/services/Experiment";
 import { useNotificationService } from "hooks/services/Notification";
 
 import styles from "./ConnectionSettingsPage.module.scss";
@@ -41,17 +36,15 @@ export interface ConnectionSettingsFormValues {
 
 export const ConnectionSettingsPage: React.FC = () => {
   useTrackPage(PageTrackingCodes.CONNECTIONS_ITEM_SETTINGS);
-  const isZodSchemaValidatorEnabled = useExperiment("connection.zodSchemaValidator");
 
   const { connection, updateConnection } = useConnectionEditService();
-  const { defaultGeography } = useCurrentWorkspace();
+  const { dataplaneGroupId } = useCurrentWorkspace();
   const { formatMessage } = useIntl();
   const { registerNotification, unregisterNotificationById } = useNotificationService();
-
-  const { mode } = useConnectionFormService();
+  const { getDataplaneGroup } = useGetDataplaneGroup();
+  const { mode } = useFormMode();
   const simplifiedInitialValues = useInitialFormValues(connection, mode);
 
-  const validationSchema = useConnectionValidationSchema();
   const zodValidationSchema = useConnectionValidationZodSchema();
 
   const onSubmit = useCallback(
@@ -125,7 +118,9 @@ export const ConnectionSettingsPage: React.FC = () => {
 
   const isDeprecated = connection.status === "deprecated";
   const hasConfiguredGeography =
-    connection.geography !== undefined && connection.geography !== defaultGeography && connection.geography !== "AUTO";
+    connection.dataplaneGroupId !== undefined &&
+    connection.dataplaneGroupId !== dataplaneGroupId &&
+    getDataplaneGroup(connection.dataplaneGroupId)?.name !== "AUTO";
 
   return (
     <ScrollParent>
@@ -136,8 +131,7 @@ export const ConnectionSettingsPage: React.FC = () => {
           onSubmit={onSubmit}
           onSuccess={onSuccess}
           onError={onError}
-          schema={validationSchema}
-          zodSchema={isZodSchemaValidatorEnabled ? zodValidationSchema : undefined}
+          zodSchema={zodValidationSchema}
           defaultValues={simplifiedInitialValues}
           reinitializeDefaultValues
         >

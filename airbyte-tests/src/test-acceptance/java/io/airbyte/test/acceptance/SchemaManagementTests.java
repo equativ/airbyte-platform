@@ -104,7 +104,8 @@ class SchemaManagementTests {
             sourceId,
             destinationId,
             catalog,
-            discoverResult.getCatalogId()).build());
+            discoverResult.getCatalogId(),
+            testHarness.getDataplaneGroupId()).build());
     LOGGER.info("Created connection: {}", createdConnection);
     // Create a connection that shares the source, to verify that the schema management actions are
     // applied to all connections with the same source.
@@ -112,7 +113,8 @@ class SchemaManagementTests {
         createdConnection.getSourceId(),
         createdConnection.getDestinationId(),
         createdConnection.getSyncCatalog(),
-        createdConnection.getSourceCatalogId())
+        createdConnection.getSourceCatalogId(),
+        createdConnection.getDataplaneGroupId())
             .setAdditionalOperationIds(createdConnection.getOperationIds())
             .setSchedule(createdConnection.getScheduleType(), createdConnection.getScheduleData())
             .setNameSuffix("-same-source")
@@ -296,16 +298,19 @@ class SchemaManagementTests {
             existingStreamAndConfig.getStream().getDefaultCursorField(),
             existingStreamAndConfig.getStream().getSourceDefinedPrimaryKey(),
             existingStreamAndConfig.getStream().getNamespace(),
-            existingStreamAndConfig.getStream().isResumable()),
+            existingStreamAndConfig.getStream().isResumable(),
+            existingStreamAndConfig.getStream().isFileBased()),
         new AirbyteStreamConfiguration(
             existingStreamAndConfig.getConfig().getSyncMode(),
             existingStreamAndConfig.getConfig().getDestinationSyncMode(),
             existingStreamAndConfig.getConfig().getCursorField(),
+            null,
             existingStreamAndConfig.getConfig().getPrimaryKey(),
             existingStreamAndConfig.getConfig().getAliasName(),
             existingStreamAndConfig.getConfig().getSelected(),
             existingStreamAndConfig.getConfig().getSuggested(),
             existingStreamAndConfig.getConfig().getFieldSelectionEnabled(),
+            existingStreamAndConfig.getConfig().getIncludeFiles(),
             existingStreamAndConfig.getConfig().getSelectedFields(),
             existingStreamAndConfig.getConfig().getHashedFields(),
             existingStreamAndConfig.getConfig().getMappers(),
@@ -326,14 +331,17 @@ class SchemaManagementTests {
             List.of(),
             List.of(),
             "public",
-            true),
+            true,
+            null),
         new AirbyteStreamConfiguration(
             SyncMode.FULL_REFRESH,
             DestinationSyncMode.OVERWRITE,
             List.of(),
+            null,
             List.of(),
             "a_new_table",
             true,
+            false,
             false,
             false,
             List.of(),

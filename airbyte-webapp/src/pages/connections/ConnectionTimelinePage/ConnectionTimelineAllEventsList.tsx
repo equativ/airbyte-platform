@@ -1,6 +1,7 @@
 import { HTMLAttributes, Ref, forwardRef, useContext, useEffect, useMemo } from "react";
 import { FormattedMessage } from "react-intl";
 import { Virtuoso } from "react-virtuoso";
+import { z } from "zod";
 
 import { LoadingPage } from "components";
 import { useConnectionStatus } from "components/connection/ConnectionStatus/useConnectionStatus";
@@ -16,7 +17,23 @@ import { trackError } from "core/utils/datadog";
 
 import styles from "./ConnectionTimelineAllEventsList.module.scss";
 import { ConnectionTimelineRunningEvent, EventTypeToSchema, eventTypeToSchemaMap } from "./types";
-import { eventTypeByStatusFilterValue, TimelineFilterValues, eventTypeByTypeFilterValue } from "./utils";
+import {
+  eventTypeByStatusFilterValue,
+  TimelineFilterValues,
+  eventTypeByTypeFilterValue,
+  createRunningEventFromJob,
+} from "./utils";
+
+const onlyResourceRequirements = z
+  .object({
+    patches: z
+      .object({
+        resourceRequirements: z.unknown().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 export const validateAndMapEvent = (event: ConnectionEvent | ConnectionTimelineRunningEvent) => {
   /**
@@ -30,7 +47,7 @@ export const validateAndMapEvent = (event: ConnectionEvent | ConnectionTimelineR
   };
 
   const hasOnlyResourceRequirementPatches = (summary: ConnectionEventSummary): boolean =>
-    summary?.patches && Object.keys(summary?.patches).length === 1 && summary.patches.resourceRequirements;
+    onlyResourceRequirements.safeParse(summary).success;
 
   const eventType = event.eventType as string; // eventType can be out of sync with the eventTypeToSchemaMap
 
@@ -105,42 +122,33 @@ export const ConnectionTimelineAllEventsList: React.FC<{
     filterValues.endDate === "" || parseInt(filterValues.endDate) > (syncProgressData?.syncStartedAt ?? 0);
   const startDateShowRunningJob =
     filterValues.startDate === "" || parseInt(filterValues.startDate) < (syncProgressData?.syncStartedAt ?? 0);
-  const statusFilterShowRunningJob =
-    filterValues.status === "" ||
+  const statusFilterShowRunningJob = filterValues.status === ""; // we don't have running status in the filter
+  const eventFilterShowRunningJob =
+    filterValues.eventCategory === "" ||
     filterValues.eventCategory === syncProgressData?.configType ||
     (filterValues.eventCategory === "clear" && syncProgressData?.configType === "reset_connection");
 
-  const filtersShouldShowRunningJob = startDateShowRunningJob && endDateShowRunningJob && statusFilterShowRunningJob;
+  const filtersShouldShowRunningJob =
+    startDateShowRunningJob && endDateShowRunningJob && statusFilterShowRunningJob && eventFilterShowRunningJob;
 
   const isRunning = status === ConnectionSyncStatus.running;
 
   const showRunningJob = isRunning && !!syncProgressData && filtersShouldShowRunningJob;
 
+  const runningEvent = useMemo(
+    () =>
+      showRunningJob && !!syncProgressData?.jobId && !!syncProgressData?.syncStartedAt
+        ? createRunningEventFromJob(syncProgressData, connection.connectionId)
+        : null,
+    [showRunningJob, syncProgressData, connection.connectionId]
+  );
+
   const connectionEventsToShow = useMemo(
     () => [
-      ...(showRunningJob && !!syncProgressData?.jobId && !!syncProgressData?.syncStartedAt
-        ? [
-            {
-              id: "running",
-              eventType: "RUNNING_JOB" as const,
-              connectionId: connection.connectionId,
-              createdAt: syncProgressData.syncStartedAt ?? Date.now() / 1000,
-              summary: {
-                streams: syncProgressData.streams.map((stream) => ({
-                  streamName: stream.streamName,
-                  streamNamespace: stream.streamNamespace,
-                  configType: stream.configType,
-                })),
-                configType: syncProgressData.configType,
-                jobId: syncProgressData.jobId,
-              },
-              user: { email: "", name: "", id: "", isDeleted: false },
-            },
-          ]
-        : []), // if there is a running sync, append an item to the top of the list
+      ...(runningEvent ? [runningEvent] : []),
       ...(connectionEventsData?.pages.flatMap<ConnectionEvent>((page) => page.data.events) ?? []),
     ],
-    [connection.connectionId, connectionEventsData?.pages, showRunningJob, syncProgressData]
+    [connectionEventsData?.pages, runningEvent]
   );
 
   const validatedEvents = connectionEventsToShow

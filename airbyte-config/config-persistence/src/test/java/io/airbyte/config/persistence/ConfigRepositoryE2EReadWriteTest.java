@@ -21,14 +21,16 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
-import io.airbyte.commons.constants.DataplaneConstantsKt;
 import io.airbyte.commons.json.Jsons;
 import io.airbyte.config.ActorCatalog;
 import io.airbyte.config.ActorCatalogFetchEvent;
 import io.airbyte.config.ActorDefinitionVersion;
 import io.airbyte.config.DataplaneGroup;
+import io.airbyte.config.DestinationCatalog;
 import io.airbyte.config.DestinationConnection;
 import io.airbyte.config.DestinationOAuthParameter;
+import io.airbyte.config.DestinationOperation;
+import io.airbyte.config.DestinationSyncMode;
 import io.airbyte.config.ScopeType;
 import io.airbyte.config.SourceConnection;
 import io.airbyte.config.SourceOAuthParameter;
@@ -69,21 +71,21 @@ import io.airbyte.data.services.shared.DestinationAndDefinition;
 import io.airbyte.data.services.shared.SourceAndDefinition;
 import io.airbyte.data.services.shared.StandardSyncQuery;
 import io.airbyte.db.Database;
+import io.airbyte.db.instance.configs.jooq.generated.enums.ActorCatalogType;
 import io.airbyte.featureflag.FeatureFlagClient;
 import io.airbyte.featureflag.HeartbeatMaxSecondsBetweenMessages;
 import io.airbyte.featureflag.SourceDefinition;
 import io.airbyte.featureflag.TestClient;
 import io.airbyte.metrics.MetricClient;
-import io.airbyte.protocol.models.Field;
 import io.airbyte.protocol.models.JsonSchemaType;
 import io.airbyte.protocol.models.v0.AirbyteCatalog;
 import io.airbyte.protocol.models.v0.CatalogHelpers;
+import io.airbyte.protocol.models.v0.Field;
 import io.airbyte.test.utils.BaseConfigDatabaseTest;
 import io.airbyte.validation.json.JsonValidationException;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -110,7 +112,9 @@ import org.junit.jupiter.api.Test;
 class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
 
   private static final String DOCKER_IMAGE_TAG = "1.2.0";
+  private static final String OTHER_DOCKER_IMAGE_TAG = "1.3.0";
   private static final String CONFIG_HASH = "ConfigHash";
+  private static final UUID DATAPLANE_GROUP_ID = UUID.randomUUID();
 
   private CatalogService catalogService;
   private OAuthService oauthService;
@@ -142,18 +146,14 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
 
     final DataplaneGroupService dataplaneGroupService = new DataplaneGroupServiceTestJooqImpl(database);
     dataplaneGroupIds = new HashMap<String, UUID>();
-    for (final String geography : Arrays.asList(DataplaneConstantsKt.GEOGRAPHY_EU, DataplaneConstantsKt.GEOGRAPHY_US,
-        DataplaneConstantsKt.GEOGRAPHY_AUTO)) {
-      var dataplaneGroup = dataplaneGroupService.writeDataplaneGroup(new DataplaneGroup()
-          .withId(UUID.randomUUID())
-          .withOrganizationId(DEFAULT_ORGANIZATION_ID)
-          .withName(geography)
-          .withEnabled(true)
-          .withTombstone(false));
-      dataplaneGroupIds.put(geography, dataplaneGroup.getId());
-    }
+    dataplaneGroupService.writeDataplaneGroup(new DataplaneGroup()
+        .withId(DATAPLANE_GROUP_ID)
+        .withOrganizationId(DEFAULT_ORGANIZATION_ID)
+        .withName("test")
+        .withEnabled(true)
+        .withTombstone(false));
 
-    connectionService = spy(new ConnectionServiceJooqImpl(database, dataplaneGroupService));
+    connectionService = spy(new ConnectionServiceJooqImpl(database));
     actorDefinitionService = spy(new ActorDefinitionServiceJooqImpl(database));
     final ActorDefinitionVersionUpdater actorDefinitionVersionUpdater = new ActorDefinitionVersionUpdater(
         featureFlagClient,
@@ -172,7 +172,6 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
     sourceService = spy(new SourceServiceJooqImpl(
         database,
         featureFlagClient,
-        secretsRepositoryWriter,
         secretPersistenceConfigService,
         connectionService,
         actorDefinitionVersionUpdater,
@@ -180,8 +179,6 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
     destinationService = spy(new DestinationServiceJooqImpl(
         database,
         featureFlagClient,
-        secretsRepositoryWriter,
-        secretPersistenceConfigService,
         connectionService,
         actorDefinitionVersionUpdater,
         metricClient));
@@ -192,8 +189,7 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
         secretsRepositoryReader,
         secretsRepositoryWriter,
         secretPersistenceConfigService,
-        metricClient,
-        dataplaneGroupService));
+        metricClient));
     operationService = spy(new OperationServiceJooqImpl(database));
 
     for (final StandardWorkspace workspace : MockData.standardWorkspaces()) {
@@ -296,12 +292,12 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
     final AirbyteCatalog firstCatalog = CatalogHelpers.createAirbyteCatalog("product",
         Field.of("label", JsonSchemaType.STRING), Field.of("size", JsonSchemaType.NUMBER),
         Field.of("color", JsonSchemaType.STRING), Field.of("price", JsonSchemaType.NUMBER));
-    catalogService.writeActorCatalogFetchEvent(firstCatalog, source.getSourceId(), DOCKER_IMAGE_TAG, CONFIG_HASH);
+    catalogService.writeActorCatalogWithFetchEvent(firstCatalog, source.getSourceId(), DOCKER_IMAGE_TAG, CONFIG_HASH);
 
     final AirbyteCatalog secondCatalog = CatalogHelpers.createAirbyteCatalog("product",
         Field.of("size", JsonSchemaType.NUMBER), Field.of("label", JsonSchemaType.STRING),
         Field.of("color", JsonSchemaType.STRING), Field.of("price", JsonSchemaType.NUMBER));
-    catalogService.writeActorCatalogFetchEvent(secondCatalog, source.getSourceId(), DOCKER_IMAGE_TAG, otherConfigHash);
+    catalogService.writeActorCatalogWithFetchEvent(secondCatalog, source.getSourceId(), DOCKER_IMAGE_TAG, otherConfigHash);
 
     final String expectedCatalog =
         "{"
@@ -354,7 +350,7 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
     final AirbyteCatalog firstCatalog = CatalogHelpers.createAirbyteCatalog("product",
         Field.of("label", JsonSchemaType.STRING), Field.of("size", JsonSchemaType.NUMBER),
         Field.of("color", JsonSchemaType.STRING), Field.of("price", JsonSchemaType.NUMBER));
-    catalogService.writeActorCatalogFetchEvent(firstCatalog, source.getSourceId(), DOCKER_IMAGE_TAG, CONFIG_HASH);
+    catalogService.writeActorCatalogWithFetchEvent(firstCatalog, source.getSourceId(), DOCKER_IMAGE_TAG, CONFIG_HASH);
 
     final String expectedCatalog =
         "{"
@@ -407,23 +403,23 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
 
     final AirbyteCatalog actorCatalog = CatalogHelpers.createAirbyteCatalog("clothes", Field.of("name", JsonSchemaType.STRING));
     final AirbyteCatalog expectedActorCatalog = CatalogHelpers.createAirbyteCatalog("clothes", Field.of("name", JsonSchemaType.STRING));
-    catalogService.writeActorCatalogFetchEvent(
+    catalogService.writeActorCatalogWithFetchEvent(
         actorCatalog, source.getSourceId(), DOCKER_IMAGE_TAG, CONFIG_HASH);
 
     final Optional<ActorCatalog> catalog =
         catalogService.getActorCatalog(source.getSourceId(), DOCKER_IMAGE_TAG, CONFIG_HASH);
     assertTrue(catalog.isPresent());
     assertEquals(expectedActorCatalog, Jsons.object(catalog.get().getCatalog(), AirbyteCatalog.class));
-    assertFalse(catalogService.getActorCatalog(source.getSourceId(), "1.3.0", CONFIG_HASH).isPresent());
+    assertFalse(catalogService.getActorCatalog(source.getSourceId(), OTHER_DOCKER_IMAGE_TAG, CONFIG_HASH).isPresent());
     assertFalse(catalogService.getActorCatalog(source.getSourceId(), DOCKER_IMAGE_TAG, otherConfigHash).isPresent());
 
-    catalogService.writeActorCatalogFetchEvent(actorCatalog, source.getSourceId(), "1.3.0", CONFIG_HASH);
+    catalogService.writeActorCatalogWithFetchEvent(actorCatalog, source.getSourceId(), OTHER_DOCKER_IMAGE_TAG, CONFIG_HASH);
     final Optional<ActorCatalog> catalogNewConnectorVersion =
-        catalogService.getActorCatalog(source.getSourceId(), "1.3.0", CONFIG_HASH);
+        catalogService.getActorCatalog(source.getSourceId(), OTHER_DOCKER_IMAGE_TAG, CONFIG_HASH);
     assertTrue(catalogNewConnectorVersion.isPresent());
     assertEquals(expectedActorCatalog, Jsons.object(catalogNewConnectorVersion.get().getCatalog(), AirbyteCatalog.class));
 
-    catalogService.writeActorCatalogFetchEvent(actorCatalog, source.getSourceId(), "1.2.0", otherConfigHash);
+    catalogService.writeActorCatalogWithFetchEvent(actorCatalog, source.getSourceId(), DOCKER_IMAGE_TAG, otherConfigHash);
     final Optional<ActorCatalog> catalogNewConfig =
         catalogService.getActorCatalog(source.getSourceId(), DOCKER_IMAGE_TAG, otherConfigHash);
     assertTrue(catalogNewConfig.isPresent());
@@ -433,13 +429,13 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
     assertEquals(1, catalogDbEntry);
 
     // Writing the previous catalog with v1 data types
-    catalogService.writeActorCatalogFetchEvent(expectedActorCatalog, source.getSourceId(), "1.2.0", otherConfigHash);
+    catalogService.writeActorCatalogWithFetchEvent(expectedActorCatalog, source.getSourceId(), DOCKER_IMAGE_TAG, otherConfigHash);
     final Optional<ActorCatalog> catalogV1NewConfig =
         catalogService.getActorCatalog(source.getSourceId(), DOCKER_IMAGE_TAG, otherConfigHash);
     assertTrue(catalogV1NewConfig.isPresent());
     assertEquals(expectedActorCatalog, Jsons.object(catalogNewConfig.get().getCatalog(), AirbyteCatalog.class));
 
-    catalogService.writeActorCatalogFetchEvent(expectedActorCatalog, source.getSourceId(), "1.4.0", otherConfigHash);
+    catalogService.writeActorCatalogWithFetchEvent(expectedActorCatalog, source.getSourceId(), "1.4.0", otherConfigHash);
     final Optional<ActorCatalog> catalogV1again =
         catalogService.getActorCatalog(source.getSourceId(), DOCKER_IMAGE_TAG, otherConfigHash);
     assertTrue(catalogV1again.isPresent());
@@ -451,9 +447,57 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
   }
 
   @Test
+  void testSimpleInsertDestinationActorCatalog() throws IOException {
+    final String otherConfigHash = "OtherConfigHash";
+    final StandardWorkspace workspace = MockData.standardWorkspaces().get(0);
+
+    final StandardDestinationDefinition destinationDefinition = new StandardDestinationDefinition()
+        .withDestinationDefinitionId(UUID.randomUUID())
+        .withName("destinationDefinition");
+    final ActorDefinitionVersion actorDefinitionVersion = MockData.actorDefinitionVersion()
+        .withActorDefinitionId(destinationDefinition.getDestinationDefinitionId())
+        .withVersionId(destinationDefinition.getDefaultVersionId());
+    destinationService.writeConnectorMetadata(destinationDefinition, actorDefinitionVersion, Collections.emptyList());
+
+    final DestinationConnection destination = new DestinationConnection()
+        .withDestinationDefinitionId(destinationDefinition.getDestinationDefinitionId())
+        .withDestinationId(UUID.randomUUID())
+        .withName("SomeDestinationConnector")
+        .withWorkspaceId(workspace.getWorkspaceId())
+        .withConfiguration(Jsons.deserialize("{}"));
+    destinationService.writeDestinationConnectionNoSecrets(destination);
+
+    final DestinationCatalog destinationCatalog = new DestinationCatalog(List.of(
+        new DestinationOperation("test_object", DestinationSyncMode.APPEND, Jsons.emptyObject(), null)));
+    catalogService.writeActorCatalogWithFetchEvent(destinationCatalog, destination.getDestinationId(), DOCKER_IMAGE_TAG, CONFIG_HASH);
+
+    final Optional<ActorCatalog> catalog =
+        catalogService.getActorCatalog(destination.getDestinationId(), DOCKER_IMAGE_TAG, CONFIG_HASH);
+    assertTrue(catalog.isPresent());
+    assertEquals(destinationCatalog, Jsons.object(catalog.get().getCatalog(), DestinationCatalog.class));
+    assertFalse(catalogService.getActorCatalog(destination.getDestinationId(), OTHER_DOCKER_IMAGE_TAG, CONFIG_HASH).isPresent());
+    assertFalse(catalogService.getActorCatalog(destination.getDestinationId(), DOCKER_IMAGE_TAG, otherConfigHash).isPresent());
+
+    catalogService.writeActorCatalogWithFetchEvent(destinationCatalog, destination.getDestinationId(), OTHER_DOCKER_IMAGE_TAG, CONFIG_HASH);
+    final Optional<ActorCatalog> catalogNewConnectorVersion =
+        catalogService.getActorCatalog(destination.getDestinationId(), OTHER_DOCKER_IMAGE_TAG, CONFIG_HASH);
+    assertTrue(catalogNewConnectorVersion.isPresent());
+    assertEquals(destinationCatalog, Jsons.object(catalogNewConnectorVersion.get().getCatalog(), DestinationCatalog.class));
+
+    catalogService.writeActorCatalogWithFetchEvent(destinationCatalog, destination.getDestinationId(), DOCKER_IMAGE_TAG, otherConfigHash);
+    final Optional<ActorCatalog> catalogNewConfig =
+        catalogService.getActorCatalog(destination.getDestinationId(), DOCKER_IMAGE_TAG, otherConfigHash);
+    assertTrue(catalogNewConfig.isPresent());
+    assertEquals(destinationCatalog, Jsons.object(catalogNewConfig.get().getCatalog(), DestinationCatalog.class));
+
+    final int catalogDbEntry = database.query(ctx -> ctx.selectCount().from(ACTOR_CATALOG)).fetchOne().into(int.class);
+    assertEquals(1, catalogDbEntry);
+  }
+
+  @Test
   void testListWorkspaceStandardSyncAll() throws IOException {
     final List<StandardSync> expectedSyncs = MockData.standardSyncs().subList(0, 4)
-        .stream().map(sync -> sync.withDataplaneGroupId(dataplaneGroupIds.get(DataplaneConstantsKt.GEOGRAPHY_AUTO))).toList();
+        .stream().toList();
     final List<StandardSync> actualSyncs = connectionService.listWorkspaceStandardSyncs(
         MockData.standardWorkspaces().get(0).getWorkspaceId(), true);
 
@@ -468,7 +512,6 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
         MockData.standardSyncs().subList(0, 3).stream()
             .filter(sync -> query.destinationId().contains(sync.getDestinationId()))
             .filter(sync -> query.sourceId().contains(sync.getSourceId()))
-            .map(sync -> sync.withDataplaneGroupId(dataplaneGroupIds.get(DataplaneConstantsKt.GEOGRAPHY_AUTO)))
             .toList();
     final List<StandardSync> actualSyncs = connectionService.listWorkspaceStandardSyncs(query);
 
@@ -482,7 +525,6 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
     final List<StandardSync> expectedSyncs =
         MockData.standardSyncs().subList(0, 3).stream()
             .filter(sync -> query.destinationId().contains(sync.getDestinationId()))
-            .map(sync -> sync.withDataplaneGroupId(dataplaneGroupIds.get(DataplaneConstantsKt.GEOGRAPHY_AUTO)))
             .toList();
     final List<StandardSync> actualSyncs = connectionService.listWorkspaceStandardSyncs(query);
 
@@ -496,7 +538,6 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
     final List<StandardSync> expectedSyncs =
         MockData.standardSyncs().subList(0, 3).stream()
             .filter(sync -> query.sourceId().contains(sync.getSourceId()))
-            .map(sync -> sync.withDataplaneGroupId(dataplaneGroupIds.get(DataplaneConstantsKt.GEOGRAPHY_AUTO)))
             .toList();
     final List<StandardSync> actualSyncs = connectionService.listWorkspaceStandardSyncs(query);
 
@@ -507,7 +548,6 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
   void testListWorkspaceStandardSyncExcludeDeleted() throws IOException {
     final List<StandardSync> expectedSyncs = MockData.standardSyncs().subList(0, 3)
         .stream()
-        .map(sync -> sync.withDataplaneGroupId(dataplaneGroupIds.get(DataplaneConstantsKt.GEOGRAPHY_AUTO)))
         .toList();
     final List<StandardSync> actualSyncs = connectionService.listWorkspaceStandardSyncs(MockData.standardWorkspaces().get(0).getWorkspaceId(), false);
 
@@ -517,10 +557,10 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
   @Test
   void testGetWorkspaceBySlug() throws IOException {
     final StandardWorkspace workspace =
-        MockData.standardWorkspaces().get(0).withDataplaneGroupId(dataplaneGroupIds.get(DataplaneConstantsKt.GEOGRAPHY_US));
+        MockData.standardWorkspaces().get(0);
 
     final StandardWorkspace tombstonedWorkspace =
-        MockData.standardWorkspaces().get(2).withDataplaneGroupId(dataplaneGroupIds.get(DataplaneConstantsKt.GEOGRAPHY_AUTO));
+        MockData.standardWorkspaces().get(2);
     final Optional<StandardWorkspace> retrievedWorkspace = workspaceService.getWorkspaceBySlugOptional(workspace.getSlug(), false);
     final Optional<StandardWorkspace> retrievedTombstonedWorkspaceNoTombstone =
         workspaceService.getWorkspaceBySlugOptional(tombstonedWorkspace.getSlug(), false);
@@ -706,11 +746,31 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
   }
 
   @Test
-  void testGetDestinationOAuthByDefinitionId() throws IOException {
+  void testGetDestinationOAuthByDefinitionIdAndWorkspaceId() throws IOException {
 
     final DestinationOAuthParameter destinationOAuthParameter = MockData.destinationOauthParameters().get(0);
     final Optional<DestinationOAuthParameter> result = oauthService.getDestinationOAuthParamByDefinitionIdOptional(
-        destinationOAuthParameter.getWorkspaceId(), destinationOAuthParameter.getDestinationDefinitionId());
+        Optional.of(destinationOAuthParameter.getWorkspaceId()), Optional.empty(), destinationOAuthParameter.getDestinationDefinitionId());
+    assertTrue(result.isPresent());
+    assertEquals(destinationOAuthParameter, result.get());
+  }
+
+  @Test
+  void testGetDestinationOAuthByDefinitionIdAndOrganizationId() throws IOException {
+
+    final DestinationOAuthParameter destinationOAuthParameter = MockData.destinationOauthParameters().get(2);
+    final Optional<DestinationOAuthParameter> result = oauthService.getDestinationOAuthParamByDefinitionIdOptional(
+        Optional.empty(), Optional.of(destinationOAuthParameter.getOrganizationId()), destinationOAuthParameter.getDestinationDefinitionId());
+    assertTrue(result.isPresent());
+    assertEquals(destinationOAuthParameter, result.get());
+  }
+
+  @Test
+  void testGetDestinationOAuthByDefinitionIdAndNullWorkspaceIdOrganizationId() throws IOException {
+
+    final DestinationOAuthParameter destinationOAuthParameter = MockData.destinationOauthParameters().get(3);
+    final Optional<DestinationOAuthParameter> result = oauthService.getDestinationOAuthParamByDefinitionIdOptional(
+        Optional.empty(), Optional.empty(), destinationOAuthParameter.getDestinationDefinitionId());
     assertTrue(result.isPresent());
     assertEquals(destinationOAuthParameter, result.get());
   }
@@ -720,18 +780,44 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
     final UUID missingId = UUID.fromString("fc59cfa0-06de-4c8b-850b-46d4cfb65629");
     final DestinationOAuthParameter destinationOAuthParameter = MockData.destinationOauthParameters().get(0);
     Optional<DestinationOAuthParameter> result =
-        oauthService.getDestinationOAuthParamByDefinitionIdOptional(destinationOAuthParameter.getWorkspaceId(), missingId);
+        oauthService.getDestinationOAuthParamByDefinitionIdOptional(Optional.of(destinationOAuthParameter.getWorkspaceId()), Optional.empty(),
+            missingId);
     assertFalse(result.isPresent());
 
-    result = oauthService.getDestinationOAuthParamByDefinitionIdOptional(missingId, destinationOAuthParameter.getDestinationDefinitionId());
+    result = oauthService.getDestinationOAuthParamByDefinitionIdOptional(Optional.of(missingId), Optional.empty(),
+        destinationOAuthParameter.getDestinationDefinitionId());
     assertFalse(result.isPresent());
   }
 
   @Test
-  void testGetSourceOAuthByDefinitionId() throws IOException {
+  void testGetSourceOAuthByDefinitionIdAndWorkspaceId() throws IOException {
     final SourceOAuthParameter sourceOAuthParameter = MockData.sourceOauthParameters().get(0);
-    final Optional<SourceOAuthParameter> result = oauthService.getSourceOAuthParamByDefinitionIdOptional(sourceOAuthParameter.getWorkspaceId(),
-        sourceOAuthParameter.getSourceDefinitionId());
+    final Optional<SourceOAuthParameter> result =
+        oauthService.getSourceOAuthParamByDefinitionIdOptional(Optional.of(sourceOAuthParameter.getWorkspaceId()),
+            Optional.empty(),
+            sourceOAuthParameter.getSourceDefinitionId());
+    assertTrue(result.isPresent());
+    assertEquals(sourceOAuthParameter, result.get());
+  }
+
+  @Test
+  void testGetSourceOAuthByDefinitionIdAndOrganizationId() throws IOException {
+    final SourceOAuthParameter sourceOAuthParameter = MockData.sourceOauthParameters().get(2);
+    final Optional<SourceOAuthParameter> result =
+        oauthService.getSourceOAuthParamByDefinitionIdOptional(Optional.empty(),
+            Optional.of(sourceOAuthParameter.getOrganizationId()),
+            sourceOAuthParameter.getSourceDefinitionId());
+    assertTrue(result.isPresent());
+    assertEquals(sourceOAuthParameter, result.get());
+  }
+
+  @Test
+  void testGetSourceOAuthByDefinitionIdAndNullWorkspaceIdAndOrganizationId() throws IOException {
+    final SourceOAuthParameter sourceOAuthParameter = MockData.sourceOauthParameters().get(3);
+    final Optional<SourceOAuthParameter> result =
+        oauthService.getSourceOAuthParamByDefinitionIdOptional(Optional.empty(),
+            Optional.empty(),
+            sourceOAuthParameter.getSourceDefinitionId());
     assertTrue(result.isPresent());
     assertEquals(sourceOAuthParameter, result.get());
   }
@@ -741,10 +827,11 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
     final UUID missingId = UUID.fromString("fc59cfa0-06de-4c8b-850b-46d4cfb65629");
     final SourceOAuthParameter sourceOAuthParameter = MockData.sourceOauthParameters().get(0);
     Optional<SourceOAuthParameter> result =
-        oauthService.getSourceOAuthParamByDefinitionIdOptional(sourceOAuthParameter.getWorkspaceId(), missingId);
+        oauthService.getSourceOAuthParamByDefinitionIdOptional(Optional.of(sourceOAuthParameter.getWorkspaceId()), Optional.empty(), missingId);
     assertFalse(result.isPresent());
 
-    result = oauthService.getSourceOAuthParamByDefinitionIdOptional(missingId, sourceOAuthParameter.getSourceDefinitionId());
+    result = oauthService.getSourceOAuthParamByDefinitionIdOptional(Optional.of(missingId), Optional.empty(),
+        sourceOAuthParameter.getSourceDefinitionId());
     assertFalse(result.isPresent());
   }
 
@@ -752,7 +839,7 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
   void testGetStandardSyncUsingOperation() throws IOException {
     final UUID operationId = MockData.standardSyncOperations().get(0).getOperationId();
     final List<StandardSync> expectedSyncs = MockData.standardSyncs().subList(0, 3)
-        .stream().map(sync -> sync.withDataplaneGroupId(dataplaneGroupIds.get(DataplaneConstantsKt.GEOGRAPHY_AUTO))).toList();
+        .stream().toList();
     final List<StandardSync> actualSyncs = connectionService.listStandardSyncsUsingOperation(operationId);
 
     assertSyncsMatch(expectedSyncs, actualSyncs);
@@ -842,39 +929,6 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
     }).toList();
 
     assertThat(result).hasSameElementsAs(expected);
-  }
-
-  @Test
-  void testGetGeographyForConnection() throws IOException {
-    final StandardSync sync = MockData.standardSyncs().get(0);
-    final String expected = sync.getGeography();
-    final String actual = connectionService.getGeographyForConnection(sync.getConnectionId());
-
-    assertEquals(expected, actual);
-  }
-
-  @Test
-  void testGetGeographyForWorkspace() throws IOException, JsonValidationException {
-    final UUID organizationId = UUID.randomUUID();
-    OrganizationService organizationService = new OrganizationServiceJooqImpl(database);
-    organizationService.writeOrganization(MockData.defaultOrganization().withOrganizationId(organizationId));
-    final StandardWorkspace workspace = MockData.standardWorkspaces().get(0);
-    workspace.withOrganizationId(organizationId);
-
-    final DataplaneGroupService dataplaneGroupService = new DataplaneGroupServiceTestJooqImpl(database);
-    dataplaneGroupService.writeDataplaneGroup(new DataplaneGroup()
-        .withId(UUID.randomUUID())
-        .withOrganizationId(workspace.getOrganizationId())
-        .withName(workspace.getDefaultGeography())
-        .withEnabled(true)
-        .withTombstone(false));
-
-    workspaceService.writeStandardWorkspaceNoSecrets(workspace);
-
-    final String expected = workspace.getDefaultGeography();
-    final String actual = workspaceService.getGeographyForWorkspace(workspace.getWorkspaceId());
-
-    assertEquals(expected, actual);
   }
 
   @SuppressWarnings("OptionalGetWithoutIsPresent")
@@ -1017,6 +1071,7 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
         ctx.update(ACTOR_CATALOG)
             .set(ACTOR_CATALOG.CATALOG, JSONB.valueOf(Jsons.serialize(actorCatalog.getCatalog())))
             .set(ACTOR_CATALOG.CATALOG_HASH, actorCatalog.getCatalogHash())
+            .set(ACTOR_CATALOG.CATALOG_TYPE, ActorCatalogType.valueOf(actorCatalog.getCatalogType().toString()))
             .set(ACTOR_CATALOG.MODIFIED_AT, timestamp)
             .where(ACTOR_CATALOG.ID.eq(actorCatalog.getId()))
             .execute();
@@ -1025,6 +1080,7 @@ class ConfigRepositoryE2EReadWriteTest extends BaseConfigDatabaseTest {
             .set(ACTOR_CATALOG.ID, actorCatalog.getId())
             .set(ACTOR_CATALOG.CATALOG, JSONB.valueOf(Jsons.serialize(actorCatalog.getCatalog())))
             .set(ACTOR_CATALOG.CATALOG_HASH, actorCatalog.getCatalogHash())
+            .set(ACTOR_CATALOG.CATALOG_TYPE, ActorCatalogType.valueOf(actorCatalog.getCatalogType().toString()))
             .set(ACTOR_CATALOG.CREATED_AT, timestamp)
             .set(ACTOR_CATALOG.MODIFIED_AT, timestamp)
             .execute();

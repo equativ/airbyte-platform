@@ -3,7 +3,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: airbyte-metrics
+  name: {{ .Release.Name }}-metrics
   labels:
     app.kubernetes.io/name: {{ include "airbyte.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -32,7 +32,7 @@ spec:
         {{- include "airbyte.tplvalues.render" (dict "value" .Values.metrics.podAnnotations "context" $) | nindent 8 }}
       {{- end }}
     spec:
-      serviceAccountName: {{ .Values.global.serviceAccountName }}
+      serviceAccountName: {{ default .Values.global.serviceAccountName .Values.metrics.serviceAccountName }}
       {{- if .Values.global.imagePullSecrets }} 
       imagePullSecrets:
         {{- range .Values.global.imagePullSecrets }}

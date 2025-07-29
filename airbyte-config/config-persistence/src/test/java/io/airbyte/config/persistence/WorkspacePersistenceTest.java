@@ -13,7 +13,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import io.airbyte.commons.constants.DataplaneConstantsKt;
 import io.airbyte.commons.json.Jsons;
 import io.airbyte.commons.lang.MoreBooleans;
 import io.airbyte.config.ActorDefinitionVersion;
@@ -98,7 +97,7 @@ class WorkspacePersistenceTest extends BaseConfigDatabaseTest {
     secretsRepositoryWriter = mock(SecretsRepositoryWriter.class);
     secretPersistenceConfigService = mock(SecretPersistenceConfigService.class);
     dataplaneGroupService = new DataplaneGroupServiceTestJooqImpl(database);
-    connectionService = spy(new ConnectionServiceJooqImpl(database, dataplaneGroupService));
+    connectionService = spy(new ConnectionServiceJooqImpl(database));
 
     final ScopedConfigurationService scopedConfigurationService = mock(ScopedConfigurationService.class);
     final ConnectionTimelineEventService connectionTimelineEventService = mock(ConnectionTimelineEventService.class);
@@ -108,10 +107,10 @@ class WorkspacePersistenceTest extends BaseConfigDatabaseTest {
             connectionTimelineEventService);
     final MetricClient metricClient = mock(MetricClient.class);
 
-    sourceService = spy(new SourceServiceJooqImpl(database, featureFlagClient, secretsRepositoryWriter,
+    sourceService = spy(new SourceServiceJooqImpl(database, featureFlagClient,
         secretPersistenceConfigService, connectionService, actorDefinitionVersionUpdater, metricClient));
-    destinationService = spy(new DestinationServiceJooqImpl(database, featureFlagClient, secretsRepositoryWriter,
-        secretPersistenceConfigService, connectionService, actorDefinitionVersionUpdater, metricClient));
+    destinationService =
+        spy(new DestinationServiceJooqImpl(database, featureFlagClient, connectionService, actorDefinitionVersionUpdater, metricClient));
     workspacePersistence = new WorkspacePersistence(database);
     userPersistence = new UserPersistence(database);
     final OrganizationPersistence organizationPersistence = new OrganizationPersistence(database);
@@ -125,31 +124,31 @@ class WorkspacePersistenceTest extends BaseConfigDatabaseTest {
     dataplaneGroupService.writeDataplaneGroup(new DataplaneGroup()
         .withId(MockData.DATAPLANE_GROUP_ID_DEFAULT)
         .withOrganizationId(DEFAULT_ORGANIZATION_ID)
-        .withName(DataplaneConstantsKt.GEOGRAPHY_AUTO)
+        .withName("test")
         .withEnabled(true)
         .withTombstone(false));
     dataplaneGroupService.writeDataplaneGroup(new DataplaneGroup()
         .withId(MockData.DATAPLANE_GROUP_ID_ORG_1)
         .withOrganizationId(MockData.ORGANIZATION_ID_1)
-        .withName(DataplaneConstantsKt.GEOGRAPHY_AUTO)
+        .withName("test")
         .withEnabled(true)
         .withTombstone(false));
     dataplaneGroupService.writeDataplaneGroup(new DataplaneGroup()
         .withId(MockData.DATAPLANE_GROUP_ID_ORG_2)
         .withOrganizationId(MockData.ORGANIZATION_ID_2)
-        .withName(DataplaneConstantsKt.GEOGRAPHY_AUTO)
+        .withName("test")
         .withEnabled(true)
         .withTombstone(false));
     dataplaneGroupService.writeDataplaneGroup(new DataplaneGroup()
         .withId(MockData.DATAPLANE_GROUP_ID_ORG_3)
         .withOrganizationId(MockData.ORGANIZATION_ID_3)
-        .withName(DataplaneConstantsKt.GEOGRAPHY_AUTO)
+        .withName("test")
         .withEnabled(true)
         .withTombstone(false));
 
     workspaceService = spy(
         new WorkspaceServiceJooqImpl(database, featureFlagClient, secretsRepositoryReader, secretsRepositoryWriter, secretPersistenceConfigService,
-            metricClient, dataplaneGroupService));
+            metricClient));
 
   }
 
@@ -182,7 +181,6 @@ class WorkspacePersistenceTest extends BaseConfigDatabaseTest {
         .withSlug("workspace-a-slug")
         .withInitialSetupComplete(false)
         .withTombstone(false)
-        .withDefaultGeography(DataplaneConstantsKt.GEOGRAPHY_AUTO)
         .withOrganizationId(DEFAULT_ORGANIZATION_ID)
         .withDataplaneGroupId(MockData.DATAPLANE_GROUP_ID_DEFAULT);
   }

@@ -4,11 +4,14 @@ import React, { Suspense } from "react";
 import { MemoryRouter } from "react-router-dom";
 
 import { DestinationRead, SourceRead } from "core/api/types/AirbyteClient";
+import { WebappConfigContextProvider } from "core/config";
 import { defaultOssFeatures, FeatureItem, FeatureService } from "core/services/features";
 import { I18nProvider } from "core/services/i18n";
 import { ConfirmationModalService } from "hooks/services/ConfirmationModal";
 import { ModalServiceProvider } from "hooks/services/Modal";
 import { NotificationService } from "hooks/services/Notification";
+
+import { mockWebappConfig } from "./mock-data/mockWebappConfig";
 
 export async function render<
   Q extends Queries = typeof queries,
@@ -50,7 +53,9 @@ export const TestWrapper: React.FC<React.PropsWithChildren<TestWrapperOptions>> 
         <FeatureService features={features}>
           <ModalServiceProvider>
             <ConfirmationModalService>
-              <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
+              <QueryClientProvider client={new QueryClient()}>
+                <WebappConfigContextProvider config={mockWebappConfig}>{children}</WebappConfigContextProvider>
+              </QueryClientProvider>
             </ConfirmationModalService>
           </ModalServiceProvider>
         </FeatureService>
@@ -86,7 +91,7 @@ export const mockSource: SourceRead = {
   sourceName: "test-source-name",
   workspaceId: "test-workspace-id",
   sourceDefinitionId: "test-source-definition-id",
-  connectionConfiguration: undefined,
+  connectionConfiguration: {},
   createdAt: 966690000,
 };
 
@@ -96,6 +101,6 @@ export const mockDestination: DestinationRead = {
   destinationName: "test destination name",
   workspaceId: "test-workspace-id",
   destinationDefinitionId: "test-destination-definition-id",
-  connectionConfiguration: undefined,
+  connectionConfiguration: {},
   createdAt: 966690000,
 };

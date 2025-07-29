@@ -311,7 +311,7 @@ export const Preview: StoryObj<React.FC<React.ComponentProps<typeof ConnectorFor
         configType: "get_spec",
         succeeded: true,
       },
-      connectionSpecification: props.connectionSpecification,
+      connectionSpecification: props.connectionSpecification as Record<string, unknown>,
     };
     return (
       <ConnectorForm
@@ -323,6 +323,7 @@ export const Preview: StoryObj<React.FC<React.ComponentProps<typeof ConnectorFor
           </div>
         )}
         onSubmit={props.onSubmit}
+        selectedConnectorDefinition={TempConnector}
         selectedConnectorDefinitionSpecification={connectorDefinitionSpecification}
       />
     );

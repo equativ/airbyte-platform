@@ -29,4 +29,12 @@ data class SecretReference(
 enum class SecretReferenceScopeType {
   ACTOR,
   SECRET_STORAGE,
+  CONNECTION_TEMPLATE,
 }
+
+data class SecretReferenceCreate(
+  val secretConfigId: SecretConfigId,
+  val scopeType: SecretReferenceScopeType,
+  val scopeId: UUID,
+  val hydrationPath: String?,
+)

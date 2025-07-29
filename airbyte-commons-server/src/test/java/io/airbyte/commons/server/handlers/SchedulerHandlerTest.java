@@ -35,7 +35,6 @@ import io.airbyte.api.model.generated.ConnectionReadList;
 import io.airbyte.api.model.generated.ConnectionStream;
 import io.airbyte.api.model.generated.ConnectionStreamRequestBody;
 import io.airbyte.api.model.generated.DestinationCoreConfig;
-import io.airbyte.api.model.generated.DestinationDefinitionSpecificationRead;
 import io.airbyte.api.model.generated.DestinationIdRequestBody;
 import io.airbyte.api.model.generated.DestinationUpdate;
 import io.airbyte.api.model.generated.FailureOrigin;
@@ -70,10 +69,10 @@ import io.airbyte.commons.logging.LogUtils;
 import io.airbyte.commons.server.converters.ConfigurationUpdate;
 import io.airbyte.commons.server.converters.JobConverter;
 import io.airbyte.commons.server.errors.ValueConflictKnownException;
-import io.airbyte.commons.server.handlers.helpers.ApplySchemaChangeHelper;
 import io.airbyte.commons.server.handlers.helpers.CatalogConverter;
 import io.airbyte.commons.server.handlers.helpers.ConnectionTimelineEventHelper;
 import io.airbyte.commons.server.helpers.DestinationHelpers;
+import io.airbyte.commons.server.helpers.SecretSanitizer;
 import io.airbyte.commons.server.helpers.SourceHelpers;
 import io.airbyte.commons.server.scheduler.EventRunner;
 import io.airbyte.commons.server.scheduler.SynchronousJobMetadata;
@@ -110,6 +109,8 @@ import io.airbyte.config.helpers.FieldGenerator;
 import io.airbyte.config.persistence.ActorDefinitionVersionHelper;
 import io.airbyte.config.persistence.StreamResetPersistence;
 import io.airbyte.config.persistence.domain.StreamRefresh;
+import io.airbyte.config.secrets.ConfigWithProcessedSecrets;
+import io.airbyte.config.secrets.SecretsHelpers.SecretReferenceHelpers;
 import io.airbyte.config.secrets.SecretsRepositoryWriter;
 import io.airbyte.data.exceptions.ConfigNotFoundException;
 import io.airbyte.data.services.ActorDefinitionService;
@@ -117,26 +118,26 @@ import io.airbyte.data.services.CatalogService;
 import io.airbyte.data.services.ConnectionService;
 import io.airbyte.data.services.DestinationService;
 import io.airbyte.data.services.OperationService;
-import io.airbyte.data.services.SecretPersistenceConfigService;
 import io.airbyte.data.services.SourceService;
 import io.airbyte.data.services.WorkspaceService;
 import io.airbyte.db.instance.configs.jooq.generated.enums.RefreshType;
+import io.airbyte.domain.services.secrets.SecretPersistenceService;
+import io.airbyte.domain.services.secrets.SecretStorageService;
 import io.airbyte.featureflag.FeatureFlagClient;
 import io.airbyte.featureflag.TestClient;
 import io.airbyte.metrics.MetricClient;
 import io.airbyte.persistence.job.JobCreator;
 import io.airbyte.persistence.job.JobNotifier;
 import io.airbyte.persistence.job.JobPersistence;
-import io.airbyte.persistence.job.WebUrlHelper;
 import io.airbyte.persistence.job.factory.OAuthConfigSupplier;
 import io.airbyte.persistence.job.factory.SyncJobFactory;
 import io.airbyte.persistence.job.tracker.JobTracker;
-import io.airbyte.protocol.models.Field;
 import io.airbyte.protocol.models.JsonSchemaType;
 import io.airbyte.protocol.models.v0.AirbyteCatalog;
 import io.airbyte.protocol.models.v0.CatalogHelpers;
 import io.airbyte.protocol.models.v0.ConnectorSpecification;
 import io.airbyte.protocol.models.v0.DestinationSyncMode;
+import io.airbyte.protocol.models.v0.Field;
 import io.airbyte.validation.json.JsonSchemaValidator;
 import io.airbyte.validation.json.JsonValidationException;
 import java.io.IOException;
@@ -260,7 +261,6 @@ class SchedulerHandlerTest {
   private EventRunner eventRunner;
   private JobConverter jobConverter;
   private ConnectionsHandler connectionsHandler;
-  private WebUrlHelper webUrlHelper;
   private ActorDefinitionVersionHelper actorDefinitionVersionHelper;
   private FeatureFlagClient featureFlagClient;
   private StreamResetPersistence streamResetPersistence;
@@ -269,9 +269,8 @@ class SchedulerHandlerTest {
   private SyncJobFactory jobFactory;
   private JobNotifier jobNotifier;
   private JobTracker jobTracker;
-  private ConnectorDefinitionSpecificationHandler connectorDefinitionSpecificationHandler;
   private WorkspaceService workspaceService;
-  private SecretPersistenceConfigService secretPersistenceConfigService;
+  private SecretPersistenceService secretPersistenceService;
   private StreamRefreshesHandler streamRefreshesHandler;
   private ConnectionTimelineEventHelper connectionTimelineEventHelper;
   private LogClientManager logClientManager;
@@ -282,8 +281,9 @@ class SchedulerHandlerTest {
   private ConnectionService connectionService;
   private OperationService operationService;
   private final CatalogConverter catalogConverter = new CatalogConverter(new FieldGenerator(), Collections.emptyList());
-  private final ApplySchemaChangeHelper applySchemaChangeHelper = new ApplySchemaChangeHelper(catalogConverter);
   private MetricClient metricClient;
+  private SecretStorageService secretStorageService;
+  private SecretSanitizer secretSanitizer;
 
   @BeforeEach
   void setup() throws JsonValidationException, ConfigNotFoundException, IOException {
@@ -315,7 +315,6 @@ class SchedulerHandlerTest {
     jobPersistence = mock(JobPersistence.class);
     eventRunner = mock(EventRunner.class);
     connectionsHandler = mock(ConnectionsHandler.class);
-    webUrlHelper = mock(WebUrlHelper.class);
     actorDefinitionVersionHelper = mock(ActorDefinitionVersionHelper.class);
     when(actorDefinitionVersionHelper.getDestinationVersion(any(), any())).thenReturn(SOME_ACTOR_DEFINITION);
     streamResetPersistence = mock(StreamResetPersistence.class);
@@ -324,7 +323,6 @@ class SchedulerHandlerTest {
     jobFactory = mock(SyncJobFactory.class);
     jobNotifier = mock(JobNotifier.class);
     jobTracker = mock(JobTracker.class);
-    connectorDefinitionSpecificationHandler = mock(ConnectorDefinitionSpecificationHandler.class);
     logClientManager = mock(LogClientManager.class);
     logUtils = mock(LogUtils.class);
 
@@ -333,22 +331,26 @@ class SchedulerHandlerTest {
 
     featureFlagClient = mock(TestClient.class);
     workspaceService = mock(WorkspaceService.class);
-    secretPersistenceConfigService = mock(SecretPersistenceConfigService.class);
+    secretPersistenceService = mock(SecretPersistenceService.class);
     metricClient = mock(MetricClient.class);
-
-    when(connectorDefinitionSpecificationHandler.getDestinationSpecification(any())).thenReturn(new DestinationDefinitionSpecificationRead()
-        .supportedDestinationSyncModes(
-            List.of(io.airbyte.api.model.generated.DestinationSyncMode.OVERWRITE, io.airbyte.api.model.generated.DestinationSyncMode.APPEND)));
+    secretStorageService = mock(SecretStorageService.class);
 
     streamRefreshesHandler = mock(StreamRefreshesHandler.class);
     when(streamRefreshesHandler.getRefreshesForConnection(any())).thenReturn(new ArrayList<>());
     connectionTimelineEventHelper = mock(ConnectionTimelineEventHelper.class);
 
+    secretSanitizer = new SecretSanitizer(
+        actorDefinitionVersionHelper,
+        destinationService,
+        sourceService,
+        secretPersistenceService,
+        secretsRepositoryWriter,
+        secretStorageService);
+
     schedulerHandler = new SchedulerHandler(
         actorDefinitionService,
         catalogService,
         connectionService,
-        secretsRepositoryWriter,
         synchronousSchedulerClient,
         configurationUpdate,
         jsonSchemaValidator,
@@ -356,7 +358,6 @@ class SchedulerHandlerTest {
         eventRunner,
         jobConverter,
         connectionsHandler,
-        webUrlHelper,
         actorDefinitionVersionHelper,
         featureFlagClient,
         streamResetPersistence,
@@ -365,15 +366,14 @@ class SchedulerHandlerTest {
         jobFactory,
         jobNotifier,
         jobTracker,
-        connectorDefinitionSpecificationHandler,
         workspaceService,
-        secretPersistenceConfigService,
         streamRefreshesHandler,
         connectionTimelineEventHelper,
         sourceService,
         destinationService,
         catalogConverter,
-        applySchemaChangeHelper, metricClient);
+        metricClient,
+        secretSanitizer);
   }
 
   @ParameterizedTest
@@ -518,9 +518,12 @@ class SchedulerHandlerTest {
         .withProtocolVersion(SOURCE_PROTOCOL_VERSION)
         .withSpec(CONNECTOR_SPECIFICATION);
     when(actorDefinitionVersionHelper.getSourceVersion(sourceDefinition, source.getWorkspaceId(), null)).thenReturn(sourceVersion);
-    when(secretsRepositoryWriter.createEphemeralFromConfig(
-        eq(source.getConfiguration()),
-        any(), any())).thenReturn(source.getConfiguration());
+
+    final ConfigWithProcessedSecrets processed = SecretReferenceHelpers.INSTANCE.processConfigSecrets(
+        source.getConfiguration(), sourceVersion.getSpec().getConnectionSpecification(), null);
+    when(secretsRepositoryWriter.createEphemeralFromConfig(eq(processed), any()))
+        .thenReturn(source.getConfiguration());
+
     when(synchronousSchedulerClient.createSourceCheckConnectionJob(source, sourceVersion, false, RESOURCE_REQUIREMENT))
         .thenReturn((SynchronousResponse<StandardCheckConnectionOutput>) jobResponse);
 
@@ -558,9 +561,12 @@ class SchedulerHandlerTest {
         .withWorkspaceId(source.getWorkspaceId());
     when(synchronousSchedulerClient.createSourceCheckConnectionJob(submittedSource, sourceVersion, false, null))
         .thenReturn((SynchronousResponse<StandardCheckConnectionOutput>) jobResponse);
-    when(secretsRepositoryWriter.createEphemeralFromConfig(
-        eq(source.getConfiguration()),
-        any(), any())).thenReturn(source.getConfiguration());
+
+    final ConfigWithProcessedSecrets processed = SecretReferenceHelpers.INSTANCE.processConfigSecrets(
+        source.getConfiguration(), sourceVersion.getSpec().getConnectionSpecification(), null);
+    when(secretsRepositoryWriter.createEphemeralFromConfig(eq(processed), any()))
+        .thenReturn(source.getConfiguration());
+
     schedulerHandler.checkSourceConnectionFromSourceIdForUpdate(sourceUpdate);
 
     verify(jsonSchemaValidator).ensure(CONNECTOR_SPECIFICATION.getConnectionSpecification(), source.getConfiguration());
@@ -622,8 +628,12 @@ class SchedulerHandlerTest {
 
     when(synchronousSchedulerClient.createDestinationCheckConnectionJob(destination, destinationVersion, false, null))
         .thenReturn((SynchronousResponse<StandardCheckConnectionOutput>) jobResponse);
-    when(secretsRepositoryWriter.createEphemeralFromConfig(
-        eq(destination.getConfiguration()), any(), any())).thenReturn(destination.getConfiguration());
+
+    final ConfigWithProcessedSecrets processed = SecretReferenceHelpers.INSTANCE.processConfigSecrets(
+        destination.getConfiguration(), destinationVersion.getSpec().getConnectionSpecification(), null);
+    when(secretsRepositoryWriter.createEphemeralFromConfig(eq(processed), any()))
+        .thenReturn(destination.getConfiguration());
+
     schedulerHandler.checkDestinationConnectionFromDestinationCreate(destinationCoreConfig);
 
     verify(synchronousSchedulerClient).createDestinationCheckConnectionJob(destination, destinationVersion, false, null);
@@ -664,9 +674,12 @@ class SchedulerHandlerTest {
         .withWorkspaceId(destination.getWorkspaceId());
     when(synchronousSchedulerClient.createDestinationCheckConnectionJob(submittedDestination, destinationVersion, false, RESOURCE_REQUIREMENT))
         .thenReturn((SynchronousResponse<StandardCheckConnectionOutput>) jobResponse);
-    when(secretsRepositoryWriter.createEphemeralFromConfig(
-        eq(destination.getConfiguration()),
-        any(), any())).thenReturn(destination.getConfiguration());
+
+    final ConfigWithProcessedSecrets processed = SecretReferenceHelpers.INSTANCE.processConfigSecrets(
+        destination.getConfiguration(), destinationVersion.getSpec().getConnectionSpecification(), null);
+    when(secretsRepositoryWriter.createEphemeralFromConfig(eq(processed), any()))
+        .thenReturn(destination.getConfiguration());
+
     schedulerHandler.checkDestinationConnectionFromDestinationIdForUpdate(destinationUpdate);
 
     verify(jsonSchemaValidator).ensure(CONNECTOR_SPECIFICATION.getConnectionSpecification(), destination.getConfiguration());
@@ -795,9 +808,12 @@ class SchedulerHandlerTest {
         .withSpec(CONNECTOR_SPECIFICATION);
     when(actorDefinitionVersionHelper.getSourceVersion(sourceDefinition, source.getWorkspaceId(), source.getSourceId()))
         .thenReturn(sourceVersion);
-    when(secretsRepositoryWriter.createEphemeralFromConfig(
-        eq(source.getConfiguration()),
-        any(), any())).thenReturn(source.getConfiguration());
+
+    final ConfigWithProcessedSecrets processed = SecretReferenceHelpers.INSTANCE.processConfigSecrets(
+        source.getConfiguration(), sourceVersion.getSpec().getConnectionSpecification(), null);
+    when(secretsRepositoryWriter.createEphemeralFromConfig(eq(processed), any()))
+        .thenReturn(source.getConfiguration());
+
     when(synchronousSchedulerClient.createSourceCheckConnectionJob(source, sourceVersion, false, null))
         .thenReturn(checkResponse);
 
@@ -894,7 +910,7 @@ class SchedulerHandlerTest {
     assertTrue(actual.getJobInfo().getSucceeded());
     verify(sourceService).getSourceConnection(source.getSourceId());
     verify(catalogService).getActorCatalog(eq(request.getSourceId()), any(), any());
-    verify(catalogService, never()).writeActorCatalogFetchEvent(any(), any(), any(), any());
+    verify(catalogService, never()).writeActorCatalogWithFetchEvent((AirbyteCatalog) any(), any(), any(), any());
     verify(actorDefinitionVersionHelper).getSourceVersion(sourceDefinition, source.getWorkspaceId(), source.getSourceId());
     verify(synchronousSchedulerClient, never()).createDiscoverSchemaJob(any(), any(), anyBoolean(), any(), any());
   }
@@ -1014,9 +1030,11 @@ class SchedulerHandlerTest {
         .thenReturn(sourceVersion);
     when(synchronousSchedulerClient.createDiscoverSchemaJob(source, sourceVersion, false, null, WorkloadPriority.HIGH))
         .thenReturn(discoverResponse);
-    when(secretsRepositoryWriter.createEphemeralFromConfig(
-        eq(source.getConfiguration()),
-        any(), any())).thenReturn(source.getConfiguration());
+
+    final ConfigWithProcessedSecrets processed = SecretReferenceHelpers.INSTANCE.processConfigSecrets(
+        source.getConfiguration(), sourceVersion.getSpec().getConnectionSpecification(), null);
+    when(secretsRepositoryWriter.createEphemeralFromConfig(eq(processed), any()))
+        .thenReturn(source.getConfiguration());
 
     final SourceDiscoverSchemaRead actual = schedulerHandler.discoverSchemaForSourceFromSourceCreate(sourceCoreConfig);
 
@@ -1033,7 +1051,8 @@ class SchedulerHandlerTest {
       throws JsonValidationException, IOException, ConfigNotFoundException {
     final SourceConnection source = new SourceConnection()
         .withSourceDefinitionId(SOURCE.getSourceDefinitionId())
-        .withConfiguration(SOURCE.getConfiguration());
+        .withConfiguration(SOURCE.getConfiguration())
+        .withWorkspaceId(SOURCE.getWorkspaceId());
 
     final SourceCoreConfig sourceCoreConfig = new SourceCoreConfig()
         .sourceDefinitionId(source.getSourceDefinitionId())
@@ -1053,9 +1072,12 @@ class SchedulerHandlerTest {
         .thenReturn(sourceVersion);
     when(synchronousSchedulerClient.createDiscoverSchemaJob(source, sourceVersion, false, null, WorkloadPriority.HIGH))
         .thenReturn((SynchronousResponse<UUID>) jobResponse);
-    when(secretsRepositoryWriter.createEphemeralFromConfig(
-        eq(source.getConfiguration()),
-        any(), any())).thenReturn(source.getConfiguration());
+
+    final ConfigWithProcessedSecrets processedSourceConfig = SecretReferenceHelpers.INSTANCE.processConfigSecrets(
+        source.getConfiguration(), sourceVersion.getSpec().getConnectionSpecification(), null);
+    when(secretsRepositoryWriter.createEphemeralFromConfig(eq(processedSourceConfig), any()))
+        .thenReturn(source.getConfiguration());
+
     when(job.getSuccessOutput()).thenReturn(Optional.empty());
     when(job.getStatus()).thenReturn(JobStatus.FAILED);
 

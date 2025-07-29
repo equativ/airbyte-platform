@@ -717,12 +717,10 @@ class SourceDefinitionsHandlerTest {
         .sourceDefinition(create)
         .scopeId(workspaceId)
         .scopeType(io.airbyte.api.model.generated.ScopeType.WORKSPACE)
-        .workspaceId(workspaceId);
+        .workspaceId(null); // scopeType and scopeId should be sufficient to resolve to the expected workspaceId
 
     when(actorDefinitionHandlerHelper.defaultDefinitionVersionFromCreate(create.getDockerRepository(), create.getDockerImageTag(),
-        create.getDocumentationUrl(),
-        customCreateForWorkspace.getWorkspaceId()))
-            .thenReturn(sourceDefinitionVersion);
+        create.getDocumentationUrl(), workspaceId)).thenReturn(sourceDefinitionVersion);
 
     final SourceDefinitionRead expectedRead = new SourceDefinitionRead()
         .name(newSourceDefinition.getName())
@@ -747,7 +745,7 @@ class SourceDefinitionsHandlerTest {
     assertEquals(expectedRead, actualRead);
     verify(actorDefinitionHandlerHelper).defaultDefinitionVersionFromCreate(create.getDockerRepository(), create.getDockerImageTag(),
         create.getDocumentationUrl(),
-        customCreateForWorkspace.getWorkspaceId());
+        workspaceId);
     verify(sourceService).writeCustomConnectorMetadata(
         newSourceDefinition
             .withCustom(true)
@@ -757,25 +755,33 @@ class SourceDefinitionsHandlerTest {
         workspaceId,
         ScopeType.WORKSPACE);
 
-    final UUID organizationId = UUID.randomUUID();
+    // TODO: custom connectors for organizations are not currently supported. Jobs currently require an
+    // explicit workspace ID to resolve a dataplane group where the job should run. We can uncomment
+    // this section of the test once we support resolving a default dataplane group for a given
+    // organization ID.
 
-    final CustomSourceDefinitionCreate customCreateForOrganization = new CustomSourceDefinitionCreate()
-        .sourceDefinition(create)
-        .scopeId(organizationId)
-        .scopeType(io.airbyte.api.model.generated.ScopeType.ORGANIZATION);
-
-    when(actorDefinitionHandlerHelper.defaultDefinitionVersionFromCreate(create.getDockerRepository(), create.getDockerImageTag(),
-        create.getDocumentationUrl(),
-        null))
-            .thenReturn(sourceDefinitionVersion);
-
-    sourceDefinitionsHandler.createCustomSourceDefinition(customCreateForOrganization);
-
-    verify(actorDefinitionHandlerHelper).defaultDefinitionVersionFromCreate(create.getDockerRepository(), create.getDockerImageTag(),
-        create.getDocumentationUrl(),
-        null);
-    verify(sourceService).writeCustomConnectorMetadata(newSourceDefinition.withCustom(true).withDefaultVersionId(null),
-        sourceDefinitionVersion, organizationId, ScopeType.ORGANIZATION);
+    // final UUID organizationId = UUID.randomUUID();
+    //
+    // final CustomSourceDefinitionCreate customCreateForOrganization = new
+    // CustomSourceDefinitionCreate()
+    // .sourceDefinition(create)
+    // .scopeId(organizationId)
+    // .scopeType(io.airbyte.api.model.generated.ScopeType.ORGANIZATION);
+    //
+    // when(actorDefinitionHandlerHelper.defaultDefinitionVersionFromCreate(create.getDockerRepository(),
+    // create.getDockerImageTag(),
+    // create.getDocumentationUrl(),
+    // null))
+    // .thenReturn(sourceDefinitionVersion);
+    //
+    // sourceDefinitionsHandler.createCustomSourceDefinition(customCreateForOrganization);
+    //
+    // verify(actorDefinitionHandlerHelper).defaultDefinitionVersionFromCreate(create.getDockerRepository(),
+    // create.getDockerImageTag(),
+    // create.getDocumentationUrl(),
+    // null);
+    // verify(sourceService).writeCustomConnectorMetadata(newSourceDefinition.withCustom(true).withDefaultVersionId(null),
+    // sourceDefinitionVersion, organizationId, ScopeType.ORGANIZATION);
 
     verifyNoMoreInteractions(actorDefinitionHandlerHelper);
   }
@@ -841,7 +847,7 @@ class SourceDefinitionsHandlerTest {
         .thenReturn(sourceDefinitionVersion);
 
     when(actorDefinitionHandlerHelper.defaultDefinitionVersionFromUpdate(sourceDefinitionVersion, ActorType.SOURCE, newDockerImageTag,
-        sourceDefinition.getCustom())).thenReturn(updatedSourceDefVersion);
+        sourceDefinition.getCustom(), workspaceId)).thenReturn(updatedSourceDefVersion);
 
     final List<ActorDefinitionBreakingChange> breakingChanges = generateBreakingChangesFromSourceDefinition(updatedSource);
     when(actorDefinitionHandlerHelper.getBreakingChanges(updatedSourceDefVersion, ActorType.SOURCE)).thenReturn(breakingChanges);
@@ -849,7 +855,7 @@ class SourceDefinitionsHandlerTest {
     final SourceDefinitionRead sourceRead =
         sourceDefinitionsHandler.updateSourceDefinition(
             new SourceDefinitionUpdate().sourceDefinitionId(this.sourceDefinition.getSourceDefinitionId())
-                .dockerImageTag(newDockerImageTag));
+                .dockerImageTag(newDockerImageTag).workspaceId(workspaceId));
 
     final SourceDefinitionRead expectedSourceDefinitionRead = new SourceDefinitionRead()
         .sourceDefinitionId(sourceDefinition.getSourceDefinitionId())
@@ -869,7 +875,7 @@ class SourceDefinitionsHandlerTest {
 
     assertEquals(expectedSourceDefinitionRead, sourceRead);
     verify(actorDefinitionHandlerHelper).defaultDefinitionVersionFromUpdate(sourceDefinitionVersion, ActorType.SOURCE, newDockerImageTag,
-        sourceDefinition.getCustom());
+        sourceDefinition.getCustom(), workspaceId);
     verify(actorDefinitionHandlerHelper).getBreakingChanges(updatedSourceDefVersion, ActorType.SOURCE);
     verify(sourceService).writeConnectorMetadata(updatedSource, updatedSourceDefVersion, breakingChanges);
     verify(supportStateUpdater).updateSupportStatesForSourceDefinition(persistedUpdatedSource);
@@ -925,15 +931,15 @@ class SourceDefinitionsHandlerTest {
     assertNotEquals(newDockerImageTag, currentTag);
 
     when(actorDefinitionHandlerHelper.defaultDefinitionVersionFromUpdate(sourceDefinitionVersion, ActorType.SOURCE, newDockerImageTag,
-        sourceDefinition.getCustom()))
+        sourceDefinition.getCustom(), workspaceId))
             .thenThrow(UnsupportedProtocolVersionException.class);
 
     assertThrows(UnsupportedProtocolVersionException.class, () -> sourceDefinitionsHandler.updateSourceDefinition(
         new SourceDefinitionUpdate().sourceDefinitionId(this.sourceDefinition.getSourceDefinitionId())
-            .dockerImageTag(newDockerImageTag)));
+            .dockerImageTag(newDockerImageTag).workspaceId(workspaceId)));
 
     verify(actorDefinitionHandlerHelper).defaultDefinitionVersionFromUpdate(sourceDefinitionVersion, ActorType.SOURCE, newDockerImageTag,
-        sourceDefinition.getCustom());
+        sourceDefinition.getCustom(), workspaceId);
     verify(sourceService, never()).writeConnectorMetadata(any(StandardSourceDefinition.class), any(), any());
 
     verifyNoMoreInteractions(actorDefinitionHandlerHelper);

@@ -18,6 +18,7 @@ import io.airbyte.api.model.generated.PrivateDestinationDefinitionReadList;
 import io.airbyte.api.model.generated.WorkspaceIdRequestBody;
 import io.airbyte.api.problems.model.generated.ProblemMessageData;
 import io.airbyte.api.problems.throwable.generated.BadRequestProblem;
+import io.airbyte.api.problems.throwable.generated.UnprocessableEntityProblem;
 import io.airbyte.commons.entitlements.Entitlement;
 import io.airbyte.commons.entitlements.LicenseEntitlementChecker;
 import io.airbyte.commons.lang.Exceptions;
@@ -144,7 +145,8 @@ public class DestinationDefinitionsHandler {
           .custom(standardDestinationDefinition.getCustom())
           .enterprise(standardDestinationDefinition.getEnterprise())
           .resourceRequirements(apiPojoConverters.scopedResourceReqsToApi(standardDestinationDefinition.getResourceRequirements()))
-          .language(destinationVersion.getLanguage());
+          .language(destinationVersion.getLanguage())
+          .supportsDataActivation(destinationVersion.getSupportsDataActivation());
     } catch (final URISyntaxException | NullPointerException e) {
       throw new InternalServerKnownException("Unable to process retrieved latest destination definitions list", e);
     }
@@ -283,10 +285,11 @@ public class DestinationDefinitionsHandler {
       throws IOException {
     final UUID id = uuidSupplier.get();
     final DestinationDefinitionCreate destinationDefCreate = customDestinationDefinitionCreate.getDestinationDefinition();
+    final UUID workspaceId = resolveWorkspaceId(customDestinationDefinitionCreate);
     final ActorDefinitionVersion actorDefinitionVersion =
         actorDefinitionHandlerHelper
             .defaultDefinitionVersionFromCreate(destinationDefCreate.getDockerRepository(), destinationDefCreate.getDockerImageTag(),
-                destinationDefCreate.getDocumentationUrl(), customDestinationDefinitionCreate.getWorkspaceId())
+                destinationDefCreate.getDocumentationUrl(), workspaceId)
             .withActorDefinitionId(id);
 
     final StandardDestinationDefinition destinationDefinition = new StandardDestinationDefinition()
@@ -310,6 +313,17 @@ public class DestinationDefinitionsHandler {
     return buildDestinationDefinitionRead(destinationDefinition, actorDefinitionVersion);
   }
 
+  private UUID resolveWorkspaceId(final CustomDestinationDefinitionCreate customDestinationDefinitionCreate) {
+    if (customDestinationDefinitionCreate.getWorkspaceId() != null) {
+      return customDestinationDefinitionCreate.getWorkspaceId();
+    }
+    if (ScopeType.fromValue(customDestinationDefinitionCreate.getScopeType().toString()).equals(ScopeType.WORKSPACE)) {
+      return customDestinationDefinitionCreate.getScopeId();
+    }
+    throw new UnprocessableEntityProblem(new ProblemMessageData()
+        .message(String.format("Cannot determine workspace ID for custom destination definition creation: %s", customDestinationDefinitionCreate)));
+  }
+
   public DestinationDefinitionRead updateDestinationDefinition(final DestinationDefinitionUpdate destinationDefinitionUpdate)
       throws ConfigNotFoundException, IOException, JsonValidationException, io.airbyte.data.exceptions.ConfigNotFoundException {
     final ConnectorPlatformCompatibilityValidationResult isNewConnectorVersionSupported =
@@ -331,7 +345,8 @@ public class DestinationDefinitionsHandler {
     final StandardDestinationDefinition newDestination = buildDestinationDefinitionUpdate(currentDestination, destinationDefinitionUpdate);
 
     final ActorDefinitionVersion newVersion = actorDefinitionHandlerHelper.defaultDefinitionVersionFromUpdate(
-        currentVersion, ActorType.DESTINATION, destinationDefinitionUpdate.getDockerImageTag(), currentDestination.getCustom());
+        currentVersion, ActorType.DESTINATION, destinationDefinitionUpdate.getDockerImageTag(), currentDestination.getCustom(),
+        destinationDefinitionUpdate.getWorkspaceId());
 
     final List<ActorDefinitionBreakingChange> breakingChangesForDef =
         actorDefinitionHandlerHelper.getBreakingChanges(newVersion, ActorType.DESTINATION);

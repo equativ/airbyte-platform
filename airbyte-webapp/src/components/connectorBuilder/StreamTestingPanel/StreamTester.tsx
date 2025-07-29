@@ -1,9 +1,14 @@
+import get from "lodash/get";
+import isObject from "lodash/isObject";
+import isString from "lodash/isString";
 import { useEffect, useMemo } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 
+import { Button } from "components/ui/Button";
 import { Collapsible } from "components/ui/Collapsible";
 import { FlexContainer } from "components/ui/Flex";
 import { Icon, IconColor, IconType } from "components/ui/Icon";
+import { ExternalLink } from "components/ui/Link";
 import { Message } from "components/ui/Message";
 import { Pre } from "components/ui/Pre";
 import { ResizablePanels } from "components/ui/ResizablePanels";
@@ -24,6 +29,7 @@ import { LogsDisplay } from "./LogsDisplay";
 import { ResultDisplay } from "./ResultDisplay";
 import { StreamTestButton } from "./StreamTestButton";
 import styles from "./StreamTester.module.scss";
+import { isStreamDynamicStream } from "../types";
 import { useBuilderWatch } from "../useBuilderWatch";
 import { useStreamTestMetadata } from "../useStreamTestMetadata";
 
@@ -32,7 +38,9 @@ export const StreamTester: React.FC<{
   setTestingValuesInputOpen: (open: boolean) => void;
 }> = ({ hasTestingValuesErrors, setTestingValuesInputOpen }) => {
   const { formatMessage } = useIntl();
-  const { streamNames, isResolving, resolveErrorMessage, resolveError } = useConnectorBuilderFormState();
+  const { streamNames, dynamicStreamNames, isResolving, resolveErrorMessage, resolveError } =
+    useConnectorBuilderFormState();
+  const generatedStreams = useBuilderWatch("formValues.generatedStreams");
   const {
     streamRead: {
       data: streamReadData,
@@ -44,17 +52,23 @@ export const StreamTester: React.FC<{
       errorUpdatedAt,
     },
     testReadLimits: { recordLimit, pageLimit, sliceLimit },
+    generateStreams: { refetch: generateStreams, isFetching: isGeneratingStreams, error: generateStreamsError },
     queuedStreamRead,
     queueStreamRead,
     cancelStreamRead,
     testStreamRequestType,
   } = useConnectorBuilderTestRead();
   const [showLimitWarning, setShowLimitWarning] = useLocalStorage("connectorBuilderLimitWarning", true);
-  const testStreamIndex = useBuilderWatch("testStreamIndex");
+  const testStreamId = useBuilderWatch("testStreamId");
   const { selectedSlice } = useSelectedPageAndSlice();
   const globalAuxiliaryRequests = streamReadData?.auxiliary_requests;
 
-  const streamName = streamNames[testStreamIndex];
+  const streamIsDynamic = isStreamDynamicStream(testStreamId);
+  const streamName = streamIsDynamic
+    ? dynamicStreamNames[testStreamId.index]
+    : testStreamId.type === "generated_stream"
+    ? generatedStreams?.[testStreamId.dynamicStreamName]?.[testStreamId.index]?.name
+    : streamNames[testStreamId.index];
 
   const analyticsService = useAnalyticsService();
 
@@ -65,26 +79,33 @@ export const StreamTester: React.FC<{
     ? error instanceof HttpError
       ? error.response?.message || unknownErrorMessage
       : unknownErrorMessage
+    : generateStreamsError
+    ? formatGenerateStreamsError(generateStreamsError)
     : undefined;
 
   const errorExceptionStack = resolveError?.response?.exceptionStack;
 
   const { getStreamTestWarnings, getStreamTestMetadataStatus, getStreamHasCustomType } = useStreamTestMetadata();
   const streamTestWarnings = useMemo(
-    () => getStreamTestWarnings(streamName, true),
-    [getStreamTestWarnings, streamName]
+    () => getStreamTestWarnings(testStreamId, true),
+    [getStreamTestWarnings, testStreamId]
   );
   const streamTestMetadataStatus = useMemo(
-    () => getStreamTestMetadataStatus(streamName),
-    [getStreamTestMetadataStatus, streamName]
+    () => getStreamTestMetadataStatus(testStreamId),
+    [getStreamTestMetadataStatus, testStreamId]
   );
-  const streamHasCustomType = getStreamHasCustomType(streamName);
+  const streamHasCustomType = getStreamHasCustomType(testStreamId);
   const areCustomComponentsEnabled = useCustomComponentsEnabled();
   const cantProcessCustomComponents = streamHasCustomType && !areCustomComponentsEnabled;
 
+  const cleanedLogs = useMemo(
+    () => streamReadData?.logs?.filter((log) => !(log.level === "WARN" && log.message.includes("deprecated"))),
+    [streamReadData?.logs]
+  );
+
   const logNumByType = useMemo(
     () =>
-      (streamReadData?.logs ?? []).reduce(
+      (cleanedLogs ?? []).reduce(
         (acc, log) => {
           switch (log.level) {
             case "ERROR":
@@ -103,11 +124,13 @@ export const StreamTester: React.FC<{
         {
           info: 0,
           warning: streamTestWarnings.length,
-          error: 0,
+          error: errorMessage ? 1 : 0,
         }
       ),
-    [streamReadData?.logs, streamTestWarnings.length]
+    [cleanedLogs, streamTestWarnings.length, errorMessage]
   );
+
+  const hasGeneratedStreams = generatedStreams?.[streamName]?.length > 0;
 
   const hasGlobalAuxiliaryRequests = globalAuxiliaryRequests && globalAuxiliaryRequests.length > 0;
   const hasSlices =
@@ -122,9 +145,10 @@ export const StreamTester: React.FC<{
 
   const hasSliceAuxiliaryRequests = sliceAuxiliaryRequests && sliceAuxiliaryRequests.length > 0;
   const hasAnyAuxiliaryRequests = hasGlobalAuxiliaryRequests || hasSliceAuxiliaryRequests;
+  const hasLogs = errorMessage || (cleanedLogs && cleanedLogs.length > 0) || streamTestWarnings.length > 0;
 
   const SECONDARY_PANEL_SIZE = 0.25;
-  const logsFlex = logNumByType.error > 0 || logNumByType.warning > 0 ? SECONDARY_PANEL_SIZE : 0;
+  const logsFlex = hasLogs ? SECONDARY_PANEL_SIZE : 0;
   const auxiliaryRequestsFlex = hasAnyAuxiliaryRequests && !hasSlices ? SECONDARY_PANEL_SIZE : 0;
 
   useEffect(() => {
@@ -146,6 +170,41 @@ export const StreamTester: React.FC<{
     }
   }, [analyticsService, errorMessage, isFetchedAfterMount, streamName, dataUpdatedAt, errorUpdatedAt]);
 
+  const streamTestButton = (
+    <StreamTestButton
+      variant={streamIsDynamic ? "secondary" : undefined}
+      queueStreamRead={() => {
+        queueStreamRead();
+        if (streamIsDynamic) {
+          analyticsService.track(Namespace.CONNECTOR_BUILDER, Action.DYNAMIC_STREAM_PREVIEW_ENDPOINT, {
+            actionDescription: "Dynamic stream endpoint previewed",
+            dynamic_stream_name: streamName,
+          });
+        } else {
+          analyticsService.track(Namespace.CONNECTOR_BUILDER, Action.STREAM_TEST, {
+            actionDescription: "Stream test initiated",
+            stream_name: streamName,
+            stream_type: testStreamId.type,
+            dynamic_stream_name: testStreamId.type === "generated_stream" ? testStreamId.dynamicStreamName : undefined,
+          });
+        }
+      }}
+      cancelStreamRead={cancelStreamRead}
+      hasTestingValuesErrors={hasTestingValuesErrors}
+      setTestingValuesInputOpen={setTestingValuesInputOpen}
+      hasResolveErrors={Boolean(resolveErrorMessage)}
+      isStreamTestQueued={queuedStreamRead}
+      isStreamTestRunning={isFetching}
+      isStreamTestStale={
+        !cantProcessCustomComponents &&
+        testStreamId.type !== "dynamic_stream" &&
+        (!streamTestMetadataStatus || streamTestMetadataStatus.isStale)
+      }
+      forceDisabled={cantProcessCustomComponents}
+      requestType={testStreamRequestType}
+    />
+  );
+
   return (
     <div className={styles.container}>
       {streamName === undefined && isResolving && (
@@ -155,29 +214,40 @@ export const StreamTester: React.FC<{
       )}
 
       {cantProcessCustomComponents && (
-        <Message type="error" text={formatMessage({ id: "connectorBuilder.warnings.containsCustomComponent" })} />
+        <Message
+          type="error"
+          text={
+            <FormattedMessage
+              id="connectorBuilder.warnings.containsCustomComponent"
+              values={{
+                lnk: (...lnk: React.ReactNode[]) => (
+                  <ExternalLink href={links.connectorBuilderCustomComponents}>{lnk}</ExternalLink>
+                ),
+              }}
+            />
+          }
+        />
       )}
 
-      <StreamTestButton
-        queueStreamRead={() => {
-          queueStreamRead();
-          analyticsService.track(Namespace.CONNECTOR_BUILDER, Action.STREAM_TEST, {
-            actionDescription: "Stream test initiated",
-            stream_name: streamName,
-          });
-        }}
-        cancelStreamRead={cancelStreamRead}
-        hasTestingValuesErrors={hasTestingValuesErrors}
-        setTestingValuesInputOpen={setTestingValuesInputOpen}
-        hasResolveErrors={Boolean(resolveErrorMessage)}
-        isStreamTestQueued={queuedStreamRead}
-        isStreamTestRunning={isFetching}
-        isStreamTestStale={
-          !cantProcessCustomComponents && (!streamTestMetadataStatus || streamTestMetadataStatus.isStale)
-        }
-        forceDisabled={cantProcessCustomComponents}
-        requestType={testStreamRequestType}
-      />
+      {streamIsDynamic && (
+        <div className={styles.dynamicStreamButtonContainer}>
+          {streamTestButton}
+          <Button
+            className={hasGeneratedStreams ? undefined : styles.pulsate}
+            isLoading={isGeneratingStreams}
+            onClick={() => {
+              generateStreams();
+              analyticsService.track(Namespace.CONNECTOR_BUILDER, Action.DYNAMIC_STREAM_GENERATE, {
+                actionDescription: "Dynamic streams generated",
+                dynamic_stream_name: streamName,
+              });
+            }}
+          >
+            <FormattedMessage id="connectorBuilder.generateStreams" />
+          </Button>
+        </div>
+      )}
+      {!streamIsDynamic && streamTestButton}
 
       {resolveErrorMessage !== undefined && (
         <div className={styles.listErrorDisplay}>
@@ -245,15 +315,11 @@ export const StreamTester: React.FC<{
             ),
             minWidth: 40,
           },
-          ...(errorMessage || (streamReadData?.logs && streamReadData.logs.length > 0) || streamTestWarnings.length > 0
+          ...(hasLogs
             ? [
                 {
                   children: (
-                    <LogsDisplay
-                      logs={streamReadData?.logs ?? []}
-                      error={errorMessage}
-                      testWarnings={streamTestWarnings}
-                    />
+                    <LogsDisplay logs={cleanedLogs ?? []} error={errorMessage} testWarnings={streamTestWarnings} />
                   ),
                   minWidth: 0,
                   flex: logsFlex,
@@ -335,3 +401,37 @@ const IconCount = ({ icon, count, color }: { icon: IconType; count: number; colo
     </Text>
   </FlexContainer>
 );
+
+const formatGenerateStreamsError = (error: unknown): string | null => {
+  if (isObject(error)) {
+    const message = get(error, "response.message");
+    if (isString(message)) {
+      // The generate streams error message usually contains some text followed by a stringified JSON object.
+      // That JSON object contains the actual message we want to display to the user.
+      const json = extractJson(message);
+      if (isObject(json) && "message" in json && isString(json.message)) {
+        return json.message.replace("Please contact Airbyte Support.", "");
+      }
+    }
+  }
+
+  return JSON.stringify(error);
+};
+
+/**
+ * Finds any stringfied JSON object in the input string by searching for
+ * any text between `{` and `}`, then attempts to parse it as JSON.
+ *
+ * Returns null if no JSON object is found.
+ */
+const extractJson = (input: string): unknown | null => {
+  const match = input.match(/{[\s\S]*}/);
+  if (match) {
+    try {
+      return JSON.parse(match[0]);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};

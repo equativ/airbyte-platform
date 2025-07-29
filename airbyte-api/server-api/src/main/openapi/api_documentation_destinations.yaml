@@ -149,6 +149,14 @@ paths:
       x-speakeasy-alias: "getDestination"
       x-speakeasy-group: "Destinations"
       summary: "Get Destination details"
+      parameters:
+      - in: "query"
+        name: "includeSecretCoordinates"
+        schema:
+          type: "boolean"
+        required: false
+        description: "Rather than return *** for secret properties include the secret\
+          \ coordinate information"
     delete:
       tags:
       - "public_destinations"
@@ -281,12 +289,21 @@ components:
       x-speakeasy-component: true
     DeclarativeManifest:
       x-speakeasy-component: true
+      x-speakeasy-type-override: "any"
       description: "Low code CDK manifest JSON object"
       type: "object"
     ManifestVersion:
       x-speakeasy-component: true
       type: "integer"
       format: "int64"
+    SourceDefinitionSpecification:
+      description: "The specification for what values are required to configure the\
+        \ sourceDefinition."
+      type: "object"
+      example:
+        user:
+          type: "string"
+      x-speakeasy-component: true
     TagId:
       type: "string"
       format: "uuid"
@@ -611,6 +628,11 @@ components:
           type: "array"
           items:
             $ref: "#/components/schemas/JobTypeResourceLimit"
+    ActorDefinitionId:
+      description: "A unique identifier for an actor definition."
+      type: "string"
+      format: "uuid"
+      x-speakeasy-component: true
     JobTypeResourceLimit:
       x-speakeasy-component: true
       description: "sets resource requirements for a specific job type for an actor\
@@ -830,6 +852,11 @@ components:
         schedule:
           $ref: "#/components/schemas/AirbyteApiConnectionSchedule"
         dataResidency:
+          deprecated: true
+          x-speakeasy-deprecation-message: "We no longer support modifying dataResidency\
+            \ on Community and Enterprise connections. This will be supported on Cloud\
+            \ until May 31, at which time all connections will use the dataResidency\
+            \ of their associated workspace."
           type: "string"
         namespaceDefinition:
           $ref: "#/components/schemas/NamespaceDefinitionEnum"
@@ -868,6 +895,11 @@ components:
         schedule:
           $ref: "#/components/schemas/AirbyteApiConnectionSchedule"
         dataResidency:
+          deprecated: true
+          x-speakeasy-deprecation-message: "We no longer support modifying dataResidency\
+            \ on Community and Enterprise connections. This will be supported on Cloud\
+            \ until May 31, at which time all connections will use the dataResidency\
+            \ of their associated workspace."
           type: "string"
         namespaceDefinition:
           $ref: "#/components/schemas/NamespaceDefinitionEnumNoDefault"
@@ -1023,6 +1055,23 @@ components:
         color:
           type: "string"
       x-speakeasy-entity: "Tag"
+      x-speakeasy-component: true
+    OrganizationOAuthCredentialsRequest:
+      title: "Root Type for OrganizationOAuthCredentials"
+      description: "POST body for creating/updating organization level OAuth credentials"
+      required:
+      - "actorType"
+      - "name"
+      - "configuration"
+      type: "object"
+      properties:
+        actorType:
+          $ref: "#/components/schemas/ActorTypeEnum"
+        name:
+          type: "string"
+          description: "The name of the source i.e. google-ads"
+        configuration:
+          $ref: "#/components/schemas/OAuthCredentialsConfiguration"
       x-speakeasy-component: true
     ConnectionResponse:
       title: "Root Type for ConnectionResponse"
@@ -1370,6 +1419,9 @@ components:
           type: "string"
         notifications:
           $ref: "#/components/schemas/NotificationsConfig"
+        regionId:
+          type: "string"
+          format: "uuid"
       x-speakeasy-entity: "Workspace"
       x-speakeasy-param-suppress-computed-diff: true
       x-speakeasy-component: true
@@ -1381,6 +1433,9 @@ components:
           type: "string"
         notifications:
           $ref: "#/components/schemas/NotificationsConfig"
+        regionId:
+          type: "string"
+          format: "uuid"
       x-speakeasy-entity: "Workspace"
       x-speakeasy-param-suppress-computed-diff: true
       x-speakeasy-component: true
@@ -1715,6 +1770,8 @@ components:
       properties:
         name:
           type: "string"
+        version:
+          $ref: "#/components/schemas/ManifestVersion"
         manifest:
           $ref: "#/components/schemas/DeclarativeManifest"
     UpdateDeclarativeSourceDefinitionRequest:
@@ -1871,6 +1928,9 @@ components:
       properties:
         name:
           type: "string"
+        namespace:
+          type: "string"
+          description: "Namespace of the stream."
         syncMode:
           $ref: "#/components/schemas/ConnectionSyncModeEnum"
         cursorField:
@@ -1889,6 +1949,10 @@ components:
             type: "array"
             items:
               type: "string"
+        includeFiles:
+          description: "Whether to move raw files from the source to the destination\
+            \ during the sync."
+          type: "boolean"
         selectedFields:
           description: "By default (if not provided in the request) all fields will\
             \ be synced. Otherwise, only the fields in this list will be synced."
@@ -1926,6 +1990,8 @@ components:
           type: "array"
           items:
             $ref: "#/components/schemas/ConnectionSyncModeEnum"
+        streamnamespace:
+          type: "string"
         defaultCursorField:
           type: "array"
           items:
@@ -1958,6 +2024,247 @@ components:
       enum:
       - "source"
       - "destination"
+      x-speakeasy-component: true
+    RegionCreateRequest:
+      type: "object"
+      required:
+      - "name"
+      - "organizationId"
+      properties:
+        name:
+          type: "string"
+        organizationId:
+          type: "string"
+          format: "uuid"
+        enabled:
+          type: "boolean"
+      x-speakeasy-entity: "Region"
+      x-speakeasy-param-suppress-computed-diff: true
+      x-speakeasy-component: true
+    RegionPatchRequest:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+        enabled:
+          type: "boolean"
+      x-speakeasy-entity: "Region"
+      x-speakeasy-param-suppress-computed-diff: true
+      x-speakeasy-component: true
+    RegionResponse:
+      type: "object"
+      required:
+      - "regionId"
+      - "name"
+      - "organizationId"
+      - "enabled"
+      - "createdAt"
+      - "updatedAt"
+      properties:
+        regionId:
+          type: "string"
+          format: "uuid"
+        name:
+          type: "string"
+        organizationId:
+          type: "string"
+          format: "uuid"
+        enabled:
+          type: "boolean"
+        createdAt:
+          type: "string"
+        updatedAt:
+          type: "string"
+      x-speakeasy-entity: "Region"
+      x-speakeasy-param-suppress-computed-diff: true
+      x-speakeasy-component: true
+    RegionsResponse:
+      type: "object"
+      required:
+      - "data"
+      properties:
+        data:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/RegionResponse"
+      x-speakeasy-component: true
+    DataplaneCreateRequest:
+      type: "object"
+      required:
+      - "regionId"
+      - "name"
+      properties:
+        regionId:
+          type: "string"
+          format: "uuid"
+        name:
+          type: "string"
+        enabled:
+          type: "boolean"
+      x-speakeasy-entity: "Dataplane"
+      x-speakeasy-param-suppress-computed-diff: true
+      x-speakeasy-component: true
+    DataplanePatchRequest:
+      type: "object"
+      properties:
+        name:
+          type: "string"
+        enabled:
+          type: "boolean"
+      x-speakeasy-entity: "Dataplane"
+      x-speakeasy-param-suppress-computed-diff: true
+      x-speakeasy-component: true
+    DataplaneResponse:
+      type: "object"
+      required:
+      - "dataplaneId"
+      - "name"
+      - "regionId"
+      - "enabled"
+      - "createdAt"
+      - "updatedAt"
+      properties:
+        dataplaneId:
+          type: "string"
+          format: "uuid"
+        name:
+          type: "string"
+        regionId:
+          type: "string"
+          format: "uuid"
+        enabled:
+          type: "boolean"
+        createdAt:
+          type: "string"
+        updatedAt:
+          type: "string"
+      x-speakeasy-entity: "Dataplane"
+      x-speakeasy-param-suppress-computed-diff: true
+      x-speakeasy-component: true
+    DataplanesResponse:
+      type: "object"
+      required:
+      - "data"
+      properties:
+        data:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/DataplaneResponse"
+      x-speakeasy-component: true
+    ConfigTemplateListResponse:
+      type: "object"
+      required:
+      - "data"
+      properties:
+        data:
+          type: "array"
+          items:
+            $ref: "#/components/schemas/ConfigTemplateListItem"
+      x-speakeasy-component: true
+    ConfigTemplateListItem:
+      type: "object"
+      required:
+      - "id"
+      - "name"
+      - "icon"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        name:
+          type: "string"
+        icon:
+          type: "string"
+      x-speakeasy-component: true
+    ConfigTemplatePublicRead:
+      type: "object"
+      required:
+      - "id"
+      - "name"
+      - "icon"
+      - "sourceDefinitionId"
+      - "configTemplateSpec"
+      - "partialDefaultConfig"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+        name:
+          type: "string"
+          description: "Name of the associated actor definition"
+        icon:
+          type: "string"
+          description: "url to icon in connector asset (svg) registry"
+        sourceDefinitionId:
+          type: "string"
+          format: "uuid"
+        configTemplateSpec:
+          $ref: "#/components/schemas/SourceDefinitionSpecification"
+        partialDefaultConfig:
+          type: "object"
+      x-speakeasy-component: true
+    ConfigTemplateCreateRequestBody:
+      type: "object"
+      required:
+      - "actorDefinitionId"
+      - "partialDefaultConfig"
+      - "partialUserConfigSpec"
+      - "organizationId"
+      properties:
+        organizationId:
+          type: "string"
+          format: "uuid"
+        actorDefinitionId:
+          $ref: "#/components/schemas/ActorDefinitionId"
+        partialDefaultConfig:
+          $ref: "#/components/schemas/SourceConfiguration"
+        partialUserConfigSpec:
+          $ref: "#/components/schemas/SourceConfiguration"
+      x-speakeasy-component: true
+    ConfigTemplateCreateResponse:
+      type: "object"
+      required:
+      - "id"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+      x-speakeasy-component: true
+    ConfigTemplateUpdateRequestBody:
+      type: "object"
+      required:
+      - "organizationId"
+      properties:
+        organizationId:
+          type: "string"
+          format: "uuid"
+        partialDefaultConfig:
+          $ref: "#/components/schemas/SourceConfiguration"
+        partialUserConfigSpec:
+          $ref: "#/components/schemas/SourceConfiguration"
+      x-speakeasy-component: true
+    ConfigTemplateUpdateResponse:
+      type: "object"
+      required:
+      - "id"
+      properties:
+        id:
+          type: "string"
+          format: "uuid"
+      x-speakeasy-component: true
+    EmbeddedWidgetRequest:
+      type: "object"
+      required:
+      - "workspaceId"
+      - "allowedOrigin"
+      properties:
+        workspaceId:
+          type: "string"
+          format: "uuid"
+        allowedOrigin:
+          type: "string"
+        externalUserId:
+          type: "string"
       x-speakeasy-component: true
     destination-clickhouse:
       title: "ClickHouse Destination Spec"
@@ -2453,10 +2760,21 @@ components:
               shared_access_signature:
                 type: "string"
                 description: "A shared access signature (SAS) provides secure delegated\
-                  \ access to resources in your storage account. See: https://learn.microsoft.com/azure/storage/common/storage-sas-overview"
+                  \ access to resources in your storage account. See: https://learn.microsoft.com/azure/storage/common/storage-sas-overview.Mutually\
+                  \ exclusive with an account key"
                 title: "Shared Access Signature"
                 examples:
-                - "a012345678910ABCDEFGH/AbCdEfGhEXAMPLEKEY"
+                - "sv=2021-08-06&st=2025-04-11T00%3A00%3A00Z&se=2025-04-12T00%3A00%3A00Z&sr=b&sp=rw&sig=abcdefghijklmnopqrstuvwxyz1234567890%2Fabcdefg%3D"
+                airbyte_secret: true
+                always_show: true
+                x-speakeasy-param-sensitive: true
+              azure_blob_storage_account_key:
+                type: "string"
+                description: "The Azure blob storage account key. Mutually exclusive\
+                  \ with a Shared Access Signature"
+                title: "Azure Blob Storage account key"
+                examples:
+                - "Z8ZkZpteggFx394vm+PJHnGTvdRncaYS+JhLKdj789YNmD+iyGTnG+PV+POiuYNhBg/ACS+LKjd%4FG3FHGN12Nd=="
                 airbyte_secret: true
                 always_show: true
                 x-speakeasy-param-sensitive: true
@@ -2467,7 +2785,7 @@ components:
                 title: "BULK Load Data Source"
                 examples:
                 - "MyAzureBlobStorage"
-                order: 4
+                order: 5
                 always_show: true
               bulk_load_validate_values_pre_load:
                 type: "boolean"
@@ -2478,13 +2796,12 @@ components:
                 examples:
                 - "false"
                 default: false
-                order: 5
+                order: 6
                 always_show: false
             required:
             - "load_type"
             - "azure_blob_storage_account_name"
             - "azure_blob_storage_container_name"
-            - "shared_access_signature"
             - "bulk_load_data_source"
           description: "Specifies the type of load mechanism (e.g., BULK, INSERT)\
             \ and its associated configuration."
@@ -2659,10 +2976,20 @@ components:
               shared_access_signature:
                 type: "string"
                 description: "A shared access signature (SAS) provides secure delegated\
-                  \ access to resources in your storage account. See: https://learn.microsoft.com/azure/storage/common/storage-sas-overview"
+                  \ access to resources in your storage account. See: https://learn.microsoft.com/azure/storage/common/storage-sas-overview.Mutually\
+                  \ exclusive with an account key"
                 title: "Shared Access Signature"
                 examples:
-                - "a012345678910ABCDEFGH/AbCdEfGhEXAMPLEKEY"
+                - "sv=2021-08-06&st=2025-04-11T00%3A00%3A00Z&se=2025-04-12T00%3A00%3A00Z&sr=b&sp=rw&sig=abcdefghijklmnopqrstuvwxyz1234567890%2Fabcdefg%3D"
+                airbyte_secret: true
+                always_show: true
+              azure_blob_storage_account_key:
+                type: "string"
+                description: "The Azure blob storage account key. Mutually exclusive\
+                  \ with a Shared Access Signature"
+                title: "Azure Blob Storage account key"
+                examples:
+                - "Z8ZkZpteggFx394vm+PJHnGTvdRncaYS+JhLKdj789YNmD+iyGTnG+PV+POiuYNhBg/ACS+LKjd%4FG3FHGN12Nd=="
                 airbyte_secret: true
                 always_show: true
               bulk_load_data_source:
@@ -2672,7 +2999,7 @@ components:
                 title: "BULK Load Data Source"
                 examples:
                 - "MyAzureBlobStorage"
-                order: 4
+                order: 5
                 always_show: true
               bulk_load_validate_values_pre_load:
                 type: "boolean"
@@ -2683,13 +3010,12 @@ components:
                 examples:
                 - "false"
                 default: false
-                order: 5
+                order: 6
                 always_show: false
             required:
             - "load_type"
             - "azure_blob_storage_account_name"
             - "azure_blob_storage_container_name"
-            - "shared_access_signature"
             - "bulk_load_data_source"
           description: "Specifies the type of load mechanism (e.g., BULK, INSERT)\
             \ and its associated configuration."
@@ -3553,392 +3879,6 @@ components:
                 type: "string"
                 airbyte_secret: true
                 order: 4
-    destination-s3-glue:
-      title: "S3 Destination Spec"
-      type: "object"
-      required:
-      - "s3_bucket_name"
-      - "s3_bucket_path"
-      - "s3_bucket_region"
-      - "format"
-      - "glue_database"
-      - "glue_serialization_library"
-      - "destinationType"
-      properties:
-        access_key_id:
-          type: "string"
-          description: "The access key ID to access the S3 bucket. Airbyte requires\
-            \ Read and Write permissions to the given bucket. Read more <a href=\"\
-            https://docs.aws.amazon.com/general/latest/gr/aws-sec-cred-types.html#access-keys-and-secret-access-keys\"\
-            >here</a>."
-          title: "S3 Key ID"
-          airbyte_secret: true
-          examples:
-          - "A012345678910EXAMPLE"
-          order: 0
-          x-speakeasy-param-sensitive: true
-        secret_access_key:
-          type: "string"
-          description: "The corresponding secret to the access key ID. Read more <a\
-            \ href=\"https://docs.aws.amazon.com/general/latest/gr/aws-sec-cred-types.html#access-keys-and-secret-access-keys\"\
-            >here</a>"
-          title: "S3 Access Key"
-          airbyte_secret: true
-          examples:
-          - "a012345678910ABCDEFGH/AbCdEfGhEXAMPLEKEY"
-          order: 1
-          x-speakeasy-param-sensitive: true
-        s3_bucket_name:
-          title: "S3 Bucket Name"
-          type: "string"
-          description: "The name of the S3 bucket. Read more <a href=\"https://docs.aws.amazon.com/AmazonS3/latest/userguide/create-bucket-overview.html\"\
-            >here</a>."
-          examples:
-          - "airbyte_sync"
-          order: 2
-        s3_bucket_path:
-          title: "S3 Bucket Path"
-          description: "Directory under the S3 bucket where data will be written.\
-            \ Read more <a href=\"https://docs.airbyte.com/integrations/destinations/s3#:~:text=to%20format%20the-,bucket%20path,-%3A\"\
-            >here</a>"
-          type: "string"
-          examples:
-          - "data_sync/test"
-          order: 3
-        s3_bucket_region:
-          title: "S3 Bucket Region"
-          type: "string"
-          default: ""
-          description: "The region of the S3 bucket. See <a href=\"https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions\"\
-            >here</a> for all region codes."
-          enum:
-          - ""
-          - "af-south-1"
-          - "ap-east-1"
-          - "ap-northeast-1"
-          - "ap-northeast-2"
-          - "ap-northeast-3"
-          - "ap-south-1"
-          - "ap-south-2"
-          - "ap-southeast-1"
-          - "ap-southeast-2"
-          - "ap-southeast-3"
-          - "ap-southeast-4"
-          - "ca-central-1"
-          - "ca-west-1"
-          - "cn-north-1"
-          - "cn-northwest-1"
-          - "eu-central-1"
-          - "eu-central-2"
-          - "eu-north-1"
-          - "eu-south-1"
-          - "eu-south-2"
-          - "eu-west-1"
-          - "eu-west-2"
-          - "eu-west-3"
-          - "il-central-1"
-          - "me-central-1"
-          - "me-south-1"
-          - "sa-east-1"
-          - "us-east-1"
-          - "us-east-2"
-          - "us-gov-east-1"
-          - "us-gov-west-1"
-          - "us-west-1"
-          - "us-west-2"
-          order: 4
-        format:
-          title: "Output Format"
-          type: "object"
-          description: "Format of the data output. See <a href=\"https://docs.airbyte.com/integrations/destinations/s3/#supported-output-schema\"\
-            >here</a> for more details"
-          oneOf:
-          - title: "JSON Lines: Newline-delimited JSON"
-            required:
-            - "format_type"
-            properties:
-              format_type:
-                title: "Format Type"
-                type: "string"
-                enum:
-                - "JSONL"
-                default: "JSONL"
-              compression:
-                title: "Compression"
-                type: "object"
-                description: "Whether the output files should be compressed. If compression\
-                  \ is selected, the output filename will have an extra extension\
-                  \ (GZIP: \".jsonl.gz\")."
-                oneOf:
-                - title: "No Compression"
-                  requires: "compression_type"
-                  properties:
-                    compression_type:
-                      type: "string"
-                      enum:
-                      - "No Compression"
-                      default: "No Compression"
-                - title: "GZIP"
-                  requires: "compression_type"
-                  properties:
-                    compression_type:
-                      type: "string"
-                      enum:
-                      - "GZIP"
-                      default: "GZIP"
-              flattening:
-                type: "string"
-                title: "Flattening"
-                description: "Whether the input json data should be normalized (flattened)\
-                  \ in the output JSON Lines. Please refer to docs for details."
-                default: "Root level flattening"
-                enum:
-                - "No flattening"
-                - "Root level flattening"
-          order: 5
-        s3_endpoint:
-          title: "Endpoint"
-          type: "string"
-          default: ""
-          description: "Your S3 endpoint url. Read more <a href=\"https://docs.aws.amazon.com/general/latest/gr/s3.html#:~:text=Service%20endpoints-,Amazon%20S3%20endpoints,-When%20you%20use\"\
-            >here</a>"
-          examples:
-          - "http://localhost:9000"
-          order: 6
-        s3_path_format:
-          title: "S3 Path Format"
-          description: "Format string on how data will be organized inside the S3\
-            \ bucket directory. Read more <a href=\"https://docs.airbyte.com/integrations/destinations/s3#:~:text=The%20full%20path%20of%20the%20output%20data%20with%20the%20default%20S3%20path%20format\"\
-            >here</a>"
-          type: "string"
-          examples:
-          - "${NAMESPACE}/${STREAM_NAME}/${YEAR}_${MONTH}_${DAY}_${EPOCH}_"
-          order: 7
-        file_name_pattern:
-          type: "string"
-          description: "The pattern allows you to set the file-name format for the\
-            \ S3 staging file(s)"
-          title: "S3 Filename pattern"
-          examples:
-          - "{date}"
-          - "{date:yyyy_MM}"
-          - "{timestamp}"
-          - "{part_number}"
-          - "{sync_id}"
-          order: 8
-        glue_database:
-          type: "string"
-          description: "Name of the glue database for creating the tables, leave blank\
-            \ if no integration"
-          title: "Glue database name"
-          examples:
-          - "airbyte_database"
-          order: 9
-        glue_serialization_library:
-          title: "Serialization Library"
-          description: "The library that your query engine will use for reading and\
-            \ writing data in your lake."
-          type: "string"
-          enum:
-          - "org.openx.data.jsonserde.JsonSerDe"
-          - "org.apache.hive.hcatalog.data.JsonSerDe"
-          default: "org.openx.data.jsonserde.JsonSerDe"
-          order: 10
-        destinationType:
-          title: "s3-glue"
-          const: "s3-glue"
-          enum:
-          - "s3-glue"
-          order: 0
-          type: "string"
-    destination-s3-glue-update:
-      title: "S3 Destination Spec"
-      type: "object"
-      required:
-      - "s3_bucket_name"
-      - "s3_bucket_path"
-      - "s3_bucket_region"
-      - "format"
-      - "glue_database"
-      - "glue_serialization_library"
-      properties:
-        access_key_id:
-          type: "string"
-          description: "The access key ID to access the S3 bucket. Airbyte requires\
-            \ Read and Write permissions to the given bucket. Read more <a href=\"\
-            https://docs.aws.amazon.com/general/latest/gr/aws-sec-cred-types.html#access-keys-and-secret-access-keys\"\
-            >here</a>."
-          title: "S3 Key ID"
-          airbyte_secret: true
-          examples:
-          - "A012345678910EXAMPLE"
-          order: 0
-        secret_access_key:
-          type: "string"
-          description: "The corresponding secret to the access key ID. Read more <a\
-            \ href=\"https://docs.aws.amazon.com/general/latest/gr/aws-sec-cred-types.html#access-keys-and-secret-access-keys\"\
-            >here</a>"
-          title: "S3 Access Key"
-          airbyte_secret: true
-          examples:
-          - "a012345678910ABCDEFGH/AbCdEfGhEXAMPLEKEY"
-          order: 1
-        s3_bucket_name:
-          title: "S3 Bucket Name"
-          type: "string"
-          description: "The name of the S3 bucket. Read more <a href=\"https://docs.aws.amazon.com/AmazonS3/latest/userguide/create-bucket-overview.html\"\
-            >here</a>."
-          examples:
-          - "airbyte_sync"
-          order: 2
-        s3_bucket_path:
-          title: "S3 Bucket Path"
-          description: "Directory under the S3 bucket where data will be written.\
-            \ Read more <a href=\"https://docs.airbyte.com/integrations/destinations/s3#:~:text=to%20format%20the-,bucket%20path,-%3A\"\
-            >here</a>"
-          type: "string"
-          examples:
-          - "data_sync/test"
-          order: 3
-        s3_bucket_region:
-          title: "S3 Bucket Region"
-          type: "string"
-          default: ""
-          description: "The region of the S3 bucket. See <a href=\"https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions\"\
-            >here</a> for all region codes."
-          enum:
-          - ""
-          - "af-south-1"
-          - "ap-east-1"
-          - "ap-northeast-1"
-          - "ap-northeast-2"
-          - "ap-northeast-3"
-          - "ap-south-1"
-          - "ap-south-2"
-          - "ap-southeast-1"
-          - "ap-southeast-2"
-          - "ap-southeast-3"
-          - "ap-southeast-4"
-          - "ca-central-1"
-          - "ca-west-1"
-          - "cn-north-1"
-          - "cn-northwest-1"
-          - "eu-central-1"
-          - "eu-central-2"
-          - "eu-north-1"
-          - "eu-south-1"
-          - "eu-south-2"
-          - "eu-west-1"
-          - "eu-west-2"
-          - "eu-west-3"
-          - "il-central-1"
-          - "me-central-1"
-          - "me-south-1"
-          - "sa-east-1"
-          - "us-east-1"
-          - "us-east-2"
-          - "us-gov-east-1"
-          - "us-gov-west-1"
-          - "us-west-1"
-          - "us-west-2"
-          order: 4
-        format:
-          title: "Output Format"
-          type: "object"
-          description: "Format of the data output. See <a href=\"https://docs.airbyte.com/integrations/destinations/s3/#supported-output-schema\"\
-            >here</a> for more details"
-          oneOf:
-          - title: "JSON Lines: Newline-delimited JSON"
-            required:
-            - "format_type"
-            properties:
-              format_type:
-                title: "Format Type"
-                type: "string"
-                enum:
-                - "JSONL"
-                default: "JSONL"
-              compression:
-                title: "Compression"
-                type: "object"
-                description: "Whether the output files should be compressed. If compression\
-                  \ is selected, the output filename will have an extra extension\
-                  \ (GZIP: \".jsonl.gz\")."
-                oneOf:
-                - title: "No Compression"
-                  requires: "compression_type"
-                  properties:
-                    compression_type:
-                      type: "string"
-                      enum:
-                      - "No Compression"
-                      default: "No Compression"
-                - title: "GZIP"
-                  requires: "compression_type"
-                  properties:
-                    compression_type:
-                      type: "string"
-                      enum:
-                      - "GZIP"
-                      default: "GZIP"
-              flattening:
-                type: "string"
-                title: "Flattening"
-                description: "Whether the input json data should be normalized (flattened)\
-                  \ in the output JSON Lines. Please refer to docs for details."
-                default: "Root level flattening"
-                enum:
-                - "No flattening"
-                - "Root level flattening"
-          order: 5
-        s3_endpoint:
-          title: "Endpoint"
-          type: "string"
-          default: ""
-          description: "Your S3 endpoint url. Read more <a href=\"https://docs.aws.amazon.com/general/latest/gr/s3.html#:~:text=Service%20endpoints-,Amazon%20S3%20endpoints,-When%20you%20use\"\
-            >here</a>"
-          examples:
-          - "http://localhost:9000"
-          order: 6
-        s3_path_format:
-          title: "S3 Path Format"
-          description: "Format string on how data will be organized inside the S3\
-            \ bucket directory. Read more <a href=\"https://docs.airbyte.com/integrations/destinations/s3#:~:text=The%20full%20path%20of%20the%20output%20data%20with%20the%20default%20S3%20path%20format\"\
-            >here</a>"
-          type: "string"
-          examples:
-          - "${NAMESPACE}/${STREAM_NAME}/${YEAR}_${MONTH}_${DAY}_${EPOCH}_"
-          order: 7
-        file_name_pattern:
-          type: "string"
-          description: "The pattern allows you to set the file-name format for the\
-            \ S3 staging file(s)"
-          title: "S3 Filename pattern"
-          examples:
-          - "{date}"
-          - "{date:yyyy_MM}"
-          - "{timestamp}"
-          - "{part_number}"
-          - "{sync_id}"
-          order: 8
-        glue_database:
-          type: "string"
-          description: "Name of the glue database for creating the tables, leave blank\
-            \ if no integration"
-          title: "Glue database name"
-          examples:
-          - "airbyte_database"
-          order: 9
-        glue_serialization_library:
-          title: "Serialization Library"
-          description: "The library that your query engine will use for reading and\
-            \ writing data in your lake."
-          type: "string"
-          enum:
-          - "org.openx.data.jsonserde.JsonSerDe"
-          - "org.apache.hive.hcatalog.data.JsonSerDe"
-          default: "org.openx.data.jsonserde.JsonSerDe"
-          order: 10
     destination-redshift:
       title: "Redshift Destination Spec"
       type: "object"
@@ -7413,721 +7353,6 @@ components:
           type: "string"
           description: "Database schema name, default for duckdb is 'main'."
           example: "main"
-    destination-iceberg:
-      title: "Iceberg Destination Spec"
-      type: "object"
-      required:
-      - "catalog_config"
-      - "storage_config"
-      - "format_config"
-      - "destinationType"
-      properties:
-        catalog_config:
-          title: "Iceberg catalog config"
-          type: "object"
-          description: "Catalog config of Iceberg."
-          oneOf:
-          - title: "HiveCatalog: Use Apache Hive MetaStore"
-            required:
-            - "catalog_type"
-            - "hive_thrift_uri"
-            properties:
-              catalog_type:
-                title: "Catalog Type"
-                type: "string"
-                default: "Hive"
-                enum:
-                - "Hive"
-                order: 0
-              hive_thrift_uri:
-                title: "Hive Metastore thrift uri"
-                type: "string"
-                description: "Hive MetaStore thrift server uri of iceberg catalog."
-                examples:
-                - "host:port"
-                order: 1
-              database:
-                title: "Default database"
-                description: "The default database tables are written to if the source\
-                  \ does not specify a namespace. The usual value for this field is\
-                  \ \"default\"."
-                type: "string"
-                default: "default"
-                examples:
-                - "default"
-                order: 2
-          - title: "HadoopCatalog: Use hierarchical file systems as same as storage\
-              \ config"
-            description: "A Hadoop catalog doesn’t need to connect to a Hive MetaStore,\
-              \ but can only be used with HDFS or similar file systems that support\
-              \ atomic rename."
-            required:
-            - "catalog_type"
-            properties:
-              catalog_type:
-                title: "Catalog Type"
-                type: "string"
-                default: "Hadoop"
-                enum:
-                - "Hadoop"
-                order: 0
-              database:
-                title: "Default database"
-                description: "The default database tables are written to if the source\
-                  \ does not specify a namespace. The usual value for this field is\
-                  \ \"default\"."
-                type: "string"
-                default: "default"
-                examples:
-                - "default"
-                order: 1
-          - title: "JdbcCatalog: Use relational database"
-            description: "Using a table in a relational database to manage Iceberg\
-              \ tables through JDBC. Read more <a href=\"https://iceberg.apache.org/docs/latest/jdbc/\"\
-              >here</a>. Supporting: PostgreSQL"
-            required:
-            - "catalog_type"
-            properties:
-              catalog_type:
-                title: "Catalog Type"
-                type: "string"
-                default: "Jdbc"
-                enum:
-                - "Jdbc"
-                order: 0
-              database:
-                title: "Default schema"
-                description: "The default schema tables are written to if the source\
-                  \ does not specify a namespace. The usual value for this field is\
-                  \ \"public\"."
-                type: "string"
-                default: "public"
-                examples:
-                - "public"
-                order: 1
-              jdbc_url:
-                title: "Jdbc url"
-                type: "string"
-                examples:
-                - "jdbc:postgresql://{host}:{port}/{database}"
-                order: 2
-              username:
-                title: "User"
-                description: "Username to use to access the database."
-                type: "string"
-                order: 3
-              password:
-                title: "Password"
-                description: "Password associated with the username."
-                type: "string"
-                airbyte_secret: true
-                order: 4
-                x-speakeasy-param-sensitive: true
-              ssl:
-                title: "SSL Connection"
-                description: "Encrypt data using SSL. When activating SSL, please\
-                  \ select one of the connection modes."
-                type: "boolean"
-                default: false
-                order: 5
-              catalog_schema:
-                title: "schema for Iceberg catalog"
-                description: "Iceberg catalog metadata tables are written to catalog\
-                  \ schema. The usual value for this field is \"public\"."
-                type: "string"
-                default: "public"
-                examples:
-                - "public"
-                order: 6
-          - title: "RESTCatalog"
-            description: "The RESTCatalog connects to a REST server at the specified\
-              \ URI"
-            required:
-            - "catalog_type"
-            - "rest_uri"
-            properties:
-              catalog_type:
-                title: "Catalog Type"
-                type: "string"
-                default: "Rest"
-                enum:
-                - "Rest"
-                order: 0
-              rest_uri:
-                title: "REST Server URI"
-                type: "string"
-                examples:
-                - "http://localhost:12345"
-                order: 1
-              rest_credential:
-                title: "A credential to exchange for a token in the OAuth2 client\
-                  \ credentials flow."
-                type: "string"
-                airbyte_secret: true
-                examples:
-                - "username:password"
-                order: 2
-                x-speakeasy-param-sensitive: true
-              rest_token:
-                title: "A Bearer token which will be used for interaction with the\
-                  \ server."
-                type: "string"
-                airbyte_secret: true
-                examples:
-                - "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-                order: 3
-                x-speakeasy-param-sensitive: true
-          - title: "GlueCatalog"
-            description: "The GlueCatalog connects to a AWS Glue Catalog"
-            required:
-            - "catalog_type"
-            properties:
-              catalog_type:
-                title: "Catalog Type"
-                type: "string"
-                default: "Glue"
-                enum:
-                - "Glue"
-                order: 0
-              database:
-                title: "Default schema"
-                description: "The default schema tables are written to if the source\
-                  \ does not specify a namespace. The usual value for this field is\
-                  \ \"public\"."
-                type: "string"
-                default: "public"
-                examples:
-                - "public"
-                order: 1
-          order: 0
-        storage_config:
-          title: "Storage config"
-          type: "object"
-          description: "Storage config of Iceberg."
-          oneOf:
-          - title: "S3"
-            type: "object"
-            description: "S3 object storage"
-            required:
-            - "storage_type"
-            - "access_key_id"
-            - "secret_access_key"
-            - "s3_warehouse_uri"
-            properties:
-              storage_type:
-                title: "Storage Type"
-                type: "string"
-                default: "S3"
-                enum:
-                - "S3"
-                order: 0
-              access_key_id:
-                type: "string"
-                description: "The access key ID to access the S3 bucket. Airbyte requires\
-                  \ Read and Write permissions to the given bucket. Read more <a href=\"\
-                  https://docs.aws.amazon.com/general/latest/gr/aws-sec-cred-types.html#access-keys-and-secret-access-keys\"\
-                  >here</a>."
-                title: "S3 Key ID"
-                airbyte_secret: true
-                examples:
-                - "A012345678910EXAMPLE"
-                order: 0
-                x-speakeasy-param-sensitive: true
-              secret_access_key:
-                type: "string"
-                description: "The corresponding secret to the access key ID. Read\
-                  \ more <a href=\"https://docs.aws.amazon.com/general/latest/gr/aws-sec-cred-types.html#access-keys-and-secret-access-keys\"\
-                  >here</a>"
-                title: "S3 Access Key"
-                airbyte_secret: true
-                examples:
-                - "a012345678910ABCDEFGH/AbCdEfGhEXAMPLEKEY"
-                order: 1
-                x-speakeasy-param-sensitive: true
-              s3_warehouse_uri:
-                title: "S3 Warehouse Uri for Iceberg"
-                type: "string"
-                description: "The Warehouse Uri for Iceberg"
-                examples:
-                - "s3a://my-bucket/path/to/warehouse"
-                - "s3://my-bucket/path/to/warehouse"
-                order: 2
-              s3_bucket_region:
-                title: "S3 Bucket Region"
-                type: "string"
-                default: ""
-                description: "The region of the S3 bucket. See <a href=\"https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions\"\
-                  >here</a> for all region codes."
-                enum:
-                - ""
-                - "af-south-1"
-                - "ap-east-1"
-                - "ap-northeast-1"
-                - "ap-northeast-2"
-                - "ap-northeast-3"
-                - "ap-south-1"
-                - "ap-south-2"
-                - "ap-southeast-1"
-                - "ap-southeast-2"
-                - "ap-southeast-3"
-                - "ap-southeast-4"
-                - "ca-central-1"
-                - "ca-west-1"
-                - "cn-north-1"
-                - "cn-northwest-1"
-                - "eu-central-1"
-                - "eu-central-2"
-                - "eu-north-1"
-                - "eu-south-1"
-                - "eu-south-2"
-                - "eu-west-1"
-                - "eu-west-2"
-                - "eu-west-3"
-                - "il-central-1"
-                - "me-central-1"
-                - "me-south-1"
-                - "sa-east-1"
-                - "us-east-1"
-                - "us-east-2"
-                - "us-gov-east-1"
-                - "us-gov-west-1"
-                - "us-west-1"
-                - "us-west-2"
-                order: 3
-              s3_endpoint:
-                title: "Endpoint"
-                type: "string"
-                default: ""
-                description: "Your S3 endpoint url. Read more <a href=\"https://docs.aws.amazon.com/general/latest/gr/s3.html#:~:text=Service%20endpoints-,Amazon%20S3%20endpoints,-When%20you%20use\"\
-                  >here</a>"
-                examples:
-                - "http://localhost:9000"
-                - "localhost:9000"
-                order: 4
-              s3_path_style_access:
-                type: "boolean"
-                description: "Use path style access"
-                examples:
-                - true
-                - false
-                default: true
-                order: 5
-          - title: "Server-managed"
-            type: "object"
-            description: "Server-managed object storage"
-            required:
-            - "storage_type"
-            - "managed_warehouse_name"
-            properties:
-              storage_type:
-                title: "Storage Type"
-                type: "string"
-                default: "MANAGED"
-                enum:
-                - "MANAGED"
-                order: 0
-              managed_warehouse_name:
-                type: "string"
-                description: "The name of the managed warehouse"
-                title: "Warehouse name"
-                order: 0
-          order: 1
-        format_config:
-          title: "File format"
-          type: "object"
-          required:
-          - "format"
-          description: "File format of Iceberg storage."
-          properties:
-            format:
-              title: "File storage format"
-              type: "string"
-              default: "Parquet"
-              description: ""
-              enum:
-              - "Parquet"
-              - "Avro"
-              order: 0
-            flush_batch_size:
-              title: "Data file flushing batch size"
-              description: "Iceberg data file flush batch size. Incoming rows write\
-                \ to cache firstly; When cache size reaches this 'batch size', flush\
-                \ into real Iceberg data file."
-              type: "integer"
-              default: 10000
-              order: 1
-            auto_compact:
-              title: "Auto compact data files"
-              description: "Auto compact data files when stream close"
-              type: "boolean"
-              default: false
-              order: 2
-            compact_target_file_size_in_mb:
-              title: "Target size of compacted data file"
-              description: "Specify the target size of Iceberg data file when performing\
-                \ a compaction action. "
-              type: "integer"
-              default: 100
-              order: 3
-          order: 2
-        destinationType:
-          title: "iceberg"
-          const: "iceberg"
-          enum:
-          - "iceberg"
-          order: 0
-          type: "string"
-    destination-iceberg-update:
-      title: "Iceberg Destination Spec"
-      type: "object"
-      required:
-      - "catalog_config"
-      - "storage_config"
-      - "format_config"
-      properties:
-        catalog_config:
-          title: "Iceberg catalog config"
-          type: "object"
-          description: "Catalog config of Iceberg."
-          oneOf:
-          - title: "HiveCatalog: Use Apache Hive MetaStore"
-            required:
-            - "catalog_type"
-            - "hive_thrift_uri"
-            properties:
-              catalog_type:
-                title: "Catalog Type"
-                type: "string"
-                default: "Hive"
-                enum:
-                - "Hive"
-                order: 0
-              hive_thrift_uri:
-                title: "Hive Metastore thrift uri"
-                type: "string"
-                description: "Hive MetaStore thrift server uri of iceberg catalog."
-                examples:
-                - "host:port"
-                order: 1
-              database:
-                title: "Default database"
-                description: "The default database tables are written to if the source\
-                  \ does not specify a namespace. The usual value for this field is\
-                  \ \"default\"."
-                type: "string"
-                default: "default"
-                examples:
-                - "default"
-                order: 2
-          - title: "HadoopCatalog: Use hierarchical file systems as same as storage\
-              \ config"
-            description: "A Hadoop catalog doesn’t need to connect to a Hive MetaStore,\
-              \ but can only be used with HDFS or similar file systems that support\
-              \ atomic rename."
-            required:
-            - "catalog_type"
-            properties:
-              catalog_type:
-                title: "Catalog Type"
-                type: "string"
-                default: "Hadoop"
-                enum:
-                - "Hadoop"
-                order: 0
-              database:
-                title: "Default database"
-                description: "The default database tables are written to if the source\
-                  \ does not specify a namespace. The usual value for this field is\
-                  \ \"default\"."
-                type: "string"
-                default: "default"
-                examples:
-                - "default"
-                order: 1
-          - title: "JdbcCatalog: Use relational database"
-            description: "Using a table in a relational database to manage Iceberg\
-              \ tables through JDBC. Read more <a href=\"https://iceberg.apache.org/docs/latest/jdbc/\"\
-              >here</a>. Supporting: PostgreSQL"
-            required:
-            - "catalog_type"
-            properties:
-              catalog_type:
-                title: "Catalog Type"
-                type: "string"
-                default: "Jdbc"
-                enum:
-                - "Jdbc"
-                order: 0
-              database:
-                title: "Default schema"
-                description: "The default schema tables are written to if the source\
-                  \ does not specify a namespace. The usual value for this field is\
-                  \ \"public\"."
-                type: "string"
-                default: "public"
-                examples:
-                - "public"
-                order: 1
-              jdbc_url:
-                title: "Jdbc url"
-                type: "string"
-                examples:
-                - "jdbc:postgresql://{host}:{port}/{database}"
-                order: 2
-              username:
-                title: "User"
-                description: "Username to use to access the database."
-                type: "string"
-                order: 3
-              password:
-                title: "Password"
-                description: "Password associated with the username."
-                type: "string"
-                airbyte_secret: true
-                order: 4
-              ssl:
-                title: "SSL Connection"
-                description: "Encrypt data using SSL. When activating SSL, please\
-                  \ select one of the connection modes."
-                type: "boolean"
-                default: false
-                order: 5
-              catalog_schema:
-                title: "schema for Iceberg catalog"
-                description: "Iceberg catalog metadata tables are written to catalog\
-                  \ schema. The usual value for this field is \"public\"."
-                type: "string"
-                default: "public"
-                examples:
-                - "public"
-                order: 6
-          - title: "RESTCatalog"
-            description: "The RESTCatalog connects to a REST server at the specified\
-              \ URI"
-            required:
-            - "catalog_type"
-            - "rest_uri"
-            properties:
-              catalog_type:
-                title: "Catalog Type"
-                type: "string"
-                default: "Rest"
-                enum:
-                - "Rest"
-                order: 0
-              rest_uri:
-                title: "REST Server URI"
-                type: "string"
-                examples:
-                - "http://localhost:12345"
-                order: 1
-              rest_credential:
-                title: "A credential to exchange for a token in the OAuth2 client\
-                  \ credentials flow."
-                type: "string"
-                airbyte_secret: true
-                examples:
-                - "username:password"
-                order: 2
-              rest_token:
-                title: "A Bearer token which will be used for interaction with the\
-                  \ server."
-                type: "string"
-                airbyte_secret: true
-                examples:
-                - "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-                order: 3
-          - title: "GlueCatalog"
-            description: "The GlueCatalog connects to a AWS Glue Catalog"
-            required:
-            - "catalog_type"
-            properties:
-              catalog_type:
-                title: "Catalog Type"
-                type: "string"
-                default: "Glue"
-                enum:
-                - "Glue"
-                order: 0
-              database:
-                title: "Default schema"
-                description: "The default schema tables are written to if the source\
-                  \ does not specify a namespace. The usual value for this field is\
-                  \ \"public\"."
-                type: "string"
-                default: "public"
-                examples:
-                - "public"
-                order: 1
-          order: 0
-        storage_config:
-          title: "Storage config"
-          type: "object"
-          description: "Storage config of Iceberg."
-          oneOf:
-          - title: "S3"
-            type: "object"
-            description: "S3 object storage"
-            required:
-            - "storage_type"
-            - "access_key_id"
-            - "secret_access_key"
-            - "s3_warehouse_uri"
-            properties:
-              storage_type:
-                title: "Storage Type"
-                type: "string"
-                default: "S3"
-                enum:
-                - "S3"
-                order: 0
-              access_key_id:
-                type: "string"
-                description: "The access key ID to access the S3 bucket. Airbyte requires\
-                  \ Read and Write permissions to the given bucket. Read more <a href=\"\
-                  https://docs.aws.amazon.com/general/latest/gr/aws-sec-cred-types.html#access-keys-and-secret-access-keys\"\
-                  >here</a>."
-                title: "S3 Key ID"
-                airbyte_secret: true
-                examples:
-                - "A012345678910EXAMPLE"
-                order: 0
-              secret_access_key:
-                type: "string"
-                description: "The corresponding secret to the access key ID. Read\
-                  \ more <a href=\"https://docs.aws.amazon.com/general/latest/gr/aws-sec-cred-types.html#access-keys-and-secret-access-keys\"\
-                  >here</a>"
-                title: "S3 Access Key"
-                airbyte_secret: true
-                examples:
-                - "a012345678910ABCDEFGH/AbCdEfGhEXAMPLEKEY"
-                order: 1
-              s3_warehouse_uri:
-                title: "S3 Warehouse Uri for Iceberg"
-                type: "string"
-                description: "The Warehouse Uri for Iceberg"
-                examples:
-                - "s3a://my-bucket/path/to/warehouse"
-                - "s3://my-bucket/path/to/warehouse"
-                order: 2
-              s3_bucket_region:
-                title: "S3 Bucket Region"
-                type: "string"
-                default: ""
-                description: "The region of the S3 bucket. See <a href=\"https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions\"\
-                  >here</a> for all region codes."
-                enum:
-                - ""
-                - "af-south-1"
-                - "ap-east-1"
-                - "ap-northeast-1"
-                - "ap-northeast-2"
-                - "ap-northeast-3"
-                - "ap-south-1"
-                - "ap-south-2"
-                - "ap-southeast-1"
-                - "ap-southeast-2"
-                - "ap-southeast-3"
-                - "ap-southeast-4"
-                - "ca-central-1"
-                - "ca-west-1"
-                - "cn-north-1"
-                - "cn-northwest-1"
-                - "eu-central-1"
-                - "eu-central-2"
-                - "eu-north-1"
-                - "eu-south-1"
-                - "eu-south-2"
-                - "eu-west-1"
-                - "eu-west-2"
-                - "eu-west-3"
-                - "il-central-1"
-                - "me-central-1"
-                - "me-south-1"
-                - "sa-east-1"
-                - "us-east-1"
-                - "us-east-2"
-                - "us-gov-east-1"
-                - "us-gov-west-1"
-                - "us-west-1"
-                - "us-west-2"
-                order: 3
-              s3_endpoint:
-                title: "Endpoint"
-                type: "string"
-                default: ""
-                description: "Your S3 endpoint url. Read more <a href=\"https://docs.aws.amazon.com/general/latest/gr/s3.html#:~:text=Service%20endpoints-,Amazon%20S3%20endpoints,-When%20you%20use\"\
-                  >here</a>"
-                examples:
-                - "http://localhost:9000"
-                - "localhost:9000"
-                order: 4
-              s3_path_style_access:
-                type: "boolean"
-                description: "Use path style access"
-                examples:
-                - true
-                - false
-                default: true
-                order: 5
-          - title: "Server-managed"
-            type: "object"
-            description: "Server-managed object storage"
-            required:
-            - "storage_type"
-            - "managed_warehouse_name"
-            properties:
-              storage_type:
-                title: "Storage Type"
-                type: "string"
-                default: "MANAGED"
-                enum:
-                - "MANAGED"
-                order: 0
-              managed_warehouse_name:
-                type: "string"
-                description: "The name of the managed warehouse"
-                title: "Warehouse name"
-                order: 0
-          order: 1
-        format_config:
-          title: "File format"
-          type: "object"
-          required:
-          - "format"
-          description: "File format of Iceberg storage."
-          properties:
-            format:
-              title: "File storage format"
-              type: "string"
-              default: "Parquet"
-              description: ""
-              enum:
-              - "Parquet"
-              - "Avro"
-              order: 0
-            flush_batch_size:
-              title: "Data file flushing batch size"
-              description: "Iceberg data file flush batch size. Incoming rows write\
-                \ to cache firstly; When cache size reaches this 'batch size', flush\
-                \ into real Iceberg data file."
-              type: "integer"
-              default: 10000
-              order: 1
-            auto_compact:
-              title: "Auto compact data files"
-              description: "Auto compact data files when stream close"
-              type: "boolean"
-              default: false
-              order: 2
-            compact_target_file_size_in_mb:
-              title: "Target size of compacted data file"
-              description: "Specify the target size of Iceberg data file when performing\
-                \ a compaction action. "
-              type: "integer"
-              default: 100
-              order: 3
-          order: 2
     destination-mssql-v2:
       title: "MSSQL V2 Destination Specification"
       type: "object"
@@ -10438,108 +9663,101 @@ components:
                 airbyte_secret: true
                 order: 4
     destination-azure-blob-storage:
-      title: "AzureBlobStorage Destination Spec"
+      title: "Azure Blob Storage Destination Spec"
       type: "object"
-      required:
-      - "azure_blob_storage_account_name"
-      - "azure_blob_storage_account_key"
-      - "format"
-      - "destinationType"
       properties:
         azure_blob_storage_endpoint_domain_name:
-          title: "Endpoint Domain Name"
           type: "string"
-          default: "blob.core.windows.net"
           description: "This is Azure Blob Storage endpoint domain name. Leave default\
             \ value (or leave it empty if run container from command line) to use\
             \ Microsoft native from example."
-          examples:
-          - "blob.core.windows.net"
-        azure_blob_storage_container_name:
-          title: "Azure blob storage container (Bucket) Name"
-          type: "string"
-          description: "The name of the Azure blob storage container. If not exists\
-            \ - will be created automatically. May be empty, then will be created\
-            \ automatically airbytecontainer+timestamp"
-          examples:
-          - "airbytetescontainername"
+          title: "Azure Blob Storage Endpoint Domain Name"
         azure_blob_storage_account_name:
-          title: "Azure Blob Storage account name"
           type: "string"
-          description: "The account's name of the Azure Blob Storage."
+          description: "The name of the Azure Blob Storage Account. Read more <a href=\"\
+            https://learn.microsoft.com/en-gb/azure/storage/blobs/storage-blobs-introduction#storage-accounts\"\
+            >here</a>."
+          title: "Azure Blob Storage Account Name"
           examples:
-          - "airbyte5storage"
-        azure_blob_storage_account_key:
-          title: "Azure Blob Storage account key"
-          description: "The Azure blob storage account key."
-          airbyte_secret: true
+          - "mystorageaccount"
+        azure_blob_storage_container_name:
           type: "string"
+          description: "The name of the Azure Blob Storage Container. Read more <a\
+            \ href=\"https://learn.microsoft.com/en-gb/azure/storage/blobs/storage-blobs-introduction#containers\"\
+            >here</a>."
+          title: "Azure Blob Storage Container Name"
+          examples:
+          - "mycontainer"
+        shared_access_signature:
+          type: "string"
+          description: "A shared access signature (SAS) provides secure delegated\
+            \ access to resources in your storage account. Read more <a href=\"https://learn.microsoft.com/en-gb/azure/storage/common/storage-sas-overview?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json\"\
+            >here</a>. If you set this value, you must not set the account key."
+          title: "Shared Access Signature"
+          examples:
+          - "sv=2021-08-06&st=2025-04-11T00%3A00%3A00Z&se=2025-04-12T00%3A00%3A00Z&sr=b&sp=rw&sig=abcdefghijklmnopqrstuvwxyz1234567890%2Fabcdefg%3D"
+          airbyte_secret: true
+          always_show: true
+          x-speakeasy-param-sensitive: true
+        azure_blob_storage_account_key:
+          type: "string"
+          description: "The Azure blob storage account key. If you set this value,\
+            \ you must not set the Shared Access Signature."
+          title: "Azure Blob Storage account key"
           examples:
           - "Z8ZkZpteggFx394vm+PJHnGTvdRncaYS+JhLKdj789YNmD+iyGTnG+PV+POiuYNhBg/ACS+LKjd%4FG3FHGN12Nd=="
+          airbyte_secret: true
+          always_show: true
           x-speakeasy-param-sensitive: true
-        azure_blob_storage_output_buffer_size:
-          title: "Azure Blob Storage output buffer size (Megabytes)"
-          type: "integer"
-          description: "The amount of megabytes to buffer for the output stream to\
-            \ Azure. This will impact memory footprint on workers, but may need adjustment\
-            \ for performance and appropriate block size in Azure."
-          minimum: 1
-          maximum: 2047
-          default: 5
-          examples:
-          - 5
         azure_blob_storage_spill_size:
-          title: "Azure Blob Storage file spill size"
           type: "integer"
           description: "The amount of megabytes after which the connector should spill\
             \ the records in a new blob object. Make sure to configure size greater\
-            \ than individual records. Enter 0 if not applicable"
+            \ than individual records. Enter 0 if not applicable."
+          title: "Azure Blob Storage target blob size (Megabytes)"
           default: 500
-          examples:
-          - 500
         format:
-          title: "Output Format"
-          type: "object"
-          description: "Output data format"
           oneOf:
           - title: "CSV: Comma-Separated Values"
-            required:
-            - "format_type"
-            - "flattening"
+            type: "object"
+            additionalProperties: true
             properties:
               format_type:
                 type: "string"
-                const: "CSV"
                 enum:
                 - "CSV"
+                default: "CSV"
               flattening:
                 type: "string"
-                title: "Normalization (Flattening)"
-                description: "Whether the input json data should be normalized (flattened)\
-                  \ in the output CSV. Please refer to docs for details."
                 default: "No flattening"
                 enum:
                 - "No flattening"
                 - "Root level flattening"
-              file_extension:
-                title: "File Extension"
-                type: "boolean"
-                default: false
-                description: "Add file extensions to the output file."
-          - title: "JSON Lines: newline-delimited JSON"
+                title: "Flattening"
             required:
             - "format_type"
+            - "flattening"
+          - title: "JSON Lines: Newline-delimited JSON"
+            type: "object"
+            additionalProperties: true
             properties:
               format_type:
                 type: "string"
-                const: "JSONL"
                 enum:
                 - "JSONL"
-              file_extension:
-                title: "File Extension"
-                type: "boolean"
-                default: false
-                description: "Add file extensions to the output file."
+                default: "JSONL"
+              flattening:
+                type: "string"
+                default: "No flattening"
+                enum:
+                - "No flattening"
+                - "Root level flattening"
+                title: "Flattening"
+            required:
+            - "format_type"
+          description: "Format of the data output."
+          title: "Output Format"
+          type: "object"
         destinationType:
           title: "azure-blob-storage"
           const: "azure-blob-storage"
@@ -10547,107 +9765,109 @@ components:
           - "azure-blob-storage"
           order: 0
           type: "string"
-    destination-azure-blob-storage-update:
-      title: "AzureBlobStorage Destination Spec"
-      type: "object"
       required:
       - "azure_blob_storage_account_name"
-      - "azure_blob_storage_account_key"
+      - "azure_blob_storage_container_name"
       - "format"
+      - "destinationType"
+    destination-azure-blob-storage-update:
+      title: "Azure Blob Storage Destination Spec"
+      type: "object"
       properties:
         azure_blob_storage_endpoint_domain_name:
-          title: "Endpoint Domain Name"
           type: "string"
-          default: "blob.core.windows.net"
           description: "This is Azure Blob Storage endpoint domain name. Leave default\
             \ value (or leave it empty if run container from command line) to use\
             \ Microsoft native from example."
-          examples:
-          - "blob.core.windows.net"
-        azure_blob_storage_container_name:
-          title: "Azure blob storage container (Bucket) Name"
-          type: "string"
-          description: "The name of the Azure blob storage container. If not exists\
-            \ - will be created automatically. May be empty, then will be created\
-            \ automatically airbytecontainer+timestamp"
-          examples:
-          - "airbytetescontainername"
+          title: "Azure Blob Storage Endpoint Domain Name"
         azure_blob_storage_account_name:
-          title: "Azure Blob Storage account name"
           type: "string"
-          description: "The account's name of the Azure Blob Storage."
+          description: "The name of the Azure Blob Storage Account. Read more <a href=\"\
+            https://learn.microsoft.com/en-gb/azure/storage/blobs/storage-blobs-introduction#storage-accounts\"\
+            >here</a>."
+          title: "Azure Blob Storage Account Name"
           examples:
-          - "airbyte5storage"
-        azure_blob_storage_account_key:
-          title: "Azure Blob Storage account key"
-          description: "The Azure blob storage account key."
-          airbyte_secret: true
+          - "mystorageaccount"
+        azure_blob_storage_container_name:
           type: "string"
+          description: "The name of the Azure Blob Storage Container. Read more <a\
+            \ href=\"https://learn.microsoft.com/en-gb/azure/storage/blobs/storage-blobs-introduction#containers\"\
+            >here</a>."
+          title: "Azure Blob Storage Container Name"
+          examples:
+          - "mycontainer"
+        shared_access_signature:
+          type: "string"
+          description: "A shared access signature (SAS) provides secure delegated\
+            \ access to resources in your storage account. Read more <a href=\"https://learn.microsoft.com/en-gb/azure/storage/common/storage-sas-overview?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json\"\
+            >here</a>. If you set this value, you must not set the account key."
+          title: "Shared Access Signature"
+          examples:
+          - "sv=2021-08-06&st=2025-04-11T00%3A00%3A00Z&se=2025-04-12T00%3A00%3A00Z&sr=b&sp=rw&sig=abcdefghijklmnopqrstuvwxyz1234567890%2Fabcdefg%3D"
+          airbyte_secret: true
+          always_show: true
+        azure_blob_storage_account_key:
+          type: "string"
+          description: "The Azure blob storage account key. If you set this value,\
+            \ you must not set the Shared Access Signature."
+          title: "Azure Blob Storage account key"
           examples:
           - "Z8ZkZpteggFx394vm+PJHnGTvdRncaYS+JhLKdj789YNmD+iyGTnG+PV+POiuYNhBg/ACS+LKjd%4FG3FHGN12Nd=="
-        azure_blob_storage_output_buffer_size:
-          title: "Azure Blob Storage output buffer size (Megabytes)"
-          type: "integer"
-          description: "The amount of megabytes to buffer for the output stream to\
-            \ Azure. This will impact memory footprint on workers, but may need adjustment\
-            \ for performance and appropriate block size in Azure."
-          minimum: 1
-          maximum: 2047
-          default: 5
-          examples:
-          - 5
+          airbyte_secret: true
+          always_show: true
         azure_blob_storage_spill_size:
-          title: "Azure Blob Storage file spill size"
           type: "integer"
           description: "The amount of megabytes after which the connector should spill\
             \ the records in a new blob object. Make sure to configure size greater\
-            \ than individual records. Enter 0 if not applicable"
+            \ than individual records. Enter 0 if not applicable."
+          title: "Azure Blob Storage target blob size (Megabytes)"
           default: 500
-          examples:
-          - 500
         format:
-          title: "Output Format"
-          type: "object"
-          description: "Output data format"
           oneOf:
           - title: "CSV: Comma-Separated Values"
-            required:
-            - "format_type"
-            - "flattening"
+            type: "object"
+            additionalProperties: true
             properties:
               format_type:
                 type: "string"
-                const: "CSV"
                 enum:
                 - "CSV"
+                default: "CSV"
               flattening:
                 type: "string"
-                title: "Normalization (Flattening)"
-                description: "Whether the input json data should be normalized (flattened)\
-                  \ in the output CSV. Please refer to docs for details."
                 default: "No flattening"
                 enum:
                 - "No flattening"
                 - "Root level flattening"
-              file_extension:
-                title: "File Extension"
-                type: "boolean"
-                default: false
-                description: "Add file extensions to the output file."
-          - title: "JSON Lines: newline-delimited JSON"
+                title: "Flattening"
             required:
             - "format_type"
+            - "flattening"
+          - title: "JSON Lines: Newline-delimited JSON"
+            type: "object"
+            additionalProperties: true
             properties:
               format_type:
                 type: "string"
-                const: "JSONL"
                 enum:
                 - "JSONL"
-              file_extension:
-                title: "File Extension"
-                type: "boolean"
-                default: false
-                description: "Add file extensions to the output file."
+                default: "JSONL"
+              flattening:
+                type: "string"
+                default: "No flattening"
+                enum:
+                - "No flattening"
+                - "Root level flattening"
+                title: "Flattening"
+            required:
+            - "format_type"
+          description: "Format of the data output."
+          title: "Output Format"
+          type: "object"
+      required:
+      - "azure_blob_storage_account_name"
+      - "azure_blob_storage_container_name"
+      - "format"
     destination-yellowbrick:
       title: "Yellowbrick Destination Spec"
       type: "object"
@@ -19402,6 +18622,7 @@ components:
           - "europe-central1"
           - "europe-central2"
           - "europe-north1"
+          - "europe-north2"
           - "europe-southwest1"
           - "europe-west1"
           - "europe-west2"
@@ -19655,6 +18876,7 @@ components:
           - "europe-central1"
           - "europe-central2"
           - "europe-north1"
+          - "europe-north2"
           - "europe-southwest1"
           - "europe-west1"
           - "europe-west2"
@@ -20704,9 +19926,11 @@ components:
         title: "Indexing"
       - id: "advanced"
         title: "Advanced"
+
     DestinationConfiguration:
       description: The values required to configure the destination.
       example: { user: "charles" }
+    
       oneOf:
         - title: destination-google-sheets
           $ref: "#/components/schemas/destination-google-sheets"
@@ -20742,8 +19966,6 @@ components:
           $ref: "#/components/schemas/destination-firestore"
         - title: destination-gcs
           $ref: "#/components/schemas/destination-gcs"
-        - title: destination-iceberg
-          $ref: "#/components/schemas/destination-iceberg"
         - title: destination-milvus
           $ref: "#/components/schemas/destination-milvus"
         - title: destination-mongodb
@@ -20776,8 +19998,6 @@ components:
           $ref: "#/components/schemas/destination-s3"
         - title: destination-s3-data-lake
           $ref: "#/components/schemas/destination-s3-data-lake"
-        - title: destination-s3-glue
-          $ref: "#/components/schemas/destination-s3-glue"
         - title: destination-sftp-json
           $ref: "#/components/schemas/destination-sftp-json"
         - title: destination-snowflake
@@ -20796,6 +20016,7 @@ components:
           $ref: "#/components/schemas/destination-weaviate"
         - title: destination-yellowbrick
           $ref: "#/components/schemas/destination-yellowbrick"
+
     SourceConfiguration:
       description: The values required to configure the source.
       example: { user: "charles" }

@@ -9,7 +9,6 @@ import io.airbyte.api.model.generated.AccessToken
 import io.airbyte.api.model.generated.DataplaneCreateRequestBody
 import io.airbyte.api.model.generated.DataplaneCreateResponse
 import io.airbyte.api.model.generated.DataplaneDeleteRequestBody
-import io.airbyte.api.model.generated.DataplaneGetIdRequestBody
 import io.airbyte.api.model.generated.DataplaneHeartbeatRequestBody
 import io.airbyte.api.model.generated.DataplaneHeartbeatResponse
 import io.airbyte.api.model.generated.DataplaneInitRequestBody
@@ -17,9 +16,9 @@ import io.airbyte.api.model.generated.DataplaneInitResponse
 import io.airbyte.api.model.generated.DataplaneListRequestBody
 import io.airbyte.api.model.generated.DataplaneListResponse
 import io.airbyte.api.model.generated.DataplaneRead
-import io.airbyte.api.model.generated.DataplaneReadId
 import io.airbyte.api.model.generated.DataplaneTokenRequestBody
 import io.airbyte.api.model.generated.DataplaneUpdateRequestBody
+import io.airbyte.commons.auth.AuthRoleConstants
 import io.airbyte.commons.auth.AuthRoleConstants.ADMIN
 import io.airbyte.commons.server.scheduling.AirbyteTaskExecutors
 import io.airbyte.config.Dataplane
@@ -121,18 +120,6 @@ open class DataplaneController(
     return dataplaneRead
   }
 
-  @Secured(ADMIN)
-  @ExecuteOn(AirbyteTaskExecutors.IO)
-  override fun getDataplaneId(dataplaneGetIdRequestBody: DataplaneGetIdRequestBody): DataplaneReadId {
-    val connectionId = dataplaneGetIdRequestBody.connectionId
-    val actorType = dataplaneGetIdRequestBody.actorType
-    val actorId = dataplaneGetIdRequestBody.actorId
-    val workspaceId = dataplaneGetIdRequestBody.workspaceId
-    val queueName = dataplaneService.getQueueName(connectionId, actorType, actorId, workspaceId, dataplaneGetIdRequestBody.workloadPriority)
-
-    return DataplaneReadId().id(queueName)
-  }
-
   @Secured(SecurityRule.IS_ANONYMOUS)
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun getDataplaneToken(
@@ -150,7 +137,7 @@ open class DataplaneController(
   }
 
   @Post("/initialize")
-  @Secured(ADMIN)
+  @Secured(ADMIN, AuthRoleConstants.DATAPLANE)
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun initializeDataplane(
     @Body req: DataplaneInitRequestBody,
@@ -169,7 +156,7 @@ open class DataplaneController(
   }
 
   @Post("/heartbeat")
-  @Secured(ADMIN)
+  @Secured(ADMIN, AuthRoleConstants.DATAPLANE)
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun heartbeatDataplane(
     @Body req: DataplaneHeartbeatRequestBody,

@@ -5,7 +5,6 @@
 package io.airbyte.data.services
 
 import com.fasterxml.jackson.databind.JsonNode
-import io.airbyte.config.ConfigTemplate
 import io.airbyte.config.ConfigTemplateWithActorDetails
 import io.airbyte.domain.models.ActorDefinitionId
 import io.airbyte.domain.models.OrganizationId
@@ -17,19 +16,24 @@ import java.util.UUID
 interface ConfigTemplateService {
   fun getConfigTemplate(configTemplateId: UUID): ConfigTemplateWithActorDetails
 
+  fun getConfigTemplate(
+    configTemplateId: UUID,
+    workspaceId: UUID,
+  ): ConfigTemplateWithActorDetails
+
   fun listConfigTemplatesForOrganization(organizationId: OrganizationId): List<ConfigTemplateWithActorDetails>
 
   fun createTemplate(
     organizationId: OrganizationId,
     actorDefinitionId: ActorDefinitionId,
     partialDefaultConfig: JsonNode,
-    userConfigSpec: JsonNode,
-  ): ConfigTemplate
+    userConfigSpec: JsonNode? = null,
+  ): ConfigTemplateWithActorDetails
 
   fun updateTemplate(
     configTemplateId: UUID,
-    name: String? = null,
+    organizationId: OrganizationId,
     partialDefaultConfig: JsonNode? = null,
     userConfigSpec: JsonNode? = null,
-  ): ConfigTemplate
+  ): ConfigTemplateWithActorDetails
 }

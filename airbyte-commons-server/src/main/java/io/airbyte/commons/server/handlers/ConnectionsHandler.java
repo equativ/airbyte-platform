@@ -65,14 +65,17 @@ import io.airbyte.api.model.generated.StreamTransform.TransformTypeEnum;
 import io.airbyte.api.model.generated.WorkspaceIdRequestBody;
 import io.airbyte.api.problems.model.generated.ProblemConnectionConflictingStreamsData;
 import io.airbyte.api.problems.model.generated.ProblemConnectionConflictingStreamsDataItem;
+import io.airbyte.api.problems.model.generated.ProblemConnectionUnsupportedFileTransfersData;
 import io.airbyte.api.problems.model.generated.ProblemMapperErrorData;
 import io.airbyte.api.problems.model.generated.ProblemMapperErrorDataMapper;
 import io.airbyte.api.problems.model.generated.ProblemMapperErrorsData;
 import io.airbyte.api.problems.model.generated.ProblemMessageData;
+import io.airbyte.api.problems.model.generated.ProblemStreamDataItem;
 import io.airbyte.api.problems.throwable.generated.ConnectionConflictingStreamProblem;
+import io.airbyte.api.problems.throwable.generated.ConnectionDoesNotSupportFileTransfersProblem;
 import io.airbyte.api.problems.throwable.generated.MapperValidationProblem;
+import io.airbyte.api.problems.throwable.generated.StreamDoesNotSupportFileTransfersProblem;
 import io.airbyte.api.problems.throwable.generated.UnexpectedProblem;
-import io.airbyte.commons.constants.DataplaneConstantsKt;
 import io.airbyte.commons.converters.ApiConverters;
 import io.airbyte.commons.converters.CommonConvertersKt;
 import io.airbyte.commons.converters.ConnectionHelper;
@@ -136,6 +139,7 @@ import io.airbyte.data.repositories.entities.ConnectionTimelineEventMinimal;
 import io.airbyte.data.services.CatalogService;
 import io.airbyte.data.services.ConnectionService;
 import io.airbyte.data.services.ConnectionTimelineEventService;
+import io.airbyte.data.services.DataplaneGroupService;
 import io.airbyte.data.services.DestinationService;
 import io.airbyte.data.services.SourceService;
 import io.airbyte.data.services.StreamStatusesService;
@@ -233,6 +237,7 @@ public class ConnectionsHandler {
   private final DestinationService destinationService;
   private final ConnectionService connectionService;
   private final WorkspaceService workspaceService;
+  private final DataplaneGroupService dataplaneGroupService;
   private final LicenseEntitlementChecker licenseEntitlementChecker;
   private final DestinationCatalogGenerator destinationCatalogGenerator;
   private final CatalogConverter catalogConverter;
@@ -268,6 +273,7 @@ public class ConnectionsHandler {
                             final DestinationService destinationService,
                             final ConnectionService connectionService,
                             final WorkspaceService workspaceService,
+                            final DataplaneGroupService dataplaneGroupService,
                             final DestinationCatalogGenerator destinationCatalogGenerator,
                             final CatalogConverter catalogConverter,
                             final ApplySchemaChangeHelper applySchemaChangeHelper,
@@ -301,6 +307,7 @@ public class ConnectionsHandler {
     this.destinationService = destinationService;
     this.connectionService = connectionService;
     this.workspaceService = workspaceService;
+    this.dataplaneGroupService = dataplaneGroupService;
     this.destinationCatalogGenerator = destinationCatalogGenerator;
     this.catalogConverter = catalogConverter;
     this.applySchemaChangeHelper = applySchemaChangeHelper;
@@ -373,16 +380,12 @@ public class ConnectionsHandler {
       sync.setSourceCatalogId(patch.getSourceCatalogId());
     }
 
-    if (patch.getResourceRequirements() != null) {
-      sync.setResourceRequirements(apiPojoConverters.resourceRequirementsToInternal(patch.getResourceRequirements()));
+    if (patch.getDestinationCatalogId() != null) {
+      sync.setDestinationCatalogId(patch.getDestinationCatalogId());
     }
 
-    if (patch.getGeography() != null) {
-      if (airbyteEdition.equals(Configs.AirbyteEdition.CLOUD) && DataplaneConstantsKt.GEOGRAPHY_AUTO.equalsIgnoreCase(patch.getGeography())) {
-        sync.setGeography(DataplaneConstantsKt.GEOGRAPHY_US);
-      } else {
-        sync.setGeography(patch.getGeography());
-      }
+    if (patch.getResourceRequirements() != null) {
+      sync.setResourceRequirements(apiPojoConverters.resourceRequirementsToInternal(patch.getResourceRequirements()));
     }
 
     if (patch.getBreakingChange() != null) {
@@ -407,6 +410,10 @@ public class ConnectionsHandler {
 
     if (patch.getTags() != null) {
       sync.setTags(patch.getTags().stream().map(apiPojoConverters::toInternalTag).toList());
+    }
+
+    if (patch.getDataplaneGroupId() != null) {
+      sync.setDataplaneGroupId(patch.getDataplaneGroupId());
     }
   }
 
@@ -574,7 +581,8 @@ public class ConnectionsHandler {
         .withOperationIds(operationIds)
         .withStatus(apiPojoConverters.toPersistenceStatus(connectionCreate.getStatus()))
         .withSourceCatalogId(connectionCreate.getSourceCatalogId())
-        .withGeography(getGeographyFromConnectionCreateOrWorkspace(connectionCreate))
+        .withDestinationCatalogId(connectionCreate.getDestinationCatalogId())
+        .withDataplaneGroupId(getDataplaneGroupIdFromConnectionCreateOrWorkspace(connectionCreate))
         .withBreakingChange(false)
         .withNotifySchemaChanges(connectionCreate.getNotifySchemaChanges())
         .withNonBreakingChangesPreference(
@@ -587,8 +595,19 @@ public class ConnectionsHandler {
 
     // TODO Undesirable behavior: sending a null configured catalog should not be valid?
     if (connectionCreate.getSyncCatalog() != null) {
+      final StandardSourceDefinition sourceDefinition = sourceService
+          .getStandardSourceDefinition(sourceConnection.getSourceDefinitionId());
+      final ActorDefinitionVersion sourceVersion = actorDefinitionVersionHelper
+          .getSourceVersion(sourceDefinition, sourceConnection.getWorkspaceId(), sourceConnection.getSourceId());
+      final StandardDestinationDefinition destinationDefinition = destinationService
+          .getStandardDestinationDefinition(destinationConnection.getDestinationDefinitionId());
+      final ActorDefinitionVersion destinationVersion = actorDefinitionVersionHelper
+          .getDestinationVersion(destinationDefinition, destinationConnection.getWorkspaceId(), destinationConnection.getDestinationId());
+
+      validateCatalogIncludeFiles(connectionCreate.getSyncCatalog(), sourceVersion, destinationVersion);
       validateCatalogDoesntContainDuplicateStreamNames(connectionCreate.getSyncCatalog());
       validateCatalogSize(connectionCreate.getSyncCatalog(), workspaceId, "create");
+
       if (featureFlagClient.boolVariation(ValidateConflictingDestinationStreams.INSTANCE, new Organization(organizationId))) {
         validateStreamsDoNotConflictWithExistingDestinationStreams(
             connectionCreate.getSyncCatalog(),
@@ -599,6 +618,7 @@ public class ConnectionsHandler {
             null);
       }
 
+      applyDefaultIncludeFiles(connectionCreate.getSyncCatalog(), sourceVersion, destinationVersion);
       assignIdsToIncomingMappers(connectionCreate.getSyncCatalog());
       final ConfiguredAirbyteCatalog configuredCatalog =
           catalogConverter.toConfiguredInternal(connectionCreate.getSyncCatalog());
@@ -644,31 +664,21 @@ public class ConnectionsHandler {
   }
 
   @VisibleForTesting
-  String getGeographyFromConnectionCreateOrWorkspace(final ConnectionCreate connectionCreate)
-      throws JsonValidationException, ConfigNotFoundException, IOException, io.airbyte.config.persistence.ConfigNotFoundException {
+  UUID getDataplaneGroupIdFromConnectionCreateOrWorkspace(final ConnectionCreate connectionCreate)
+      throws JsonValidationException, ConfigNotFoundException, IOException {
 
-    String geography;
-
-    if (connectionCreate.getGeography() != null) {
-      geography = connectionCreate.getGeography();
+    if (connectionCreate.getDataplaneGroupId() != null) {
+      return connectionCreate.getDataplaneGroupId();
     } else {
-      // connectionCreate didn't specify a geography, so use the workspace default geography if one exists
+      // connectionCreate didn't specify a dataplane group ID, so use the workspace default if one exists
       final UUID workspaceId = workspaceHelper.getWorkspaceForSourceId(connectionCreate.getSourceId());
       final StandardWorkspace workspace = workspaceService.getStandardWorkspaceNoSecrets(workspaceId, true);
 
-      if (workspace.getDefaultGeography() != null) {
-        geography = workspace.getDefaultGeography();
-      } else {
-        // if the workspace doesn't have a default geography, default to 'auto'
-        geography = DataplaneConstantsKt.GEOGRAPHY_AUTO;
+      if (workspace.getDataplaneGroupId() != null) {
+        return workspace.getDataplaneGroupId();
       }
     }
-
-    if (airbyteEdition.equals(Configs.AirbyteEdition.CLOUD) && DataplaneConstantsKt.GEOGRAPHY_AUTO.equalsIgnoreCase(geography)) {
-      geography = DataplaneConstantsKt.GEOGRAPHY_US;
-    }
-
-    return geography;
+    return dataplaneGroupService.getDefaultDataplaneGroupForAirbyteEdition(airbyteEdition).getId();
   }
 
   private void populateSyncFromLegacySchedule(final StandardSync standardSync, final ConnectionCreate connectionCreate) {
@@ -775,6 +785,15 @@ public class ConnectionsHandler {
     licenseEntitlementChecker.ensureEntitled(organizationId, Entitlement.SOURCE_CONNECTOR, sourceDefinition.getSourceDefinitionId());
     licenseEntitlementChecker.ensureEntitled(organizationId, Entitlement.DESTINATION_CONNECTOR, destinationDefinition.getDestinationDefinitionId());
 
+    if (connectionPatch.getSyncCatalog() != null) {
+      final ActorDefinitionVersion sourceVersion = actorDefinitionVersionHelper
+          .getSourceVersion(sourceDefinition, workspaceId, sync.getSourceId());
+      final ActorDefinitionVersion destinationVersion = actorDefinitionVersionHelper
+          .getDestinationVersion(destinationDefinition, workspaceId, sync.getDestinationId());
+      validateCatalogIncludeFiles(connectionPatch.getSyncCatalog(), sourceVersion, destinationVersion);
+      applyDefaultIncludeFiles(connectionPatch.getSyncCatalog(), sourceVersion, destinationVersion);
+    }
+
     if (isPatchRelevantForDestinationValidation(connectionPatch)
         && !Objects.equals(updateReason, ConnectionAutoUpdatedReason.SCHEMA_CHANGE_AUTO_PROPAGATE.name())
         && featureFlagClient.boolVariation(ValidateConflictingDestinationStreams.INSTANCE, new Organization(organizationId))) {
@@ -824,6 +843,40 @@ public class ConnectionsHandler {
         updateReason, autoUpdate);
 
     return updatedRead;
+  }
+
+  private void validateCatalogIncludeFiles(final AirbyteCatalog newCatalog,
+                                           final ActorDefinitionVersion sourceVersion,
+                                           final ActorDefinitionVersion destinationVersion) {
+    final List<AirbyteStreamAndConfiguration> enabledStreamsIncludingFiles =
+        newCatalog.getStreams().stream().filter(s -> s.getConfig().getSelected()
+            && s.getConfig().getIncludeFiles() != null
+            && s.getConfig().getIncludeFiles()).toList();
+
+    if (enabledStreamsIncludingFiles.isEmpty()) {
+      // No file streams are enabled, so we don't need to do any validation.
+      return;
+    }
+
+    // If either source or destination doesn't support files, we can't enable file transfers
+    if (!sourceVersion.getSupportsFileTransfer() || !destinationVersion.getSupportsFileTransfer()) {
+      final List<ProblemStreamDataItem> problemStreams = enabledStreamsIncludingFiles.stream()
+          .map(stream -> new ProblemStreamDataItem()
+              .streamName(stream.getStream().getName())
+              .streamNamespace(stream.getStream().getNamespace()))
+          .toList();
+      throw new ConnectionDoesNotSupportFileTransfersProblem(new ProblemConnectionUnsupportedFileTransfersData().streams(problemStreams));
+    }
+
+    // If the stream isn't file based, we can't enable file transfers for that stream
+    for (final AirbyteStreamAndConfiguration stream : enabledStreamsIncludingFiles) {
+      if (stream.getStream().getIsFileBased() == null || !stream.getStream().getIsFileBased()) {
+        throw new StreamDoesNotSupportFileTransfersProblem(new ProblemConnectionUnsupportedFileTransfersData().addstreamsItem(
+            new ProblemStreamDataItem()
+                .streamName(stream.getStream().getName())
+                .streamNamespace(stream.getStream().getNamespace())));
+      }
+    }
   }
 
   private void validateConnectionPatch(final WorkspaceHelper workspaceHelper, final StandardSync persistedSync, final ConnectionUpdate patch) {
@@ -1804,6 +1857,32 @@ public class ConnectionsHandler {
       map.put(streamDescriptor, stat);
     }
     return map;
+  }
+
+  /**
+   * Applies defaults to the config of a sync catalog based off catalog and actor definition versions.
+   * Mainly here to apply includeFiles default logic — this can be deleted once we default to
+   * includesFiles to true from the UI. Mutates!
+   */
+  @VisibleForTesting
+  protected AirbyteCatalog applyDefaultIncludeFiles(
+                                                    final AirbyteCatalog catalog,
+                                                    final ActorDefinitionVersion sourceVersion,
+                                                    final ActorDefinitionVersion destinationVersion) {
+    if (!sourceVersion.getSupportsFileTransfer()) {
+      return catalog;
+    }
+
+    for (final AirbyteStreamAndConfiguration pair : catalog.getStreams()) {
+      final var streamIsFileBased = pair.getStream().getIsFileBased() != null && pair.getStream().getIsFileBased();
+      final var includeFilesIsUnset = pair.getConfig().getIncludeFiles() == null;
+      if (streamIsFileBased && includeFilesIsUnset) {
+        final var defaultValue = destinationVersion.getSupportsFileTransfer();
+        pair.getConfig().setIncludeFiles(defaultValue);
+      }
+    }
+
+    return catalog;
   }
 
 }

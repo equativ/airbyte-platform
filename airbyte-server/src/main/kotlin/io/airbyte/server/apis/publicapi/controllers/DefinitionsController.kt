@@ -25,15 +25,15 @@ import io.airbyte.api.model.generated.SourceDefinitionUpdate
 import io.airbyte.api.model.generated.WorkspaceIdRequestBody
 import io.airbyte.api.problems.model.generated.ProblemMessageData
 import io.airbyte.api.problems.throwable.generated.BadRequestProblem
-import io.airbyte.commons.auth.WorkspaceAuthRole
+import io.airbyte.commons.auth.AuthRoleConstants
 import io.airbyte.commons.constants.AirbyteCatalogConstants
 import io.airbyte.commons.json.Jsons
-import io.airbyte.commons.server.authorization.ApiAuthorizationHelper
-import io.airbyte.commons.server.authorization.Scope
+import io.airbyte.commons.server.authorization.RoleResolver
 import io.airbyte.commons.server.handlers.ConnectorBuilderProjectsHandler
 import io.airbyte.commons.server.handlers.DeclarativeSourceDefinitionsHandler
 import io.airbyte.commons.server.handlers.DestinationDefinitionsHandler
 import io.airbyte.commons.server.handlers.SourceDefinitionsHandler
+import io.airbyte.commons.server.support.AuthenticationId
 import io.airbyte.commons.server.support.CurrentUserService
 import io.airbyte.config.ConfigSchema
 import io.airbyte.config.Configs.AirbyteEdition
@@ -56,7 +56,7 @@ import io.airbyte.server.apis.publicapi.constants.API_PATH
 import io.airbyte.server.apis.publicapi.errorHandlers.ConfigClientErrorHandler
 import io.airbyte.server.apis.publicapi.services.UserService
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.micronaut.http.HttpAttributes
+import io.micronaut.http.BasicHttpAttributes
 import io.micronaut.http.annotation.Controller
 import io.micronaut.http.context.ServerRequestContext
 import io.micronaut.security.annotation.Secured
@@ -68,7 +68,7 @@ import java.util.UUID
 @Controller(API_PATH)
 @Secured(SecurityRule.IS_AUTHENTICATED)
 class DefinitionsController(
-  val apiAuthorizationHelper: ApiAuthorizationHelper,
+  val roleResolver: RoleResolver,
   val currentUserService: CurrentUserService,
   val sourceDefinitionsHandler: SourceDefinitionsHandler,
   val destinationDefinitionsHandler: DestinationDefinitionsHandler,
@@ -107,7 +107,7 @@ class DefinitionsController(
 
     val manifest: JsonNode = ObjectMapper().valueToTree(request.manifest)
 
-    // The "manfiest" field contains the "spec", but it has a snake_case connection_specification
+    // The "manifest" field contains the "spec", but it has a snake_case connection_specification
     // and the platform code needs camelCase connectionSpecification.
     val spec = Jsons.clone(manifest.get("spec")) as ObjectNode
     spec.replace("connectionSpecification", spec.get("connection_specification"))
@@ -339,7 +339,8 @@ class DefinitionsController(
         SourceDefinitionUpdate()
           .sourceDefinitionId(definitionId)
           .name(updateDefinitionRequest.name)
-          .dockerImageTag(updateDefinitionRequest.dockerImageTag),
+          .dockerImageTag(updateDefinitionRequest.dockerImageTag)
+          .workspaceId(workspaceId),
       ).toPublicApiModel()
       .ok()
   }
@@ -357,9 +358,16 @@ class DefinitionsController(
 
     ensureUserCanWrite(workspaceId)
 
+    val maxVersion =
+      connectorBuilderService
+        .getDeclarativeManifestsByActorDefinitionId(definitionId)
+        .toList()
+        .maxOf { it.version }
+    val nextVersion = maxVersion + 1
+
     val manifest: JsonNode = ObjectMapper().valueToTree(request.manifest)
 
-    // The "manfiest" field contains the "spec", but it has a snake_case connection_specification
+    // The "manifest" field contains the "spec", but it has a snake_case connection_specification
     // and the platform code needs camelCase connectionSpecification.
     val spec = Jsons.clone(manifest.get("spec")) as ObjectNode
     spec.replace("connectionSpecification", spec.get("connection_specification"))
@@ -374,7 +382,7 @@ class DefinitionsController(
             .manifest(manifest)
             .spec(spec)
             .description("")
-            .version(request.version),
+            .version(nextVersion),
         ),
     )
 
@@ -383,7 +391,7 @@ class DefinitionsController(
         ConnectorBuilderProjectIdWithWorkspaceId()
           .workspaceId(workspaceId)
           .builderProjectId(projId)
-          .version(request.version),
+          .version(nextVersion),
       ).toPublicApi()
       .ok()
   }
@@ -406,7 +414,8 @@ class DefinitionsController(
         DestinationDefinitionUpdate()
           .destinationDefinitionId(definitionId)
           .name(updateDefinitionRequest.name)
-          .dockerImageTag(updateDefinitionRequest.dockerImageTag),
+          .dockerImageTag(updateDefinitionRequest.dockerImageTag)
+          .workspaceId(workspaceId),
       ).toPublicApiModel()
       .ok()
   }
@@ -414,7 +423,7 @@ class DefinitionsController(
   // wrap controller endpoints in common functionality: segment tracking, error conversion, etc.
   private fun wrap(block: () -> Response): Response {
     val currentRequest = ServerRequestContext.currentRequest<Any>().get()
-    val template = currentRequest.attributes.get(HttpAttributes.URI_TEMPLATE.toString(), String::class.java).orElse(currentRequest.path)
+    val template = BasicHttpAttributes.getUriTemplate(currentRequest).orElse(currentRequest.path)
     val method = currentRequest.method.name
 
     val userId: UUID = currentUserService.currentUser.userId
@@ -435,11 +444,11 @@ class DefinitionsController(
   }
 
   private fun ensureUserCanRead(workspaceId: UUID) {
-    apiAuthorizationHelper.ensureUserHasAnyRequiredRoleOrThrow(
-      Scope.WORKSPACE,
-      listOf(workspaceId.toString()),
-      setOf(WorkspaceAuthRole.WORKSPACE_READER),
-    )
+    roleResolver
+      .Request()
+      .withCurrentUser()
+      .withRef(AuthenticationId.WORKSPACE_ID, workspaceId)
+      .requireRole(AuthRoleConstants.WORKSPACE_READER)
   }
 
   private fun ensureUserCanWrite(
@@ -452,11 +461,11 @@ class DefinitionsController(
       )
     }
 
-    apiAuthorizationHelper.ensureUserHasAnyRequiredRoleOrThrow(
-      Scope.WORKSPACE,
-      listOf(workspaceId.toString()),
-      setOf(WorkspaceAuthRole.WORKSPACE_EDITOR),
-    )
+    roleResolver
+      .Request()
+      .withCurrentUser()
+      .withRef(AuthenticationId.WORKSPACE_ID, workspaceId)
+      .requireRole(AuthRoleConstants.WORKSPACE_EDITOR)
   }
 }
 

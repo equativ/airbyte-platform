@@ -12,11 +12,12 @@ import { ScrollParent } from "components/ui/ScrollParent";
 import { useGetDestinationFromSearchParams, useGetSourceFromSearchParams } from "area/connector/utils";
 import { connectionsKeys, HttpError, HttpProblem, useCreateConnection, useDiscoverSchema } from "core/api";
 import { ConnectionScheduleType } from "core/api/types/AirbyteClient";
+import { FormModeProvider, useFormMode } from "core/services/ui/FormModeContext";
 import {
   ConnectionFormServiceProvider,
   useConnectionFormService,
 } from "hooks/services/ConnectionForm/ConnectionFormService";
-import { useExperiment, useExperimentContext } from "hooks/services/Experiment";
+import { useExperimentContext } from "hooks/services/Experiment";
 import { useFormChangeTrackerService } from "hooks/services/FormChangeTracker";
 import { useNotificationService } from "hooks/services/Notification";
 
@@ -25,28 +26,23 @@ import { SchemaError } from "./SchemaError";
 import { SimplifiedConnectionConfiguration } from "./SimplifiedConnectionCreation/SimplifiedConnectionConfiguration";
 import { I18N_KEY_UNDER_ONE_HOUR_NOT_ALLOWED } from "./SimplifiedConnectionCreation/SimplifiedConnectionScheduleFormField";
 import { useAnalyticsTrackFunctions } from "./useAnalyticsTrackFunctions";
-import {
-  FormConnectionFormValues,
-  useConnectionValidationSchema,
-  useInitialFormValues,
-} from "../ConnectionForm/formConfig";
-import { useConnectionValidationZodSchema } from "../ConnectionForm/schemas/zodSchema";
+import { FormConnectionFormValues, useInitialFormValues } from "../ConnectionForm/formConfig";
+import { useConnectionValidationZodSchema } from "../ConnectionForm/schemas/connectionSchema";
 
 export const CREATE_CONNECTION_FORM_ID = "create-connection-form";
 
 const CreateConnectionFormInner: React.FC = () => {
   const navigate = useNavigate();
-  const isZodSchemaValidatorEnabled = useExperiment("connection.zodSchemaValidator");
   const { clearAllFormChanges } = useFormChangeTrackerService();
   const { mutateAsync: createConnection } = useCreateConnection();
-  const { connection, mode, setSubmitError } = useConnectionFormService();
+  const { connection, setSubmitError } = useConnectionFormService();
+  const { mode } = useFormMode();
   const initialValues = useInitialFormValues(connection, mode);
   const { registerNotification, unregisterNotificationById } = useNotificationService();
   const { formatMessage } = useIntl();
   useExperimentContext("source-definition", connection.source?.sourceDefinitionId);
   const queryClient = useQueryClient();
 
-  const validationSchema = useConnectionValidationSchema();
   const zodValidationSchema = useConnectionValidationZodSchema();
 
   const onSubmit = useCallback(
@@ -154,8 +150,7 @@ const CreateConnectionFormInner: React.FC = () => {
       <Suspense fallback={<LoadingSchema />}>
         <Form<FormConnectionFormValues>
           defaultValues={initialValues}
-          schema={validationSchema}
-          zodSchema={isZodSchemaValidatorEnabled ? zodValidationSchema : undefined}
+          zodSchema={zodValidationSchema}
           onSubmit={onSubmit}
           onError={onError}
           trackDirtyChanges
@@ -207,13 +202,14 @@ export const CreateConnectionForm: React.FC = () => {
   };
 
   return (
-    <ConnectionFormServiceProvider
-      connection={partialConnection}
-      mode="create"
-      refreshSchema={onDiscoverSchema}
-      schemaError={schemaErrorStatus}
-    >
-      {isLoading ? <LoadingSchema /> : <CreateConnectionFormInner />}
-    </ConnectionFormServiceProvider>
+    <FormModeProvider mode="create">
+      <ConnectionFormServiceProvider
+        connection={partialConnection}
+        refreshSchema={onDiscoverSchema}
+        schemaError={schemaErrorStatus}
+      >
+        {isLoading ? <LoadingSchema /> : <CreateConnectionFormInner />}
+      </ConnectionFormServiceProvider>
+    </FormModeProvider>
   );
 };

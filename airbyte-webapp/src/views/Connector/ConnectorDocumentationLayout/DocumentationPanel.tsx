@@ -9,7 +9,11 @@ import { useLocation } from "react-router-dom";
 import { useUpdateEffect } from "react-use";
 
 import { LoadingPage } from "components";
-import { ConnectorQualityMetrics } from "components/connector/ConnectorQualityMetrics";
+import {
+  ConnectorQualityMetrics,
+  ConnectorDefinitionWithMetrics,
+  convertToConnectorDefinitionWithMetrics,
+} from "components/connector/ConnectorQualityMetrics";
 import { Button } from "components/ui/Button";
 import { FlexContainer } from "components/ui/Flex";
 import { Heading } from "components/ui/Heading";
@@ -27,12 +31,25 @@ import {
   useConnectorDocumentation,
 } from "core/api";
 import { ConnectorDefinition } from "core/domain/connector";
-import { isCloudApp } from "core/utils/app";
+import { useIsCloudApp } from "core/utils/app";
 import { isDevelopment } from "core/utils/isDevelopment";
 import { useGetActorIdFromParams } from "core/utils/useGetActorIdFromParams";
 import { useDocumentationPanelContext } from "views/Connector/ConnectorDocumentationLayout/DocumentationPanelContext";
 
 import styles from "./DocumentationPanel.module.scss";
+
+const DocumentationLoadingPage: React.FC = () => (
+  <FlexContainer className={styles.container} direction="column" gap="none">
+    <FlexContainer alignItems="center" className={styles.header} justifyContent="space-between">
+      <Heading as="h1">
+        <FormattedMessage id="connector.setupGuide" />
+      </Heading>
+    </FlexContainer>
+    <div className={styles.content}>
+      <LoadingPage />
+    </div>
+  </FlexContainer>
+);
 
 const OSS_ENV_MARKERS = /<!-- env:oss -->([\s\S]*?)<!-- \/env:oss -->/gm;
 const CLOUD_ENV_MARKERS = /<!-- env:cloud -->([\s\S]*?)<!-- \/env:cloud -->/gm;
@@ -138,17 +155,24 @@ const ConnectorDocumentationHeader: React.FC<{ selectedConnectorDefinition: Conn
   selectedConnectorDefinition,
 }) => {
   const { name } = selectedConnectorDefinition;
+
+  const selectedConnectorDefinitionWithMetrics: ConnectorDefinitionWithMetrics = useMemo(
+    () => convertToConnectorDefinitionWithMetrics(selectedConnectorDefinition),
+    [selectedConnectorDefinition]
+  );
+
   return (
     <FlexContainer direction="column" justifyContent="space-between" className={styles.connectorDocumentationHeader}>
       <div className={mdStyles.markdown}>
         <Heading as="h1">{name}</Heading>
       </div>
-      <ConnectorQualityMetrics connectorDefinition={selectedConnectorDefinition} />
+      <ConnectorQualityMetrics connectorDefinition={selectedConnectorDefinitionWithMetrics} />
     </FlexContainer>
   );
 };
 
 export const DocumentationPanel: React.FC = () => {
+  const isCloudApp = useIsCloudApp();
   const { formatMessage } = useIntl();
   const { setDocumentationPanelOpen, selectedConnectorDefinition } = useDocumentationPanelContext();
   const actorId = useGetActorIdFromParams();
@@ -175,9 +199,9 @@ export const DocumentationPanel: React.FC = () => {
   const docsContent = useMemo(
     () =>
       doc && !error
-        ? prepareMarkdown(doc, isCloudApp() ? "cloud" : "oss")
+        ? prepareMarkdown(doc, isCloudApp ? "cloud" : "oss")
         : formatMessage({ id: "connector.setupGuide.notFound" }),
-    [doc, error, formatMessage]
+    [doc, error, formatMessage, isCloudApp]
   );
 
   const markdownOptions = useMemo(() => {
@@ -203,7 +227,7 @@ export const DocumentationPanel: React.FC = () => {
   }, [actorType]);
 
   return isLoading || !selectedConnectorDefinition?.documentationUrl ? (
-    <LoadingPage />
+    <DocumentationLoadingPage />
   ) : (
     <FlexContainer className={styles.container} direction="column" gap="none">
       <FlexContainer alignItems="center" className={styles.header} justifyContent="space-between">

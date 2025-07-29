@@ -12,7 +12,6 @@ import io.airbyte.api.model.generated.NamespaceDefinitionType
 import io.airbyte.api.model.generated.NonBreakingChangesPreference
 import io.airbyte.api.model.generated.SyncMode
 import io.airbyte.api.model.generated.Tag
-import io.airbyte.commons.constants.GEOGRAPHY_AUTO
 import io.airbyte.publicApi.server.generated.models.ConnectionResponse
 import io.airbyte.publicApi.server.generated.models.ConnectionScheduleResponse
 import io.airbyte.publicApi.server.generated.models.ConnectionStatusEnum
@@ -39,6 +38,7 @@ object ConnectionReadMapper {
   fun from(
     connectionRead: ConnectionRead,
     workspaceId: UUID?,
+    dataplaneGroupName: String,
   ): ConnectionResponse {
     val streamConfigurations =
       connectionRead.syncCatalog?.let { catalog ->
@@ -58,9 +58,11 @@ object ConnectionReadMapper {
                   }
                 StreamConfiguration(
                   name = streamAndConfiguration.stream.name,
+                  namespace = streamAndConfiguration.stream.namespace,
                   primaryKey = streamAndConfiguration.config.primaryKey,
                   cursorField = streamAndConfiguration.config.cursorField,
                   mappers = convertMappers(streamAndConfiguration.config.mappers),
+                  includeFiles = streamAndConfiguration.config.includeFiles,
                   syncMode = connectionSyncMode,
                   selectedFields = selectedFields,
                 )
@@ -90,7 +92,7 @@ object ConnectionReadMapper {
       workspaceId = workspaceId.toString(),
       status = ConnectionStatusEnum.valueOf(connectionRead.status.toString().uppercase()),
       schedule = connectionScheduleResponse,
-      dataResidency = (connectionRead.geography ?: GEOGRAPHY_AUTO).lowercase(),
+      dataResidency = dataplaneGroupName.lowercase(),
       configurations = streamConfigurations,
       nonBreakingSchemaUpdatesBehavior = connectionRead.nonBreakingChangesPreference?.let { n -> convertNonBreakingChangesPreference(n) },
       namespaceDefinition = connectionRead.namespaceDefinition?.let { n -> convertNamespaceDefinitionType(n) },

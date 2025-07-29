@@ -13,7 +13,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.LongNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
-import io.airbyte.commons.constants.DataplaneConstantsKt;
 import io.airbyte.commons.json.Jsons;
 import io.airbyte.config.ActorDefinitionConfigInjection;
 import io.airbyte.config.ActorDefinitionVersion;
@@ -21,7 +20,6 @@ import io.airbyte.config.DataplaneGroup;
 import io.airbyte.config.Organization;
 import io.airbyte.config.StandardSourceDefinition;
 import io.airbyte.config.SupportLevel;
-import io.airbyte.config.secrets.SecretsRepositoryWriter;
 import io.airbyte.data.helpers.ActorDefinitionVersionUpdater;
 import io.airbyte.data.services.ActorDefinitionService;
 import io.airbyte.data.services.ConnectionService;
@@ -67,7 +65,6 @@ class ConfigInjectionTest extends BaseConfigDatabaseTest {
   void beforeEach() throws Exception {
     truncateAllTables();
     final FeatureFlagClient featureFlagClient = mock(TestClient.class);
-    final SecretsRepositoryWriter secretsRepositoryWriter = mock(SecretsRepositoryWriter.class);
     final SecretPersistenceConfigService secretPersistenceConfigService = mock(SecretPersistenceConfigService.class);
     final OrganizationService organizationService = new OrganizationServiceJooqImpl(database);
     organizationService.writeOrganization(new Organization()
@@ -78,10 +75,10 @@ class ConfigInjectionTest extends BaseConfigDatabaseTest {
     dataplaneGroupService.writeDataplaneGroup(new DataplaneGroup()
         .withId(UUID.randomUUID())
         .withOrganizationId(DEFAULT_ORGANIZATION_ID)
-        .withName(DataplaneConstantsKt.GEOGRAPHY_AUTO)
+        .withName("test")
         .withEnabled(true)
         .withTombstone(false));
-    final ConnectionService connectionService = new ConnectionServiceJooqImpl(database, dataplaneGroupService);
+    final ConnectionService connectionService = new ConnectionServiceJooqImpl(database);
     final ScopedConfigurationService scopedConfigurationService = mock(ScopedConfigurationService.class);
     final ActorDefinitionService actorDefinitionService = new ActorDefinitionServiceJooqImpl(database);
     final ConnectionTimelineEventService connectionTimelineEventService = mock(ConnectionTimelineEventService.class);
@@ -91,7 +88,6 @@ class ConfigInjectionTest extends BaseConfigDatabaseTest {
     sourceService = new SourceServiceJooqImpl(
         database,
         featureFlagClient,
-        secretsRepositoryWriter,
         secretPersistenceConfigService,
         connectionService,
         new ActorDefinitionVersionUpdater(

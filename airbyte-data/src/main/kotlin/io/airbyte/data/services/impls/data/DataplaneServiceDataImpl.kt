@@ -4,7 +4,6 @@
 
 package io.airbyte.data.services.impls.data
 
-import io.airbyte.config.ConfigSchema
 import io.airbyte.config.Dataplane
 import io.airbyte.data.exceptions.ConfigNotFoundException
 import io.airbyte.data.repositories.DataplaneRepository
@@ -25,7 +24,7 @@ class DataplaneServiceDataImpl(
     repository
       .findById(id)
       .orElseThrow {
-        ConfigNotFoundException(ConfigSchema.CONNECTOR_ROLLOUT, id)
+        ConfigNotFoundException("ConnectorRollout", id.toString())
       }.toConfigModel()
 
   override fun writeDataplane(dataplane: Dataplane): Dataplane {
@@ -57,5 +56,10 @@ class DataplaneServiceDataImpl(
         ).map { unit ->
           unit.toConfigModel()
         }
+    }
+
+  override fun listDataplanes(withTombstone: Boolean): List<Dataplane> =
+    repository.findAllByTombstone(withTombstone).map { unit ->
+      unit.toConfigModel()
     }
 }

@@ -4,6 +4,7 @@ import { FieldPath, useFormContext } from "react-hook-form";
 
 import { ConnectorSpecification } from "core/domain/connector";
 import { isSourceDefinitionSpecificationDraft } from "core/domain/connector/source";
+import { useIsAirbyteEmbeddedContext } from "core/services/embedded";
 import { trackError } from "core/utils/datadog";
 
 import { useConnectorForm } from "./connectorFormContext";
@@ -18,7 +19,7 @@ import { authPredicateMatchesPath, makeConnectionConfigurationPath, serverProvid
 const shouldShowButtonForAdvancedAuth = (
   predicateKey: string[] | undefined,
   predicateValue: string | undefined,
-  values: ConnectorFormValues<unknown>
+  values: ConnectorFormValues
 ): boolean => {
   return (
     !predicateKey ||
@@ -72,11 +73,12 @@ export const useAuthentication = (): AuthenticationHook => {
     manualOAuthMode,
     toggleManualOAuthMode,
   } = useConnectorForm();
+  const isAirbyteEmbedded = useIsAirbyteEmbeddedContext();
 
   const advancedAuth = connectorSpec?.advancedAuth;
 
   const getValuesSafe = useCallback(
-    (values: ConnectorFormValues<unknown>) => {
+    (values: ConnectorFormValues) => {
       try {
         // We still see cases where calling `getValues` which will eventually use the yupSchema.cast method
         // crashes based on the passed in values. To temporarily make sure we're not crashing the form, we're
@@ -110,7 +112,7 @@ export const useAuthentication = (): AuthenticationHook => {
   );
 
   const shouldShowRedirectUrlTooltip =
-    connectorSpec?.advancedAuthGlobalCredentialsAvailable === false && !manualOAuthMode;
+    !isAirbyteEmbedded && connectorSpec?.advancedAuthGlobalCredentialsAvailable === false && !manualOAuthMode;
 
   // Fields that are filled by the OAuth flow and thus won't need to be shown in the UI if OAuth is available
   const implicitAuthFieldPaths = useMemo(

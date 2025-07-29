@@ -14,6 +14,23 @@ jest.mock("locales/en.errors.json", () => ({
   "dont-panic": "Don't panic!",
 }));
 
+// Mock the AirbyteTheme
+jest.mock("hooks/theme/useAirbyteTheme", () => {
+  const themeContextValue = {
+    theme: "airbyteThemeLight",
+    colorValues: {},
+    setTheme: jest.fn(),
+  };
+
+  return {
+    AirbyteThemeProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    useAirbyteTheme: jest.fn().mockReturnValue(themeContextValue),
+    AirbyteThemeContext: {
+      Provider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+    },
+  };
+});
+
 describe("ErrorDetails", () => {
   it("should render a standard error by its message", async () => {
     const result = await render(<ErrorDetails error={new Error("Test error")} />);
@@ -30,7 +47,7 @@ describe("ErrorDetails", () => {
     const result = await render(
       <ErrorDetails
         error={
-          new HttpProblem({ method: "get", url: "/some-url" }, 404, {
+          new HttpProblem({ method: "GET", url: "/some-url" }, 404, {
             type: "error:dont-panic" as any,
             title: "Don't panic" as any,
             documentationUrl: "https://airbyte.dev/dont-panic",

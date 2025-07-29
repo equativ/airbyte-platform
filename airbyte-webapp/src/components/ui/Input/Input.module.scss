@@ -31,7 +31,15 @@
     border-color: colors.$grey-100;
   }
 
-  &:not(.disabled, .readOnly, .focused):hover {
+  &:focus-within {
+    border-color: colors.$blue;
+
+    &.light {
+      background-color: colors.$foreground;
+    }
+  }
+
+  &:not(.disabled, .readOnly, :focus-within):hover {
     border-color: colors.$grey-300;
 
     &.light {
@@ -42,21 +50,13 @@
       border-color: colors.$red;
     }
   }
-
-  &.focused {
-    border-color: colors.$blue;
-
-    &.light {
-      background-color: colors.$foreground;
-    }
-  }
 }
 
 .input {
   outline: none;
   width: 100%;
   padding: 7px 8px;
-  font-size: variables.$font-size-lg;
+  font-size: variables.$font-size-md;
   font-weight: normal;
   border: none;
   background: none;

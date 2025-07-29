@@ -25,13 +25,15 @@ enabled: true
 ##  temporal.replicaCount The number of temporal replicas to deploy
 replicaCount: 1
 
+serviceAccountName:
+
 ##  temporal.image.repository The temporal image repository to use
 ##  temporal.image.pullPolicy The pull policy for the temporal image
 ##  temporal.image.tag The temporal image tag to use
 image:
   repository: temporalio/auto-setup
   pullPolicy: IfNotPresent
-  tag: "1.23.0"
+  tag: "1.27.2"
 
 ##  temporal.service.type The Kubernetes Service Type
 ##  temporal.service.port The temporal port and exposed kubernetes port
@@ -59,7 +61,7 @@ containerSecurityContext: {}
 ## Examples (when using `temporal.containerSecurityContext.readOnlyRootFilesystem=true`):
 ## extraInitContainers:
 ##   - name: config-loader
-##     image: temporalio/auto-setup:1.23
+##     image: temporalio/auto-setup:1.27.2
 ##     command:
 ##       - /bin/sh
 ##       - -c

@@ -6,6 +6,7 @@ import { Path, get, useFormState } from "react-hook-form";
 import { FormattedMessage, useIntl } from "react-intl";
 
 import { DatePickerProps } from "components/ui/DatePicker/DatePicker";
+import { FlexContainer } from "components/ui/Flex";
 import { InputProps } from "components/ui/Input";
 import { ListBoxProps, Option } from "components/ui/ListBox";
 import { SwitchProps } from "components/ui/Switch/Switch";
@@ -24,6 +25,7 @@ import { InputWrapper } from "./InputWrapper";
 import { SelectWrapper } from "./SelectWrapper";
 import { SwitchWrapper } from "./SwitchWrapper";
 import { TextAreaWrapper } from "./TextAreaWrapper";
+
 type ControlProps<T extends FormValues> =
   | SelectControlProps<T>
   | InputControlProps<T>
@@ -53,6 +55,10 @@ interface ControlBaseProps<T extends FormValues> {
    * An optional description that appears under the label
    */
   description?: string | ReactNode;
+  /**
+   * Optional content to render on the right side of the label
+   */
+  header?: ReactNode;
   hasError?: boolean;
   controlId?: string;
   inline?: boolean;
@@ -66,6 +72,16 @@ interface ControlBaseProps<T extends FormValues> {
    * Optional text displayed below the input, but only when there is no error to display
    */
   footer?: string;
+  /**
+   * If true, the error message will only be shown if the field has been touched.
+   * Otherwise, the error will be shown regardless of whether the field has been touched.
+   */
+  onlyShowErrorIfTouched?: boolean;
+  /**
+   * Whether to reserve space for the error message, avoiding layout shifts when the error message appears. By default
+   * we want this to be true to avoid layout shifts.
+   */
+  reserveSpaceForError?: boolean;
 }
 
 /**
@@ -110,21 +126,25 @@ export interface ArrayControlProps<T extends FormValues>
   extends ControlBaseProps<T>,
     Omit<TagInputProps, "name" | "fieldValue" | "onChange"> {
   fieldType: "array";
+  itemType?: "string" | "number" | "integer";
 }
 
 export const FormControl = <T extends FormValues>({
   label,
   labelTooltip,
   description,
+  header,
   inline = false,
   optional = false,
   containerControlClassName,
   footer,
+  onlyShowErrorIfTouched,
+  reserveSpaceForError = true,
   ...props
 }: ControlProps<T>) => {
   // only retrieve new form state if form state of current field has changed
-  const { errors } = useFormState<T>({ name: props.name });
-  const error = get(errors, props.name);
+  const { errors, touchedFields } = useFormState<T>({ name: props.name });
+  const error = !!get(errors, props.name) && (onlyShowErrorIfTouched ? !!get(touchedFields, props.name) : true);
   const [controlId] = useState(`input-control-${uniqueId()}`);
 
   // Properties to pass to the underlying control
@@ -172,7 +192,14 @@ export const FormControl = <T extends FormValues>({
   const displayFooter = !!error || !!footer;
 
   return (
-    <div className={classNames(styles.control, { [styles["control--inline"]]: inline }, containerControlClassName)}>
+    <div
+      className={classNames(
+        styles.control,
+        { [styles["control--inline"]]: inline, [styles["control--reserveSpaceForError"]]: reserveSpaceForError },
+        containerControlClassName
+      )}
+      data-field-path={props.name}
+    >
       {label && (
         <FormLabel
           description={description}
@@ -180,11 +207,12 @@ export const FormControl = <T extends FormValues>({
           labelTooltip={labelTooltip}
           htmlFor={controlId}
           optional={optional}
+          header={header}
         />
       )}
       <div className={styles.control__field}>{renderControl()}</div>
       {displayFooter && (
-        <FormControlFooter>
+        <FormControlFooter doesShiftLayout={!reserveSpaceForError}>
           <FormControlErrorMessage<FormValues> name={props.name} />
           {!error && footer && <FormControlFooterInfo>{footer}</FormControlFooterInfo>}
         </FormControlFooter>
@@ -200,28 +228,52 @@ interface FormLabelProps {
   htmlFor: string;
   inline?: boolean;
   optional?: boolean;
+  header?: ReactNode;
 }
 
-export const FormLabel: React.FC<FormLabelProps> = ({ description, label, labelTooltip, htmlFor, optional }) => {
+export const FormLabel: React.FC<FormLabelProps> = ({
+  description,
+  label,
+  labelTooltip,
+  htmlFor,
+  optional,
+  header,
+}) => {
   return (
     <label className={styles.control__label} htmlFor={htmlFor}>
-      <Text size="lg" className={styles.control__label__text}>
-        {label}
-        {labelTooltip && <InfoTooltip placement="top-start">{labelTooltip}</InfoTooltip>}
-        {optional && (
-          <Text className={styles.control__optional} as="span">
-            <FormattedMessage id="form.optional" />
-          </Text>
-        )}
-      </Text>
+      <FlexContainer alignItems="center" gap="md">
+        <Text size="lg" className={styles.control__labelText} bold>
+          {label}
+          {labelTooltip && <InfoTooltip placement="top-start">{labelTooltip}</InfoTooltip>}
+          {optional && (
+            <Text className={styles.control__optional} as="span">
+              <FormattedMessage id="form.optional" />
+            </Text>
+          )}
+        </Text>
+        {header}
+      </FlexContainer>
       {description &&
         (isString(description) ? <Text className={styles.control__description}>{description}</Text> : description)}
     </label>
   );
 };
 
-export const FormControlFooter: React.FC<React.PropsWithChildren> = ({ children }) => {
-  return <div className={styles.control__footer}>{children}</div>;
+interface FormControlFooterProps {
+  doesShiftLayout?: boolean;
+}
+
+export const FormControlFooter: React.FC<React.PropsWithChildren<FormControlFooterProps>> = ({
+  children,
+  doesShiftLayout,
+}) => {
+  return (
+    <div
+      className={classNames(styles.control__footer, { [styles["control__footer--doesShiftLayout"]]: doesShiftLayout })}
+    >
+      {children}
+    </div>
+  );
 };
 
 export const FormControlFooterInfo: React.FC<React.PropsWithChildren> = ({ children }) => {
@@ -259,7 +311,12 @@ export const FormControlErrorMessage = <TFormValues extends FormValues>({
 
   return (
     <Text color="red" size="xs" className={styles.control__footerText}>
-      {!message && (error.type === NON_I18N_ERROR_TYPE ? error.message : formatMessage({ id: error.message }))}
+      {!message &&
+        // NON_I18N_ERROR_TYPE is a custom error type that is used to display a non-i18n error message.
+        // "validate" type means the error came from the react-hook-form validate() method.
+        (error.type === NON_I18N_ERROR_TYPE || error.type === "validate"
+          ? error.message
+          : formatMessage({ id: error.message }))}
       {message && message}
     </Text>
   );

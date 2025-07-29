@@ -3,13 +3,17 @@ import merge from "lodash/merge";
 import omit from "lodash/omit";
 import { useCallback } from "react";
 
-import { DEFAULT_JSON_MANIFEST_VALUES } from "components/connectorBuilder/types";
+import {
+  DEFAULT_JSON_MANIFEST_VALUES,
+  DEFAULT_JSON_MANIFEST_VALUES_WITH_STREAM,
+} from "components/connectorBuilder/types";
 
 import { useCurrentWorkspaceId } from "area/workspace/utils";
 import { HttpError } from "core/api";
 import { useFormatError } from "core/errors";
 import { Action, Namespace, useAnalyticsService } from "core/services/analytics";
 import { useDebounceValue } from "core/utils/useDebounceValue";
+import { useLocalStorage } from "core/utils/useLocalStorage";
 import { useExperiment } from "hooks/services/Experiment";
 import { useNotificationService } from "hooks/services/Notification";
 
@@ -100,10 +104,14 @@ export const useBuilderResolveManifestQuery = () => {
 
 export const useBuilderResolvedManifestSuspense = (manifest?: ConnectorManifest, projectId?: string) => {
   const resolveManifestQuery = useBuilderResolveManifestQuery();
+  const [advancedMode] = useLocalStorage("airbyte_connector-builder-advanced-mode", false);
+  const isSchemaFormEnabled = useExperiment("connectorBuilder.schemaForm");
 
   return useSuspenseQuery(connectorBuilderKeys.resolveSuspense(manifest), async () => {
     if (!manifest) {
-      return DEFAULT_JSON_MANIFEST_VALUES;
+      return isSchemaFormEnabled && advancedMode
+        ? DEFAULT_JSON_MANIFEST_VALUES_WITH_STREAM
+        : DEFAULT_JSON_MANIFEST_VALUES;
     }
     try {
       return (await resolveManifestQuery(manifest, projectId)).manifest as DeclarativeComponentSchema;

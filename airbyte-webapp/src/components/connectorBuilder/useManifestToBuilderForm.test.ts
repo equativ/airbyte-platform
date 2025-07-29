@@ -31,12 +31,15 @@ import {
 import { convertToBuilderFormValues } from "./useManifestToBuilderForm";
 import { formatJson } from "./utils";
 
+jest.mock("services/connectorBuilder/ConnectorBuilderStateService", () => ({}));
+
 const baseManifest: ConnectorManifest = {
   type: "DeclarativeSource",
   version: OLDEST_SUPPORTED_CDK_VERSION,
   check: {
     type: "CheckStream",
     stream_names: [],
+    dynamic_streams_check_configs: [],
   },
   streams: [],
 };
@@ -514,6 +517,7 @@ describe("Conversion successfully results in", () => {
         key: "api_key",
         required: true,
         isLocked: false,
+        // @ts-expect-error TODO: connector builder team to fix this https://github.com/airbytehq/airbyte-internal-issues/issues/12252
         definition: manifest.spec?.connection_specification.properties.api_key,
       },
     ]);
@@ -543,6 +547,7 @@ describe("Conversion successfully results in", () => {
         key: "api_key",
         required: false,
         isLocked: false,
+        // @ts-expect-error TODO: connector builder team to fix this https://github.com/airbytehq/airbyte-internal-issues/issues/12252
         definition: manifest.spec?.connection_specification.properties.api_key,
       },
     ]);
@@ -590,12 +595,14 @@ describe("Conversion successfully results in", () => {
         key: "api_key",
         required: true,
         isLocked: true,
+        // @ts-expect-error TODO: connector builder team to fix this https://github.com/airbytehq/airbyte-internal-issues/issues/12252
         definition: manifest.spec?.connection_specification.properties.api_key,
       },
       {
         key: "numeric_key",
         required: false,
         isLocked: false,
+        // @ts-expect-error TODO: connector builder team to fix this https://github.com/airbytehq/airbyte-internal-issues/issues/12252
         definition: manifest.spec?.connection_specification.properties.numeric_key,
       },
     ]);

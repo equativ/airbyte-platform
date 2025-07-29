@@ -4,15 +4,14 @@
 
 package io.airbyte.workload.launcher.pods.factories
 
-import io.airbyte.workers.context.WorkloadSecurityContextProvider
-import io.airbyte.workers.pod.ContainerConstants.DESTINATION_CONTAINER_NAME
-import io.airbyte.workers.pod.ContainerConstants.ORCHESTRATOR_CONTAINER_NAME
-import io.airbyte.workers.pod.ContainerConstants.SOURCE_CONTAINER_NAME
 import io.airbyte.workers.pod.FileConstants.DEST_DIR
 import io.airbyte.workers.pod.FileConstants.SOURCE_DIR
+import io.airbyte.workload.launcher.constants.ContainerConstants.DESTINATION_CONTAINER_NAME
+import io.airbyte.workload.launcher.constants.ContainerConstants.ORCHESTRATOR_CONTAINER_NAME
+import io.airbyte.workload.launcher.constants.ContainerConstants.SOURCE_CONTAINER_NAME
+import io.airbyte.workload.launcher.context.WorkloadSecurityContextProvider
 import io.fabric8.kubernetes.api.model.Container
 import io.fabric8.kubernetes.api.model.ContainerBuilder
-import io.fabric8.kubernetes.api.model.ContainerPort
 import io.fabric8.kubernetes.api.model.EnvVar
 import io.fabric8.kubernetes.api.model.ResourceRequirements
 import io.fabric8.kubernetes.api.model.VolumeMount
@@ -33,14 +32,9 @@ class ReplicationContainerFactory(
     volumeMounts: List<VolumeMount>,
     runtimeEnvVars: List<EnvVar>,
     image: String,
-    exposedOrchestratorPorts: List<Int>,
   ): Container {
     val mainCommand = ContainerCommandFactory.orchestrator()
     val envVars = orchestratorEnvVars + runtimeEnvVars
-    val exposedPorts =
-      exposedOrchestratorPorts.map { p ->
-        ContainerPort().apply { containerPort = p }
-      }
 
     return ContainerBuilder()
       .withName(ORCHESTRATOR_CONTAINER_NAME)
@@ -48,7 +42,6 @@ class ReplicationContainerFactory(
       .withImagePullPolicy(imagePullPolicy)
       .withCommand("sh", "-c", mainCommand)
       .withResources(resourceReqs)
-      .withPorts(exposedPorts)
       .withEnv(envVars)
       .withVolumeMounts(volumeMounts)
       .withSecurityContext(workloadSecurityContextProvider.rootlessContainerSecurityContext())

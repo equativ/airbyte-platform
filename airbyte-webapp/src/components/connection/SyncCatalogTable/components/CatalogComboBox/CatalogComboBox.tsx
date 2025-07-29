@@ -14,10 +14,10 @@ import { Input } from "components/ui/Input";
 import { FloatLayout } from "components/ui/ListBox/FloatLayout";
 import { RadioButton } from "components/ui/RadioButton";
 import { Text } from "components/ui/Text";
+import { TextHighlighter } from "components/ui/TextHighlighter";
 import { Tooltip } from "components/ui/Tooltip";
 
 import styles from "./CatalogComboBox.module.scss";
-import { TextHighlighter } from "../TextHighlighter";
 
 interface BaseProps {
   options: Option[];
@@ -65,7 +65,7 @@ type ControlButtonProps = Omit<BaseProps, "options"> & {
   setFilterQuery: (value: string) => void;
   maxSelectedLabels?: number;
 };
-const ControlButton = React.forwardRef<HTMLButtonElement, ControlButtonProps>((props, ref) => {
+const ControlButton = React.forwardRef<HTMLDivElement, ControlButtonProps>((props, ref) => {
   const { formatMessage } = useIntl();
   const {
     open,
@@ -121,7 +121,6 @@ const ControlButton = React.forwardRef<HTMLButtonElement, ControlButtonProps>((p
 
   const comboboxButton = (
     <ComboboxButton
-      ref={ref}
       as={Button}
       type="button"
       variant="clear"
@@ -131,14 +130,14 @@ const ControlButton = React.forwardRef<HTMLButtonElement, ControlButtonProps>((p
       iconSize="sm"
       onMouseEnter={() => onButtonHover(true)}
       onMouseLeave={() => onButtonHover(false)}
-      className={classnames(styles.buttonClear, { [styles.error]: error }, controlClassName)}
+      className={classnames(styles.buttonClear, { [styles["buttonClear--error"]]: error }, controlClassName)}
     >
       {getButtonText()}
     </ComboboxButton>
   );
 
   return (
-    <>
+    <div ref={ref}>
       {open ? (
         <ComboboxInput
           as={Input}
@@ -158,7 +157,7 @@ const ControlButton = React.forwardRef<HTMLButtonElement, ControlButtonProps>((p
       ) : (
         comboboxButton
       )}
-    </>
+    </div>
   );
 });
 ControlButton.displayName = "ControlButton";

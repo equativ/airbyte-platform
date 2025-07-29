@@ -4,7 +4,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: keycloak-setup
+  name: {{ .Release.Name }}-keycloak-setup
   labels:
     {{- include "airbyte.labels" . | nindent 4 }}
     {{- if .Values.keycloakSetup.extraLabels }}
@@ -23,7 +23,7 @@ spec:
   completions: 1
   template:
     spec:
-      serviceAccountName: {{ .Values.global.serviceAccountName }}
+      serviceAccountName: {{ default .Values.global.serviceAccountName .Values.keycloakSetup.serviceAccountName }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- range .Values.global.imagePullSecrets }}

@@ -4,16 +4,18 @@ import Keycloak from "keycloak-js";
 import isEqual from "lodash/isEqual";
 import { User, UserManager, WebStorageStateStore } from "oidc-client-ts";
 import React, { PropsWithChildren, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import { LoadingPage } from "components";
 
 import { HttpProblem, useGetOrCreateUser, useUpdateUser } from "core/api";
 import { UserRead } from "core/api/types/AirbyteClient";
-import { config } from "core/config";
+import { buildConfig } from "core/config";
 import { useFormatError } from "core/errors";
 import { AuthContext, AuthContextApi } from "core/services/auth";
+import { EmbeddedAuthService } from "core/services/auth/EmbeddedAuthService";
 import { CloudRoutes } from "packages/cloud/cloudRoutePaths";
+import { RoutePaths } from "pages/routePaths";
 
 /**
  * The ID of the client in Keycloak that should be used by the webapp.
@@ -75,7 +77,7 @@ function createRedirectUri(realm: string) {
 function createUserManager(realm: string) {
   return new UserManager({
     userStore: new WebStorageStateStore({ store: window.localStorage }),
-    authority: `${config.keycloakBaseUrl}/auth/realms/${realm}`,
+    authority: `${buildConfig.keycloakBaseUrl}/auth/realms/${realm}`,
     client_id: KEYCLOAK_CLIENT_ID,
     redirect_uri: createRedirectUri(realm),
   });
@@ -95,7 +97,7 @@ export function initializeUserManager() {
 
   // Look for a localStorage entry that matches the current backend we're connecting to
   const existingLocalStorageEntry = localStorageKeys.find((key) =>
-    key.startsWith(`oidc.user:${config.keycloakBaseUrl}`)
+    key.startsWith(`oidc.user:${buildConfig.keycloakBaseUrl}`)
   );
 
   if (existingLocalStorageEntry) {
@@ -120,19 +122,13 @@ function clearLocalStorageOidcSessions() {
 }
 
 // Removes OIDC params from URL, but doesn't remove other params that might be present
-export function createUriWithoutSsoParams(checkLicense?: boolean) {
+export function createUriWithoutSsoParams() {
   // state, code and session_state are from keycloak. realm is added by us to indicate which realm the user is signing in to.
   const SSO_SEARCH_PARAMS = ["state", "code", "session_state", "realm"];
 
   const searchParams = new URLSearchParams(window.location.search);
 
   SSO_SEARCH_PARAMS.forEach((param) => searchParams.delete(param));
-
-  // Add a searchParam to trigger a license check upon redirect
-  // This should only be passed in as true from EnterpriseAuthService
-  if (checkLicense === true) {
-    searchParams.set("checkLicense", "true");
-  }
 
   return searchParams.toString().length > 0
     ? `${window.location.origin}?${searchParams.toString()}`
@@ -217,7 +213,7 @@ const keycloakAuthStateReducer = (state: KeycloakAuthState, action: KeycloakAuth
 const broadcastChannel = new BroadcastChannel<BroadcastEvent>("keycloak-state-sync");
 
 // Checks for a valid auth session with keycloak and returns the user if found.
-export const CloudAuthService: React.FC<PropsWithChildren> = ({ children }) => {
+const CloudKeycloakAuthService: React.FC<PropsWithChildren> = ({ children }) => {
   const userSigninInitialized = useRef(false);
   const queryClient = useQueryClient();
   const [userManager] = useState<UserManager>(initializeUserManager);
@@ -385,7 +381,7 @@ export const CloudAuthService: React.FC<PropsWithChildren> = ({ children }) => {
    */
   const redirectToRegistrationWithPassword = useCallback(async () => {
     const keycloak = new Keycloak({
-      url: `${config.keycloakBaseUrl}/auth`,
+      url: `${buildConfig.keycloakBaseUrl}/auth`,
       realm: AIRBYTE_CLOUD_REALM,
       clientId: KEYCLOAK_CLIENT_ID,
     });
@@ -468,4 +464,15 @@ export const CloudAuthService: React.FC<PropsWithChildren> = ({ children }) => {
   }
 
   return <AuthContext.Provider value={authContextValue}>{children}</AuthContext.Provider>;
+};
+
+export const CloudAuthService: React.FC<PropsWithChildren> = ({ children }) => {
+  const location = useLocation();
+  /* This is the route for the embedded widget.  It uses scoped auth tokens and will not have an associated user.
+      Thus, it leverages the EmbeddedAuthService to provide an empty user object to the AuthContext. */
+  if (location.pathname === `/${RoutePaths.EmbeddedWidget}`) {
+    return <EmbeddedAuthService>{children}</EmbeddedAuthService>;
+  }
+
+  return <CloudKeycloakAuthService>{children}</CloudKeycloakAuthService>;
 };

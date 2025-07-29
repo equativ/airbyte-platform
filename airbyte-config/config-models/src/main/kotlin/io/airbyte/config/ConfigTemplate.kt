@@ -5,23 +5,14 @@
 package io.airbyte.config
 
 import com.fasterxml.jackson.databind.JsonNode
+import io.airbyte.protocol.models.v0.AdvancedAuth
+import io.airbyte.protocol.models.v0.ConnectorSpecification
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/**
- * Entity for manipulating ConfigTemplates
- *
- * The userConfigSpec field is expected to contain a JSON object with the following structure:
- * {
- *   advancedAuth?: AdvancedAuth,
- *   advancedAuthGlobalCredentialsAvailable?: boolean,
- *   connectionSpecification?: { [key: string]: any }, // Dynamic key-value pairs
- *   documentationUrl?: string
- * }
- */
 data class ConfigTemplate(
   val id: UUID,
-  val organizationId: UUID,
+  val organizationId: UUID? = null,
   val actorDefinitionId: UUID,
   val partialDefaultConfig: JsonNode,
   /**
@@ -31,7 +22,9 @@ data class ConfigTemplate(
    * - connectionSpecification (optional) - a dynamic object with arbitrary properties
    * - documentationUrl (optional)
    */
-  val userConfigSpec: JsonNode,
+  val userConfigSpec: ConnectorSpecification,
+  val advancedAuth: AdvancedAuth? = null,
+  val advancedAuthGlobalCredentialsAvailable: Boolean? = null,
   val createdAt: OffsetDateTime? = null,
   val updatedAt: OffsetDateTime? = null,
 )

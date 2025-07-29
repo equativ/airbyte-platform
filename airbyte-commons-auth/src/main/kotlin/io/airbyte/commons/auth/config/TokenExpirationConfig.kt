@@ -13,4 +13,8 @@ class TokenExpirationConfig(
   val applicationTokenExpirationInMinutes: Long = 15,
   @Property(name = "airbyte.auth.token-expiration.dataplane-token-expiration-in-minutes")
   val dataplaneTokenExpirationInMinutes: Long = 5,
+  @Property(name = "airbyte.auth.token-expiration.embedded-token-expiration-in-minutes")
+  val embeddedTokenExpirationInMinutes: Long = 15,
+  @Property(name = "airbyte.auth.token-expiration.service-account-token-expiration-in-minutes")
+  val serviceAccountTokenExpirationInMinutes: Long = 15,
 )

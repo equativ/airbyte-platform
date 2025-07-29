@@ -4,8 +4,7 @@
 
 package io.airbyte.workers.input
 
-import io.airbyte.commons.json.Jsons
-import io.airbyte.config.SourceActorConfig
+import io.airbyte.persistence.job.models.HeartbeatConfig
 import io.airbyte.persistence.job.models.ReplicationInput
 import io.airbyte.workers.models.ReplicationActivityInput
 import jakarta.inject.Singleton
@@ -16,19 +15,8 @@ import jakarta.inject.Singleton
  */
 @Singleton
 class ReplicationInputMapper {
-  fun toReplicationInput(replicationActivityInput: ReplicationActivityInput): ReplicationInput {
-    // TODO: Remove any introspection of connector configs. Determine whether to use 'file transfer' mode another way.
-    val sourceConfiguration: SourceActorConfig = Jsons.`object`(replicationActivityInput.sourceConfiguration, SourceActorConfig::class.java)
-    val useFileTransfer =
-      sourceConfiguration.useFileTransfer ||
-        (
-          sourceConfiguration.deliveryMethod != null &&
-            "use_file_transfer".equals(
-              sourceConfiguration.deliveryMethod.deliveryType,
-            )
-        )
-
-    return ReplicationInput()
+  fun toReplicationInput(replicationActivityInput: ReplicationActivityInput): ReplicationInput =
+    ReplicationInput()
       .withNamespaceDefinition(replicationActivityInput.namespaceDefinition)
       .withNamespaceFormat(replicationActivityInput.namespaceFormat)
       .withPrefix(replicationActivityInput.prefix)
@@ -45,7 +33,12 @@ class ReplicationInputMapper {
       .withSourceConfiguration(replicationActivityInput.sourceConfiguration)
       .withDestinationConfiguration(replicationActivityInput.destinationConfiguration)
       .withConnectionContext(replicationActivityInput.connectionContext)
-      .withUseFileTransfer(useFileTransfer)
+      .withUseFileTransfer(replicationActivityInput.includesFiles == true)
+      .withOmitFileTransferEnvVar(replicationActivityInput.omitFileTransferEnvVar == true)
       .withNetworkSecurityTokens(replicationActivityInput.networkSecurityTokens)
-  }
+      .withFeatureFlags(replicationActivityInput.featureFlags)
+      .withHeartbeatConfig(HeartbeatConfig().withMaxSecondsBetweenMessages(replicationActivityInput.heartbeatMaxSecondsBetweenMessages))
+      .withSupportsRefreshes(replicationActivityInput.supportsRefreshes)
+      .withSourceIPCOptions(replicationActivityInput.sourceIPCOptions)
+      .withDestinationIPCOptions(replicationActivityInput.destinationIPCOptions)
 }

@@ -45,3 +45,18 @@ value class SecretConfigId(
 value class SecretReferenceId(
   val value: UUID,
 )
+
+@JvmInline
+value class UserId(
+  val value: UUID,
+)
+
+@JvmInline
+value class ActorId(
+  val value: UUID,
+)
+
+@JvmInline
+value class DestinationCatalogId(
+  val value: UUID,
+)

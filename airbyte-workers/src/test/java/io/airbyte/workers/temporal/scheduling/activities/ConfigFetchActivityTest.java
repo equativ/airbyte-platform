@@ -149,7 +149,7 @@ class ConfigFetchActivityTest {
     @BeforeEach
     void setup() throws IOException {
       when(mWorkspaceApi.getWorkspaceByConnectionId(any())).thenReturn(new WorkspaceRead(UUID.randomUUID(), UUID.randomUUID(), "name", "slug", false,
-          UUID.randomUUID(), null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+          UUID.randomUUID(), null, null, null, null, null, null, null, null, null, null, null, null, null));
     }
 
     @Nested
@@ -314,7 +314,6 @@ class ConfigFetchActivityTest {
         configFetchActivity = new ConfigFetchActivityImpl(mAirbyteApiClient, SYNC_JOB_MAX_ATTEMPTS, () -> 60L * 3,
             mFeatureFlagClient, mScheduleJitterHelper, mFfContextMapper);
 
-        when(mJobRead.getStartedAt()).thenReturn(null);
         when(mJobRead.getCreatedAt())
             .thenReturn(60L);
 
@@ -454,7 +453,7 @@ class ConfigFetchActivityTest {
 
         when(mWorkspaceApi.getWorkspaceByConnectionId(any()))
             .thenReturn(new WorkspaceRead(UUID.fromString("226edbc1-4a9c-4401-95a9-90435d667d9d"), UUID.randomUUID(), "name", "slug", false,
-                UUID.randomUUID(), null, null, null, null, null, null, null, null, null, null, null, null, null, null));
+                UUID.randomUUID(), null, null, null, null, null, null, null, null, null, null, null, null, null));
 
         configFetchActivity =
             new ConfigFetchActivityImpl(mAirbyteApiClient, SYNC_JOB_MAX_ATTEMPTS,

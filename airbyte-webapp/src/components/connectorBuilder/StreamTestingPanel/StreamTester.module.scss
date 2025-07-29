@@ -1,5 +1,6 @@
 @use "scss/variables";
 @use "scss/colors";
+@use "scss/mixins";
 
 .container {
   flex: 1;
@@ -74,4 +75,24 @@
 // specificity than a single class selector.
 .traceback.traceback {
   margin-bottom: 0;
+}
+
+.dynamicStreamButtonContainer {
+  display: flex;
+  flex-direction: row;
+  gap: variables.$spacing-md;
+
+  :last-child {
+    flex-grow: 1;
+  }
+}
+
+.pulsate {
+  @include mixins.pulsate(variables.$spacing-lg, variables.$border-radius-sm);
+
+  & > * {
+    // keep content visible above the pulses
+    display: inline-block;
+    z-index: 1;
+  }
 }

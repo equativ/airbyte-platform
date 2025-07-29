@@ -4,9 +4,12 @@ import React from "react";
 import { useGetDestinationDefinitionSpecification } from "core/api";
 import { AirbyteStreamConfiguration, DestinationSyncMode, SyncMode } from "core/api/types/AirbyteClient";
 import { Action, Namespace, useAnalyticsService } from "core/services/analytics";
+import { useFormMode } from "core/services/ui/FormModeContext";
 import { useConnectionFormService } from "hooks/services/ConnectionForm/ConnectionFormService";
+import { useExperiment } from "hooks/services/Experiment";
 
 import { SyncModeButton } from "./SyncModeButton";
+import { ConnectorIds } from "../../../../area/connector/utils";
 import { SUPPORTED_MODES, SyncStreamFieldWithId } from "../../ConnectionForm/formConfig";
 import { SyncCatalogUIModel } from "../SyncCatalogTable";
 import { updateStreamSyncMode } from "../utils";
@@ -23,7 +26,13 @@ interface SyncModeCellProps {
 
 export const SyncModeCell: React.FC<SyncModeCellProps> = ({ row, updateStreamField }) => {
   const analyticsService = useAnalyticsService();
-  const { connection, mode } = useConnectionFormService();
+  const { connection } = useConnectionFormService();
+  // TODO: remove this experiment when db sources all support all sync modes
+  // https://github.com/airbytehq/airbyte-internal-issues/issues/13224
+  const allowToSupportAllSyncModes =
+    useExperiment("connection.allowToSupportAllSyncModes") ||
+    connection.source.sourceDefinitionId === ConnectorIds.Sources.MicrosoftSqlServerMssql;
+  const { mode } = useFormMode();
   const { supportedDestinationSyncModes } = useGetDestinationDefinitionSpecification(
     connection.destination.destinationId
   );
@@ -50,13 +59,17 @@ export const SyncModeCell: React.FC<SyncModeCellProps> = ({ row, updateStreamFie
     });
   };
 
-  const availableSyncModes: SyncModeValue[] = SUPPORTED_MODES.filter(
-    ([syncMode, destinationSyncMode]) =>
-      stream?.supportedSyncModes?.includes(syncMode) && supportedDestinationSyncModes?.includes(destinationSyncMode)
-  ).map(([syncMode, destinationSyncMode]) => ({
-    syncMode,
-    destinationSyncMode,
-  }));
+  const getSupportedSyncModes = ([syncMode, destinationSyncMode]: [SyncMode, DestinationSyncMode]) =>
+    allowToSupportAllSyncModes
+      ? true
+      : stream?.supportedSyncModes?.includes(syncMode) && supportedDestinationSyncModes?.includes(destinationSyncMode);
+
+  const availableSyncModes: SyncModeValue[] = SUPPORTED_MODES.filter(getSupportedSyncModes).map(
+    ([syncMode, destinationSyncMode]) => ({
+      syncMode,
+      destinationSyncMode,
+    })
+  );
 
   const syncSchema = config?.syncMode &&
     config?.destinationSyncMode && {

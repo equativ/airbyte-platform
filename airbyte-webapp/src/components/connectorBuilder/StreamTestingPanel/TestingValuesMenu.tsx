@@ -21,6 +21,7 @@ import { useLocalStorage } from "core/utils/useLocalStorage";
 import {
   useConnectorBuilderFormManagementState,
   useConnectorBuilderFormState,
+  useConnectorBuilderPermission,
   useConnectorBuilderTestRead,
 } from "services/connectorBuilder/ConnectorBuilderStateService";
 import { ConnectorForm } from "views/Connector/ConnectorForm";
@@ -35,8 +36,8 @@ export const TestingValuesMenu: React.FC = () => {
   const mode = useBuilderWatch("mode");
   const {
     jsonManifest: { spec },
-    permission,
   } = useConnectorBuilderFormState();
+  const permission = useConnectorBuilderPermission();
   const { isTestingValuesInputOpen: isOpen, setTestingValuesInputOpen: setIsOpen } =
     useConnectorBuilderFormManagementState();
   const {
@@ -136,6 +137,7 @@ const TestingValuesForm: React.FC<TestingValuesFormProps> = ({ spec }) => {
     setConnectorFormValues(values);
   }, []);
   const incrementConnectorFormKey = useCallback(() => setConnectorFormKey((prev) => prev + 1), []);
+  const { currentProject } = useConnectorBuilderFormState();
 
   const connectorDefinitionSpecification: SourceDefinitionSpecificationDraft | undefined = useMemo(
     () =>
@@ -154,6 +156,12 @@ const TestingValuesForm: React.FC<TestingValuesFormProps> = ({ spec }) => {
       key={`testing-values-form-${connectorFormKey}`}
       formType="source"
       bodyClassName={styles.formContent}
+      selectedConnectorDefinition={{
+        name: currentProject.name,
+        dockerImageTag: "none",
+        dockerRepository: "none",
+        sourceDefinitionId: "none",
+      }}
       selectedConnectorDefinitionSpecification={connectorDefinitionSpecification}
       formValues={{ connectionConfiguration: connectorFormValues }}
       onSubmit={async (values) => {

@@ -407,65 +407,27 @@ class DefaultJobPersistenceTest {
   }
 
   @Test
-  @DisplayName("When getting the last replication job should return the most recently created job")
-  void testGetLastSyncJobWithCancel() throws IOException {
-    final long jobId = jobPersistence.enqueueJob(SCOPE, SYNC_JOB_CONFIG, true).orElseThrow();
-    jobPersistence.failAttempt(jobId, jobPersistence.createAttempt(jobId, LOG_PATH));
-    jobPersistence.failAttempt(jobId, jobPersistence.createAttempt(jobId, LOG_PATH));
-    jobPersistence.cancelJob(jobId);
-
-    final Optional<Job> actual = jobPersistence.getLastReplicationJobWithCancel(UUID.fromString(SCOPE), false);
-
-    final Job expected = createJob(
-        jobId,
-        SYNC_JOB_CONFIG,
-        JobStatus.CANCELLED,
-        Lists.newArrayList(
-            createAttempt(0, jobId, AttemptStatus.FAILED, LOG_PATH),
-            createAttempt(1, jobId, AttemptStatus.FAILED, LOG_PATH)),
-        NOW.getEpochSecond());
-
-    assertEquals(Optional.of(expected), actual);
-  }
-
-  @ParameterizedTest
-  @ValueSource(booleans = {true, false})
   @DisplayName("When getting the last replication job should return the most recently created job without scheduled functionalities")
-  void testGetLastSyncJobWithCancelWithScheduleEnabledForNonScheduledJob(final boolean scheduleEnabled) throws IOException {
+  void testGetLastSyncJobWithCancelWithScheduleEnabledForNonScheduledJob() throws IOException {
     final long jobId = jobPersistence.enqueueJob(SCOPE, SYNC_JOB_CONFIG, false).orElseThrow();
     jobPersistence.failAttempt(jobId, jobPersistence.createAttempt(jobId, LOG_PATH));
     jobPersistence.failAttempt(jobId, jobPersistence.createAttempt(jobId, LOG_PATH));
     jobPersistence.cancelJob(jobId);
 
-    final Optional<Job> actual = jobPersistence.getLastReplicationJobWithCancel(UUID.fromString(SCOPE), scheduleEnabled);
+    final Optional<Job> actual = jobPersistence.getLastReplicationJobWithCancel(UUID.fromString(SCOPE));
 
-    final Job expected = createJob(
-        jobId,
-        SYNC_JOB_CONFIG,
-        JobStatus.CANCELLED,
-        Lists.newArrayList(
-            createAttempt(0, jobId, AttemptStatus.FAILED, LOG_PATH),
-            createAttempt(1, jobId, AttemptStatus.FAILED, LOG_PATH)),
-        NOW.getEpochSecond(),
-        false);
-
-    if (scheduleEnabled) {
-      assertEquals(Optional.empty(), actual);
-    } else {
-      assertEquals(Optional.of(expected), actual);
-    }
+    assertEquals(Optional.empty(), actual);
   }
 
-  @ParameterizedTest
-  @ValueSource(booleans = {true, false})
+  @Test
   @DisplayName("When getting the last replication job should return the most recently created job with scheduled functionalities")
-  void testGetLastSyncJobWithCancelWithScheduleEnabledForScheduledJob(final boolean scheduleEnabled) throws IOException {
+  void testGetLastSyncJobWithCancelWithScheduleEnabledForScheduledJob() throws IOException {
     final long jobId = jobPersistence.enqueueJob(SCOPE, SYNC_JOB_CONFIG, true).orElseThrow();
     jobPersistence.failAttempt(jobId, jobPersistence.createAttempt(jobId, LOG_PATH));
     jobPersistence.failAttempt(jobId, jobPersistence.createAttempt(jobId, LOG_PATH));
     jobPersistence.cancelJob(jobId);
 
-    final Optional<Job> actual = jobPersistence.getLastReplicationJobWithCancel(UUID.fromString(SCOPE), scheduleEnabled);
+    final Optional<Job> actual = jobPersistence.getLastReplicationJobWithCancel(UUID.fromString(SCOPE));
 
     final Job expected = createJob(
         jobId,
@@ -650,6 +612,80 @@ class DefaultJobPersistenceTest {
 
       // As of this writing, committed and state messages are not expected.
       assertNull(combined.getDestinationStateMessagesEmitted());
+
+      final var actStreamStats = stats.perStreamStats();
+      assertEquals(2, actStreamStats.size());
+      assertEquals(streamStats, actStreamStats);
+    }
+
+    @Test
+    @DisplayName("Fetch stream stats get the default metadata correctly")
+    void testWriteStatsWithMetadataDefault() throws IOException {
+      final long jobId = jobPersistence.enqueueJob(SCOPE, SPEC_JOB_CONFIG, true).orElseThrow();
+      final int attemptNumber = jobPersistence.createAttempt(jobId, LOG_PATH);
+      final var streamStats = List.of(
+          new StreamSyncStats().withStreamName("name1").withStreamNamespace("ns")
+              .withStats(new SyncStats().withBytesEmitted(500L).withRecordsEmitted(500L).withEstimatedBytes(10000L).withEstimatedRecords(2000L))
+              .withWasResumed(false).withWasBackfilled(false),
+          new StreamSyncStats().withStreamName("name2").withStreamNamespace("ns")
+              .withStats(new SyncStats().withBytesEmitted(500L).withRecordsEmitted(500L).withEstimatedBytes(10000L).withEstimatedRecords(2000L))
+              .withWasResumed(false).withWasBackfilled(false));
+      final long estimatedRecords = 1000L;
+      final long estimatedBytes = 1001L;
+      final long recordsEmitted = 1002L;
+      final long bytesEmitted = 1003L;
+      final long recordsCommitted = 1004L;
+      final long bytesCommitted = 1005L;
+      jobPersistence.writeStats(jobId, attemptNumber, estimatedRecords, estimatedBytes, recordsEmitted, bytesEmitted, recordsCommitted,
+          bytesCommitted, CONNECTION_ID, streamStats);
+
+      final AttemptStats stats = jobPersistence.getAttemptStatsWithStreamMetadata(jobId, attemptNumber);
+
+      final var actStreamStats = stats.perStreamStats();
+      assertEquals(2, actStreamStats.size());
+      assertEquals(streamStats, actStreamStats);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("Fetch stream stats get the metadata correctly")
+    void testWriteStatsWithMetadata(final boolean resumedBackfilledValue) throws IOException, SQLException {
+      final long jobId = jobPersistence.enqueueJob(SCOPE, SPEC_JOB_CONFIG, true).orElseThrow();
+      final int attemptNumber = jobPersistence.createAttempt(jobId, LOG_PATH);
+      final var streamStats = List.of(
+          new StreamSyncStats().withStreamName("name1")
+              .withStats(new SyncStats().withBytesEmitted(500L).withRecordsEmitted(500L).withEstimatedBytes(10000L).withEstimatedRecords(2000L))
+              .withWasResumed(resumedBackfilledValue).withWasBackfilled(resumedBackfilledValue),
+          new StreamSyncStats().withStreamName("name2")
+              .withStats(new SyncStats().withBytesEmitted(500L).withRecordsEmitted(500L).withEstimatedBytes(10000L).withEstimatedRecords(2000L))
+              .withWasResumed(resumedBackfilledValue).withWasBackfilled(resumedBackfilledValue));
+      final long estimatedRecords = 1000L;
+      final long estimatedBytes = 1001L;
+      final long recordsEmitted = 1002L;
+      final long bytesEmitted = 1003L;
+      final long recordsCommitted = 1004L;
+      final long bytesCommitted = 1005L;
+      jobPersistence.writeStats(jobId, attemptNumber, estimatedRecords, estimatedBytes, recordsEmitted, bytesEmitted, recordsCommitted,
+          bytesCommitted, CONNECTION_ID, streamStats);
+
+      final long attemptId = jobDatabase.query(
+          ctx -> ctx.select(ATTEMPTS.ID).from(ATTEMPTS).where(ATTEMPTS.JOB_ID.eq(jobId).and(ATTEMPTS.ATTEMPT_NUMBER.eq(attemptNumber)))
+              .fetchOne(ATTEMPTS.ID));
+
+      jobDatabase.query(
+          ctx -> ctx.insertInto(
+              STREAM_ATTEMPT_METADATA,
+              STREAM_ATTEMPT_METADATA.ID,
+              STREAM_ATTEMPT_METADATA.ATTEMPT_ID,
+              STREAM_ATTEMPT_METADATA.STREAM_NAME,
+              STREAM_ATTEMPT_METADATA.STREAM_NAMESPACE,
+              STREAM_ATTEMPT_METADATA.WAS_BACKFILLED,
+              STREAM_ATTEMPT_METADATA.WAS_RESUMED)
+              .values(UUID.randomUUID(), attemptId, "name1", null, resumedBackfilledValue, resumedBackfilledValue)
+              .values(UUID.randomUUID(), attemptId, "name2", null, resumedBackfilledValue, resumedBackfilledValue)
+              .execute());
+
+      final AttemptStats stats = jobPersistence.getAttemptStatsWithStreamMetadata(jobId, attemptNumber);
 
       final var actStreamStats = stats.perStreamStats();
       assertEquals(2, actStreamStats.size());

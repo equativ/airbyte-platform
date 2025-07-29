@@ -99,7 +99,7 @@ Renders the common.airbyteUrl environment variable
 Renders the global.api.host value
 */}}
 {{- define "airbyte.common.api.host" }}
-    {{- ternary (printf "http://localhost:%d/api/public" (int .Values.server.service.port)) (printf "%s/api/public" .Values.global.airbyteUrl) (eq .Values.global.edition "community") }}
+    {{- .Values.global.api.host | default (ternary (printf "http://localhost:%d/api/public" (int .Values.server.service.port)) (printf "%s/api/public" .Values.global.airbyteUrl) (eq .Values.global.edition "community")) }}
 {{- end }}
 
 {{/*
@@ -150,20 +150,20 @@ Renders the common.server.host environment variable
 {{- end }}
 
 {{/*
-Renders the global.api.authEnabled value
+Renders the global.auth.enabled value
 */}}
-{{- define "airbyte.common.api.authEnabled" }}
-	{{- if eq .Values.global.api.authEnabled nil }}
+{{- define "airbyte.common.auth.enabled" }}
+	{{- if eq .Values.global.auth.enabled nil }}
     	{{- true }}
 	{{- else }}
-    	{{- .Values.global.api.authEnabled }}
+    	{{- .Values.global.auth.enabled }}
 	{{- end }}
 {{- end }}
 
 {{/*
-Renders the common.api.authEnabled environment variable
+Renders the common.auth.enabled environment variable
 */}}
-{{- define "airbyte.common.api.authEnabled.env" }}
+{{- define "airbyte.common.auth.enabled.env" }}
 - name: API_AUTHORIZATION_ENABLED
   valueFrom:
     configMapKeyRef:
@@ -187,6 +187,24 @@ Renders the common.connectorBuilderServer.apiHost environment variable
     configMapKeyRef:
       name: {{ .Release.Name }}-airbyte-env
       key: CONNECTOR_BUILDER_SERVER_API_HOST
+{{- end }}
+
+{{/*
+Renders the global.deploymentEnv value
+*/}}
+{{- define "airbyte.common.deploymentEnv" }}
+    {{- .Values.global.deploymentEnv }}
+{{- end }}
+
+{{/*
+Renders the common.deploymentEnv environment variable
+*/}}
+{{- define "airbyte.common.deploymentEnv.env" }}
+- name: DEPLOYMENT_ENV
+  valueFrom:
+    configMapKeyRef:
+      name: {{ .Release.Name }}-airbyte-env
+      key: DEPLOYMENT_ENV
 {{- end }}
 
 {{/*
@@ -233,7 +251,7 @@ Renders the common.local environment variable
 Renders the global.webapp.url value
 */}}
 {{- define "airbyte.common.webapp.url" }}
-    {{- (printf "http://%s-airbyte-webapp-svc.%s:%d" .Release.Name .Release.Namespace (int .Values.webapp.service.port)) }}
+    {{- (include "airbyte.common.airbyteUrl" .) }}
 {{- end }}
 
 {{/*
@@ -259,8 +277,9 @@ Renders the set of all common environment variables
 {{- include "airbyte.common.api.host.env" . }}
 {{- include "airbyte.common.api.authHeaderName.env" . }}
 {{- include "airbyte.common.server.host.env" . }}
-{{- include "airbyte.common.api.authEnabled.env" . }}
+{{- include "airbyte.common.auth.enabled.env" . }}
 {{- include "airbyte.common.connectorBuilderServer.apiHost.env" . }}
+{{- include "airbyte.common.deploymentEnv.env" . }}
 {{- include "airbyte.common.api.internalHost.env" . }}
 {{- include "airbyte.common.local.env" . }}
 {{- include "airbyte.common.webapp.url.env" . }}
@@ -278,8 +297,9 @@ AIRBYTE_URL: {{ include "airbyte.common.airbyteUrl" . | quote }}
 AIRBYTE_API_HOST: {{ include "airbyte.common.api.host" . | quote }}
 AIRBYTE_API_AUTH_HEADER_NAME: {{ include "airbyte.common.api.authHeaderName" . | quote }}
 AIRBYTE_SERVER_HOST: {{ include "airbyte.common.server.host" . | quote }}
-API_AUTHORIZATION_ENABLED: {{ include "airbyte.common.api.authEnabled" . | quote }}
+API_AUTHORIZATION_ENABLED: {{ include "airbyte.common.auth.enabled" . | quote }}
 CONNECTOR_BUILDER_SERVER_API_HOST: {{ include "airbyte.common.connectorBuilderServer.apiHost" . | quote }}
+DEPLOYMENT_ENV: {{ include "airbyte.common.deploymentEnv" . | quote }}
 INTERNAL_API_HOST: {{ include "airbyte.common.api.internalHost" . | quote }}
 LOCAL: {{ include "airbyte.common.local" . | quote }}
 WEBAPP_URL: {{ include "airbyte.common.webapp.url" . | quote }}

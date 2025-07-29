@@ -25,7 +25,7 @@ import io.airbyte.workers.internal.VersionedAirbyteStreamFactory
 import io.airbyte.workers.internal.VersionedAirbyteStreamFactory.InvalidLineFailureConfiguration
 import io.airbyte.workers.models.SidecarInput
 import io.airbyte.workers.pod.FileConstants
-import io.airbyte.workers.workload.JobOutputDocStore
+import io.airbyte.workers.workload.WorkloadOutputWriter
 import io.airbyte.workload.api.client.WorkloadApiClient
 import io.airbyte.workload.api.client.model.generated.WorkloadFailureRequest
 import io.airbyte.workload.api.client.model.generated.WorkloadSuccessRequest
@@ -55,7 +55,7 @@ class ConnectorWatcher(
   private val airbyteProtocolVersionedMigratorFactory: AirbyteProtocolVersionedMigratorFactory,
   private val gsonPksExtractor: GsonPksExtractor,
   private val workloadApiClient: WorkloadApiClient,
-  private val jobOutputDocStore: JobOutputDocStore,
+  private val outputWriter: WorkloadOutputWriter,
   private val logContextFactory: SidecarLogContextFactory,
   private val heartbeatMonitor: HeartbeatMonitor,
   private val metricClient: MetricClient,
@@ -168,7 +168,7 @@ class ConnectorWatcher(
     connectorOutput: ConnectorJobOutput,
   ) {
     logger.info { "Writing output of $workloadId to the doc store" }
-    jobOutputDocStore.write(workloadId, connectorOutput)
+    outputWriter.write(workloadId, connectorOutput)
   }
 
   private fun markWorkloadSuccess(workloadId: String) {
@@ -180,16 +180,28 @@ class ConnectorWatcher(
     input: SidecarInput,
     e: Exception,
   ) {
-    logger.error(e) { "Error performing operation: ${e.javaClass.name}" }
-    val connectorOutput =
-      when (input.operationType) {
-        SidecarInput.OperationType.CHECK -> getFailedOutput(input.checkConnectionInput, e)
-        SidecarInput.OperationType.DISCOVER -> getFailedOutput(input.discoverCatalogInput, e)
-        SidecarInput.OperationType.SPEC -> getFailedOutput(input.integrationLauncherConfig.dockerImage, e)
-      }
-    jobOutputDocStore.write(input.workloadId, connectorOutput)
-    failWorkload(input.workloadId, connectorOutput.failureReason)
-    exitInternalError()
+    try {
+      logger.error(e) { "Error performing operation: ${e.javaClass.name}" }
+      val connectorOutput =
+        when (input.operationType) {
+          SidecarInput.OperationType.CHECK -> getFailedOutput(input.checkConnectionInput, e)
+          SidecarInput.OperationType.DISCOVER -> getFailedOutput(input.discoverCatalogInput, e)
+          SidecarInput.OperationType.SPEC -> getFailedOutput(input.integrationLauncherConfig.dockerImage, e)
+        }
+      outputWriter.write(input.workloadId, connectorOutput)
+      failWorkload(input.workloadId, connectorOutput.failureReason)
+    } catch (e: Exception) {
+      failWorkload(
+        input.workloadId,
+        FailureReason()
+          .withFailureOrigin(FailureReason.FailureOrigin.AIRBYTE_PLATFORM)
+          .withExternalMessage("Unable to persist the job Output, check the document store credentials.")
+          .withInternalMessage(e.message)
+          .withStacktrace(e.stackTraceToString()),
+      )
+    } finally {
+      exitInternalError()
+    }
   }
 
   @VisibleForTesting
@@ -204,14 +216,14 @@ class ConnectorWatcher(
       integrationLauncherConfig.protocolVersion
         ?: AirbyteProtocolVersion.DEFAULT_AIRBYTE_PROTOCOL_VERSION
     return VersionedAirbyteStreamFactory<Any>(
-      serDeProvider,
-      airbyteProtocolVersionedMigratorFactory,
-      protocolVersion,
-      Optional.empty(),
-      Optional.empty(),
-      InvalidLineFailureConfiguration(false),
-      gsonPksExtractor,
-      metricClient,
+      serDeProvider = serDeProvider,
+      migratorFactory = airbyteProtocolVersionedMigratorFactory,
+      protocolVersion = protocolVersion,
+      connectionId = Optional.empty(),
+      configuredAirbyteCatalog = Optional.empty(),
+      invalidLineFailureConfiguration = InvalidLineFailureConfiguration(false),
+      gsonPksExtractor = gsonPksExtractor,
+      metricClient = metricClient,
     )
   }
 

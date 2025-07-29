@@ -21,6 +21,8 @@ import {
   PageIncrement,
   OffsetIncrement,
   CursorPagination,
+  DynamicStreamCheckConfig,
+  DynamicStreamCheckConfigType,
   SimpleRetrieverPaginator,
   DefaultPaginatorPageTokenOption,
   DatetimeBasedCursor,
@@ -75,12 +77,38 @@ import {
   AsyncJobStatusMap,
   DpathExtractorType,
   DpathExtractor,
+  SimpleRetriever,
+  DynamicDeclarativeStream,
+  DynamicDeclarativeStreamType,
+  RecordSelectorType,
+  HttpRequesterHttpMethod,
+  AsyncJobStatusMapType,
+  CustomRetrieverType,
+  HttpComponentsResolverType,
 } from "core/api/types/ConnectorManifest";
 
 import { DecoderTypeConfig } from "./Builder/DecoderConfig";
 import { CDK_VERSION } from "./cdk";
 import { filterPartitionRouterToType, formatJson, streamRef } from "./utils";
 import { AirbyteJSONSchema } from "../../core/jsonSchema/types";
+
+export interface GeneratedStreamId {
+  type: "generated_stream";
+  index: number;
+  dynamicStreamName: string;
+}
+
+export interface StaticStreamId {
+  type: "stream";
+  index: number;
+}
+
+export interface DynamicStreamId {
+  type: "dynamic_stream";
+  index: number;
+}
+
+export type StreamId = StaticStreamId | GeneratedStreamId | DynamicStreamId;
 
 export interface BuilderState {
   name: string;
@@ -89,10 +117,12 @@ export interface BuilderState {
   previewValues?: BuilderFormValues;
   yaml: string;
   customComponentsCode?: string;
-  view: "global" | "inputs" | "components" | number;
+  view: { type: "global" } | { type: "inputs" } | { type: "components" } | StreamId;
   streamTab: BuilderStreamTab;
-  testStreamIndex: number;
+  testStreamId: StreamId;
   testingValues: ConnectorBuilderProjectTestingValues | undefined;
+  manifest: ConnectorManifest | null;
+  generatedStreams: Record<string, DeclarativeStream[]>;
 }
 
 export interface AssistData {
@@ -232,7 +262,7 @@ export const DECODER_CONFIGS: Partial<Record<(typeof BUILDER_DECODER_TYPES)[numb
   },
 };
 
-interface BuilderRequestOptions {
+export interface BuilderRequestOptions {
   requestParameters: Array<[string, string]>;
   requestHeaders: Array<[string, string]>;
   requestBody: BuilderRequestBody;
@@ -302,13 +332,17 @@ export interface BuilderFormValues {
   assist: AssistData;
   inputs: BuilderFormInput[];
   streams: BuilderStream[];
+  dynamicStreams: BuilderDynamicStream[];
+  generatedStreams: Record<string, GeneratedBuilderStream[]>;
   checkStreams: string[];
+  dynamicStreamCheckConfigs: DynamicStreamCheckConfig[];
   version: string;
   description?: string;
 }
 
 export interface StreamTestResults {
   streamHash: string | null;
+  isStale?: boolean;
   hasResponse?: boolean;
   responsesAreSuccessful?: boolean;
   hasRecords?: boolean;
@@ -446,6 +480,18 @@ export type BuilderPollingTimeout =
       value: string;
     };
 
+interface BuilderHttpComponentsResolver {
+  type: "HttpComponentsResolver";
+  retriever: SimpleRetriever;
+}
+export type BuilderComponentsResolver = BuilderHttpComponentsResolver;
+
+export interface BuilderDynamicStream {
+  streamTemplate: BuilderStream;
+  dynamicStreamName: string;
+  componentsResolver: BuilderComponentsResolver;
+}
+
 export type BuilderStream = {
   id: string;
   name: string;
@@ -453,6 +499,7 @@ export type BuilderStream = {
   autoImportSchema: boolean;
   unknownFields?: YamlString;
   testResults?: StreamTestResults;
+  dynamicStreamName?: string;
 } & (
   | {
       requestType: "sync";
@@ -497,6 +544,19 @@ export type BuilderStream = {
       // urlRequester: BuilderBaseRequester;
     }
 );
+
+export type GeneratedDeclarativeStream = DeclarativeStream & {
+  dynamic_stream_name: string;
+};
+
+export type GeneratedBuilderStream = BuilderStream & {
+  dynamicStreamName: string;
+  declarativeStream: GeneratedDeclarativeStream;
+};
+
+export function declarativeStreamIsGenerated(stream: DeclarativeStream): stream is GeneratedDeclarativeStream {
+  return "dynamic_stream_name" in stream;
+}
 
 export interface BuilderBaseRequester {
   url: string;
@@ -576,19 +636,21 @@ export const DEFAULT_BUILDER_FORM_VALUES: BuilderFormValues = {
   },
   inputs: [],
   streams: [],
+  dynamicStreams: [],
+  generatedStreams: {},
   checkStreams: [],
+  dynamicStreamCheckConfigs: [],
   version: CDK_VERSION,
 };
 
-export const DEFAULT_SCHEMA = formatJson(
-  {
-    $schema: "http://json-schema.org/draft-07/schema#",
-    type: "object",
-    properties: {},
-    additionalProperties: true,
-  },
-  true
-);
+export const DEFAULT_SCHEMA_LOADER_SCHEMA = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  type: "object",
+  properties: {},
+  additionalProperties: true,
+};
+
+export const DEFAULT_SCHEMA = formatJson(DEFAULT_SCHEMA_LOADER_SCHEMA, true);
 
 export const isEmptyOrDefault = (schema?: string) => {
   return !schema || schema === DEFAULT_SCHEMA;
@@ -701,6 +763,10 @@ export function hasIncrementalSyncUserInput(
   });
 }
 
+export function isStreamDynamicStream(streamId: StreamId): boolean {
+  return streamId.type === "dynamic_stream";
+}
+
 export function interpolateConfigKey(key: string): string;
 export function interpolateConfigKey(key: string | undefined): string | undefined;
 export function interpolateConfigKey(key: string | undefined): string | undefined {
@@ -763,7 +829,7 @@ export function builderAuthenticatorToManifest(
     return {
       ...omit(authenticator, "declarative", "type", "grant_type"),
       type: OAUTH_AUTHENTICATOR,
-      grant_type: isRefreshTokenFlowEnabled && !usesRefreshToken ? "client_credentials" : authenticator.grant_type,
+      grant_type: usesRefreshToken ? authenticator.grant_type : "client_credentials",
       refresh_token:
         authenticator.grant_type === "client_credentials" || !usesRefreshToken
           ? undefined
@@ -839,6 +905,7 @@ export function builderAuthenticatorToManifest(
       decoder: authenticator.decoder === "XML" ? { type: XmlDecoderType.XmlDecoder } : undefined,
     };
   }
+  // @ts-expect-error TODO: connector builder team to fix this https://github.com/airbytehq/airbyte-internal-issues/issues/12252
   return authenticator as HttpRequesterAuthenticator;
 }
 
@@ -1274,7 +1341,7 @@ const builderDpathExtractorToManifest = (extractor: BuilderDpathExtractor): Dpat
   };
 };
 
-function builderStreamToDeclarativeSteam(stream: BuilderStream, allStreams: BuilderStream[]): DeclarativeStream {
+function builderStreamToDeclarativeStream(stream: BuilderStream, allStreams: BuilderStream[]): DeclarativeStream {
   // cast to tell typescript which properties will be present after resolving the ref
   const requesterRef = {
     $ref: "#/definitions/base_requester",
@@ -1366,6 +1433,64 @@ function builderStreamToDeclarativeSteam(stream: BuilderStream, allStreams: Buil
   return merge({} as DeclarativeStream, stream.unknownFields ? load(stream.unknownFields) : {}, declarativeStream);
 }
 
+function builderDynamicStreamToDeclarativeStream(dynamicStream: BuilderDynamicStream): DynamicDeclarativeStream {
+  // the user operates on the streamTemplate, including component-mapped fields using `record`
+  // we need to extract the component-mapped fields and add them to the components_mapping array
+
+  const declarativeStream: DeclarativeStream = {
+    ...builderStreamToDeclarativeStream(dynamicStream.streamTemplate, []),
+    schema_loader: {
+      type: InlineSchemaLoaderType.InlineSchemaLoader,
+      schema: schemaRef(`${dynamicStream.dynamicStreamName}_stream_template`),
+    },
+  };
+
+  const streamTemplateEntries = getRecursiveObjectEntries(declarativeStream);
+  const { templateEntries, mappedEntries } = streamTemplateEntries.reduce<{
+    templateEntries: Array<[string, unknown]>;
+    mappedEntries: Array<[string, unknown]>;
+  }>(
+    (acc, entry) => {
+      const isMapped = typeof entry[1] === "string" && entry[1].includes("components_values");
+      if (isMapped) {
+        acc.mappedEntries.push(entry);
+        acc.templateEntries.push([entry[0], "placeholder"]); // keep a populated string here to ensure validation
+      } else {
+        acc.templateEntries.push(entry);
+      }
+      return acc;
+    },
+    { templateEntries: [], mappedEntries: [] }
+  );
+
+  const unmappedStreamTemplate = objectFromRecursiveEntries(templateEntries) as DeclarativeStream;
+
+  const declarativeDynamicStream: DynamicDeclarativeStream = {
+    type: DynamicDeclarativeStreamType.DynamicDeclarativeStream,
+    name: dynamicStream.dynamicStreamName,
+    components_resolver: {
+      ...dynamicStream.componentsResolver,
+      components_mapping: mappedEntries.map(([key, value]) => ({
+        type: "ComponentMappingDefinition" as const,
+        field_path: key.split("."),
+        value: value as string,
+      })),
+    },
+    stream_template: unmappedStreamTemplate,
+  };
+
+  // if there isn't a record filter condition, remove the filter component
+  if (
+    !(declarativeDynamicStream.components_resolver as BuilderComponentsResolver).retriever.record_selector.record_filter
+      ?.condition
+  ) {
+    delete (declarativeDynamicStream.components_resolver as BuilderComponentsResolver).retriever.record_selector
+      .record_filter;
+  }
+
+  return declarativeDynamicStream;
+}
+
 export const builderFormValuesToMetadata = (values: BuilderFormValues): BuilderMetadata => {
   const testedStreams = {} as TestedStreams;
   values.streams.forEach((stream) => {
@@ -1374,10 +1499,26 @@ export const builderFormValuesToMetadata = (values: BuilderFormValues): BuilderM
     }
   });
 
+  Object.values(values.generatedStreams)
+    .flat()
+    .forEach((generatedStream) => {
+      if (generatedStream.testResults) {
+        testedStreams[generatedStream.name] = generatedStream.testResults;
+      }
+    });
+
   const assistData = values.assist ?? {};
 
   return {
-    autoImportSchema: Object.fromEntries(values.streams.map((stream) => [stream.name, stream.autoImportSchema])),
+    autoImportSchema: {
+      ...Object.fromEntries(values.streams.map((stream) => [stream.name, stream.autoImportSchema])),
+      ...Object.fromEntries(
+        values.dynamicStreams.map((dynamicStream) => [
+          dynamicStream.dynamicStreamName,
+          dynamicStream.streamTemplate.autoImportSchema,
+        ])
+      ),
+    },
     testedStreams,
     assist: assistData,
   };
@@ -1408,14 +1549,17 @@ export const addDeclarativeOAuthAuthenticatorToSpec = (
         extract_output: isRefreshTokenFlowEnabled
           ? [authenticator.declarative.access_token_key, "refresh_token"]
           : [authenticator.declarative.access_token_key],
+        // @ts-expect-error TODO: connector builder team to fix this https://github.com/airbytehq/airbyte-internal-issues/issues/12252
         state: authenticator.declarative.state ? JSON.parse(authenticator.declarative.state) : undefined,
 
         access_token_headers: authenticator.declarative.access_token_headers
-          ? Object.fromEntries(authenticator.declarative.access_token_headers)
+          ? // @ts-expect-error TODO: connector builder team to fix this https://github.com/airbytehq/airbyte-internal-issues/issues/12252
+            Object.fromEntries(authenticator.declarative.access_token_headers)
           : undefined,
 
         access_token_params: authenticator.declarative.access_token_params
-          ? Object.fromEntries(authenticator.declarative.access_token_params)
+          ? // @ts-expect-error TODO: connector builder team to fix this https://github.com/airbytehq/airbyte-internal-issues/issues/12252
+            Object.fromEntries(authenticator.declarative.access_token_params)
           : undefined,
       } as OAuthConfigSpecificationOauthConnectorInputSpecification,
       complete_oauth_output_specification: {
@@ -1475,6 +1619,7 @@ export const builderInputsToSpec = (inputs: BuilderFormInput[]): Spec => {
   };
 
   return {
+    // @ts-expect-error TODO: connector builder team to fix this https://github.com/airbytehq/airbyte-internal-issues/issues/12252
     connection_specification: specSchema,
     type: "Spec",
   };
@@ -1482,7 +1627,11 @@ export const builderInputsToSpec = (inputs: BuilderFormInput[]): Spec => {
 
 export const convertToManifest = (values: BuilderFormValues): ConnectorManifest => {
   const manifestStreams: DeclarativeStream[] = values.streams.map((stream) =>
-    builderStreamToDeclarativeSteam(stream, values.streams)
+    builderStreamToDeclarativeStream(stream, values.streams)
+  );
+
+  const manifestDynamicStreams = values.dynamicStreams.map((dynamicStream) =>
+    builderDynamicStreamToDeclarativeStream(dynamicStream)
   );
 
   const streamNames = values.streams.map((s) => s.name);
@@ -1490,8 +1639,42 @@ export const convertToManifest = (values: BuilderFormValues): ConnectorManifest 
   const correctedCheckStreams =
     validCheckStreamNames.length > 0 ? validCheckStreamNames : streamNames.length > 0 ? [streamNames[0]] : [];
 
+  const dynamicStreamNames = values.dynamicStreams.map((s) => s.dynamicStreamName);
+  const validCheckDynamicStream = (values.dynamicStreamCheckConfigs ?? []).filter((dynamicStreamCheckConfig) =>
+    dynamicStreamNames.includes(dynamicStreamCheckConfig.dynamic_stream_name)
+  );
+  const correctedCheckDynamicStreams =
+    validCheckDynamicStream.length > 0
+      ? validCheckDynamicStream
+      : dynamicStreamNames.length > 0
+      ? [
+          {
+            type: DynamicStreamCheckConfigType.DynamicStreamCheckConfig,
+            dynamic_stream_name: dynamicStreamNames[0],
+            stream_count: 1,
+          },
+        ]
+      : [];
+
   const streamNameToStream = Object.fromEntries(manifestStreams.map((stream) => [stream.name, stream]));
   const streamRefs = manifestStreams.map((stream) => streamRef(stream.name!));
+
+  const dynamicStreamNameToSchema = Object.fromEntries(
+    values.dynamicStreams.map((dynamicStream) => {
+      let schema;
+      if (dynamicStream.streamTemplate.schema) {
+        try {
+          schema = JSON.parse(dynamicStream.streamTemplate.schema);
+        } catch (e) {
+          schema = JSON.parse(DEFAULT_SCHEMA);
+        }
+      } else {
+        schema = JSON.parse(DEFAULT_SCHEMA);
+      }
+      schema.additionalProperties = true;
+      return [`${dynamicStream.dynamicStreamName}_stream_template`, schema];
+    })
+  );
 
   const streamNameToSchema = Object.fromEntries(
     values.streams.map((stream) => {
@@ -1526,15 +1709,20 @@ export const convertToManifest = (values: BuilderFormValues): ConnectorManifest 
     type: "DeclarativeSource",
     check: {
       type: "CheckStream",
-      stream_names: correctedCheckStreams,
+      ...(correctedCheckStreams.length > 0 ? { stream_names: correctedCheckStreams } : {}),
+      ...(correctedCheckDynamicStreams.length > 0
+        ? { dynamic_streams_check_configs: correctedCheckDynamicStreams }
+        : {}),
     },
     definitions: {
       base_requester: baseRequester,
       streams: streamNameToStream,
     },
     streams: streamRefs,
-    schemas: streamNameToSchema,
+    ...(manifestDynamicStreams.length > 0 ? { dynamic_streams: manifestDynamicStreams } : {}),
+    schemas: { ...streamNameToSchema, ...dynamicStreamNameToSchema },
     spec,
+    // @ts-expect-error TODO: connector builder team to fix this https://github.com/airbytehq/airbyte-internal-issues/issues/12252
     metadata: builderFormValuesToMetadata(values),
     description: values.description,
   };
@@ -1544,7 +1732,6 @@ function schemaRef(streamName: string) {
   return { $ref: `#/schemas/${streamName}` };
 }
 
-export const DEFAULT_JSON_MANIFEST_VALUES: ConnectorManifest = convertToManifest(DEFAULT_BUILDER_FORM_VALUES);
 export const DEFAULT_JSON_MANIFEST_STREAM: DeclarativeStream = {
   type: "DeclarativeStream",
   retriever: {
@@ -1559,16 +1746,154 @@ export const DEFAULT_JSON_MANIFEST_STREAM: DeclarativeStream = {
     requester: {
       type: "HttpRequester",
       url_base: "",
-      authenticator: undefined,
-      path: "",
       http_method: "GET",
     },
-    paginator: undefined,
   },
-  primary_key: undefined,
+};
+export const DEFAULT_JSON_MANIFEST_VALUES: ConnectorManifest = {
+  type: "DeclarativeSource",
+  version: CDK_VERSION,
+  check: {
+    type: "CheckStream",
+    stream_names: [],
+  },
+  streams: [],
+  spec: {
+    type: "Spec",
+    connection_specification: {
+      type: "object",
+      properties: {},
+    },
+  },
+};
+
+export const DEFAULT_JSON_MANIFEST_STREAM_WITH_URL_BASE: DeclarativeStream = {
+  type: "DeclarativeStream",
+  retriever: {
+    type: "SimpleRetriever",
+    record_selector: {
+      type: "RecordSelector",
+      extractor: {
+        type: "DpathExtractor",
+        field_path: [],
+      },
+    },
+    requester: {
+      type: "HttpRequester",
+      http_method: "GET",
+    },
+  },
+};
+export const DEFAULT_JSON_MANIFEST_VALUES_WITH_STREAM: ConnectorManifest = {
+  ...DEFAULT_JSON_MANIFEST_VALUES,
+  streams: [DEFAULT_JSON_MANIFEST_STREAM_WITH_URL_BASE],
+};
+
+export const DEFAULT_SYNC_STREAM: DeclarativeStream = {
+  type: DeclarativeStreamType.DeclarativeStream,
+  retriever: {
+    type: SimpleRetrieverType.SimpleRetriever,
+    record_selector: {
+      type: RecordSelectorType.RecordSelector,
+      extractor: {
+        type: DpathExtractorType.DpathExtractor,
+        field_path: [],
+      },
+    },
+    requester: {
+      type: HttpRequesterType.HttpRequester,
+      http_method: HttpRequesterHttpMethod.GET,
+    },
+  },
+};
+
+export const DEFAULT_ASYNC_STREAM: DeclarativeStream = {
+  type: DeclarativeStreamType.DeclarativeStream,
+  retriever: {
+    type: AsyncRetrieverType.AsyncRetriever,
+    record_selector: {
+      type: RecordSelectorType.RecordSelector,
+      extractor: {
+        type: DpathExtractorType.DpathExtractor,
+        field_path: [],
+      },
+    },
+    creation_requester: {
+      type: HttpRequesterType.HttpRequester,
+      http_method: HttpRequesterHttpMethod.POST,
+    },
+    polling_requester: {
+      type: HttpRequesterType.HttpRequester,
+      http_method: HttpRequesterHttpMethod.GET,
+    },
+    download_requester: {
+      type: HttpRequesterType.HttpRequester,
+      http_method: HttpRequesterHttpMethod.GET,
+    },
+    status_mapping: {
+      type: AsyncJobStatusMapType.AsyncJobStatusMap,
+      running: [],
+      completed: [],
+      failed: [],
+      timeout: [],
+    },
+    status_extractor: {
+      type: DpathExtractorType.DpathExtractor,
+      field_path: [],
+    },
+    download_target_extractor: {
+      type: DpathExtractorType.DpathExtractor,
+      field_path: [],
+    },
+  },
+};
+
+export const DEFAULT_CUSTOM_STREAM: DeclarativeStream = {
+  type: DeclarativeStreamType.DeclarativeStream,
+  retriever: {
+    type: CustomRetrieverType.CustomRetriever,
+    class_name: "",
+  },
+};
+
+export const DEFAULT_DYNAMIC_STREAM: DynamicDeclarativeStream = {
+  type: DynamicDeclarativeStreamType.DynamicDeclarativeStream,
+  stream_template: DEFAULT_SYNC_STREAM,
+  components_resolver: {
+    type: HttpComponentsResolverType.HttpComponentsResolver,
+    retriever: {
+      type: SimpleRetrieverType.SimpleRetriever,
+      record_selector: {
+        type: RecordSelectorType.RecordSelector,
+        extractor: {
+          type: DpathExtractorType.DpathExtractor,
+          field_path: [],
+        },
+      },
+      requester: {
+        type: HttpRequesterType.HttpRequester,
+        http_method: HttpRequesterHttpMethod.GET,
+      },
+    },
+    components_mapping: [],
+  },
 };
 
 export type StreamPathFn = <T extends string>(fieldPath: T) => `formValues.streams.${number}.${T}`;
+
+export type DynamicStreamStreamTemplatePathFn = <T extends string>(
+  fieldPath: T
+) => `formValues.dynamicStreams.${number}.streamTemplate.${T}`;
+
+export type GeneratedStreamStreamTemplatePathFn = <T extends string>(
+  fieldPath: T
+) => `formValues.generatedStreams.${string}.${number}.${T}`;
+
+export type AnyDeclarativeStreamPathFn =
+  | StreamPathFn
+  | DynamicStreamStreamTemplatePathFn
+  | GeneratedStreamStreamTemplatePathFn;
+export type DynamicStreamPathFn = <T extends string>(fieldPath: T) => `formValues.dynamicStreams.${number}.${T}`;
 export type CreationRequesterPathFn = <T extends string>(
   fieldPath: T
 ) => `formValues.streams.${number}.creationRequester.${T}`;
@@ -1581,3 +1906,50 @@ export type DownloadRequesterPathFn = <T extends string>(
 
 export const concatPath = <TBase extends string, TPath extends string>(base: TBase, path: TPath) =>
   `${base}.${path}` as const;
+
+export const getStreamFieldPath = <T extends string>(streamId: StreamId, fieldPath?: T, templatePath?: boolean) => {
+  const basePath =
+    streamId.type === "stream"
+      ? `manifest.streams.${streamId.index}`
+      : streamId.type === "dynamic_stream"
+      ? templatePath
+        ? `manifest.dynamic_streams.${streamId.index}.stream_template`
+        : `manifest.dynamic_streams.${streamId.index}`
+      : `generatedStreams.${streamId.dynamicStreamName}.${streamId.index}`;
+
+  if (fieldPath) {
+    return `${basePath}.${fieldPath}`;
+  }
+  return basePath;
+};
+
+function getRecursiveObjectEntries(obj: object, prefix: string = ""): Array<[string, unknown]> {
+  return Object.entries(obj).flatMap(([key, value]) => {
+    const cleanedPrefix = prefix ? `${prefix}.` : "";
+    const valueIsEmptyArray = Array.isArray(value) && value.length === 0;
+    if (typeof value === "object" && value !== null && !valueIsEmptyArray) {
+      return getRecursiveObjectEntries(value as Record<string, unknown>, `${cleanedPrefix}${key}`);
+    }
+    return [[`${cleanedPrefix}${key}`, value]];
+  });
+}
+
+function objectFromRecursiveEntries(entries: Array<[string, unknown]>) {
+  return entries.reduce<Record<string, unknown>>((acc, [key, value]) => {
+    const pathParts = key.split(".");
+    const finalKey = pathParts.at(-1)!;
+    let current = acc;
+
+    while (pathParts.length > 1) {
+      const next = pathParts.shift()!;
+      const peek = pathParts.at(0);
+      const peekIsIndex = peek && peek.match(/^\d+$/);
+
+      current[next] = current[next] || (peekIsIndex ? [] : {});
+      current = current[next] as Record<string, unknown>;
+    }
+
+    current[finalKey] = value;
+    return acc;
+  }, {});
+}

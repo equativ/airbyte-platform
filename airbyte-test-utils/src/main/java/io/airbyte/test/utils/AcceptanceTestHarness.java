@@ -26,6 +26,7 @@ import io.airbyte.api.client.model.generated.AirbyteStreamAndConfiguration;
 import io.airbyte.api.client.model.generated.AirbyteStreamConfiguration;
 import io.airbyte.api.client.model.generated.AttemptInfoRead;
 import io.airbyte.api.client.model.generated.CheckConnectionRead;
+import io.airbyte.api.client.model.generated.CheckConnectionRead.Status;
 import io.airbyte.api.client.model.generated.ConnectionCreate;
 import io.airbyte.api.client.model.generated.ConnectionIdRequestBody;
 import io.airbyte.api.client.model.generated.ConnectionRead;
@@ -37,6 +38,7 @@ import io.airbyte.api.client.model.generated.ConnectionStatus;
 import io.airbyte.api.client.model.generated.ConnectionUpdate;
 import io.airbyte.api.client.model.generated.CustomDestinationDefinitionCreate;
 import io.airbyte.api.client.model.generated.CustomSourceDefinitionCreate;
+import io.airbyte.api.client.model.generated.DataplaneGroupListRequestBody;
 import io.airbyte.api.client.model.generated.DestinationCreate;
 import io.airbyte.api.client.model.generated.DestinationDefinitionCreate;
 import io.airbyte.api.client.model.generated.DestinationDefinitionIdWithWorkspaceId;
@@ -46,6 +48,7 @@ import io.airbyte.api.client.model.generated.DestinationDefinitionUpdate;
 import io.airbyte.api.client.model.generated.DestinationIdRequestBody;
 import io.airbyte.api.client.model.generated.DestinationRead;
 import io.airbyte.api.client.model.generated.DestinationSyncMode;
+import io.airbyte.api.client.model.generated.DestinationUpdate;
 import io.airbyte.api.client.model.generated.GetAttemptStatsRequestBody;
 import io.airbyte.api.client.model.generated.JobConfigType;
 import io.airbyte.api.client.model.generated.JobDebugInfoRead;
@@ -81,6 +84,7 @@ import io.airbyte.api.client.model.generated.SourceDiscoverSchemaRequestBody;
 import io.airbyte.api.client.model.generated.SourceIdRequestBody;
 import io.airbyte.api.client.model.generated.SourceRead;
 import io.airbyte.api.client.model.generated.SourceReadList;
+import io.airbyte.api.client.model.generated.SourceUpdate;
 import io.airbyte.api.client.model.generated.StreamStatusListRequestBody;
 import io.airbyte.api.client.model.generated.StreamStatusReadList;
 import io.airbyte.api.client.model.generated.SyncMode;
@@ -164,7 +168,7 @@ public class AcceptanceTestHarness {
   private static final DockerImageName SOURCE_POSTGRES_IMAGE_NAME = DockerImageName.parse("debezium/postgres:15-alpine")
       .asCompatibleSubstituteFor("postgres");
 
-  private static final String TEMPORAL_HOST = "temporal.airbyte.dev:80";
+  private static final String TEMPORAL_HOST = java.util.Optional.ofNullable(System.getenv("TEMPORAL_HOST")).orElse("temporal.airbyte.dev:80");
 
   private static final String SOURCE_E2E_TEST_CONNECTOR_VERSION = "0.1.2";
   private static final String DESTINATION_E2E_TEST_CONNECTOR_VERSION = "0.1.1";
@@ -214,6 +218,7 @@ public class AcceptanceTestHarness {
   private static boolean isKube;
   private static boolean isMinikube;
   private static boolean isGke;
+  private static boolean isCI;
   private static boolean isMac;
   private static boolean ensureCleanSlate;
   private CloudSqlDatabaseProvisioner cloudSqlDatabaseProvisioner;
@@ -231,6 +236,7 @@ public class AcceptanceTestHarness {
   private final AirbyteApiClient apiClient;
   private final TestFlagsSetter testFlagsSetter;
   private final UUID defaultWorkspaceId;
+  private final UUID dataplaneGroupId;
   private final String postgresSqlInitFile;
 
   private final List<UUID> sourceIds = Lists.newArrayList();
@@ -304,15 +310,18 @@ public class AcceptanceTestHarness {
         List.of(),
         List.of(),
         PUBLIC,
-        true);
+        true,
+        null);
     final AirbyteStreamConfiguration expectedStreamConfig = new AirbyteStreamConfiguration(
         SyncMode.FULL_REFRESH,
         DestinationSyncMode.OVERWRITE,
         List.of(),
+        null,
         List.of(),
         STREAM_NAME.replace(".", "_"),
         true,
         true,
+        null,
         null,
         List.of(),
         List.of(),
@@ -329,6 +338,9 @@ public class AcceptanceTestHarness {
         .withBackoff(Duration.ofSeconds(JITTER_MAX_INTERVAL_SECS), Duration.ofSeconds(FINAL_INTERVAL_SECS))
         .withMaxRetries(MAX_TRIES)
         .build();
+
+    dataplaneGroupId = apiClient.getDataplaneGroupApi().listDataplaneGroups(new DataplaneGroupListRequestBody(DEFAULT_ORGANIZATION_ID))
+        .getDataplaneGroups().getFirst().getDataplaneGroupId();
 
     LOGGER.info("Using external deployment of airbyte.");
   }
@@ -499,6 +511,7 @@ public class AcceptanceTestHarness {
     isKube = System.getenv().containsKey("KUBE");
     isMinikube = System.getenv().containsKey("IS_MINIKUBE");
     isGke = System.getenv().containsKey("IS_GKE");
+    isCI = System.getenv().containsKey("CI");
     isMac = System.getProperty("os.name").startsWith("Mac");
     ensureCleanSlate = System.getenv("ENSURE_CLEAN_SLATE") != null
         && System.getenv("ENSURE_CLEAN_SLATE").equalsIgnoreCase("true");
@@ -549,7 +562,7 @@ public class AcceptanceTestHarness {
   public SourceDiscoverSchemaRead discoverSourceSchemaWithId(final UUID sourceId) throws IOException {
     return Failsafe.with(retryPolicy).get(() -> {
       final var result =
-          apiClient.getSourceApi().discoverSchemaForSource(new SourceDiscoverSchemaRequestBody(sourceId, null, true, null, null));
+          apiClient.getSourceApi().discoverSchemaForSource(new SourceDiscoverSchemaRequestBody(sourceId, null, true, null));
       if (result.getCatalog() == null) {
         throw new RuntimeException("no catalog returned, retrying...");
       }
@@ -564,7 +577,7 @@ public class AcceptanceTestHarness {
 
   public AirbyteCatalog discoverSourceSchemaWithoutCache(final UUID sourceId) throws IOException {
     return apiClient.getSourceApi().discoverSchemaForSource(
-        new SourceDiscoverSchemaRequestBody(sourceId, null, true, null, null)).getCatalog();
+        new SourceDiscoverSchemaRequestBody(sourceId, null, true, null)).getCatalog();
   }
 
   public DestinationDefinitionSpecificationRead getDestinationDefinitionSpec(final UUID destinationDefinitionId, final UUID workspaceId)
@@ -590,6 +603,10 @@ public class AcceptanceTestHarness {
 
   public Database getDatabase(final DataSource dataSource) {
     return new Database(Databases.createDslContext(dataSource, SQLDialect.POSTGRES));
+  }
+
+  public UUID getDataplaneGroupId() {
+    return dataplaneGroupId;
   }
 
   /**
@@ -661,7 +678,8 @@ public class AcceptanceTestHarness {
         create.getScheduleData(),
         null,
         create.getCatalogId(),
-        create.getGeography(),
+        null,
+        create.getDataplaneGroupId(),
         null,
         null,
         null,
@@ -697,7 +715,8 @@ public class AcceptanceTestHarness {
             create.getScheduleData(),
             null,
             create.getCatalogId(),
-            create.getGeography(),
+            null,
+            create.getDataplaneGroupId(),
             null,
             null,
             null,
@@ -741,6 +760,7 @@ public class AcceptanceTestHarness {
             null,
             null,
             null,
+            null,
             null));
   }
 
@@ -754,6 +774,7 @@ public class AcceptanceTestHarness {
             null,
             null,
             catalog,
+            null,
             null,
             null,
             null,
@@ -786,6 +807,7 @@ public class AcceptanceTestHarness {
             null,
             null,
             sourceCatalogId,
+            null,
             null,
             null,
             null,
@@ -848,6 +870,21 @@ public class AcceptanceTestHarness {
     return destination;
   }
 
+  public DestinationRead updateDestination(final UUID destinationId, final JsonNode updatedConfig, final String name) throws IOException {
+    final DestinationUpdate destinationUpdate = new DestinationUpdate(
+        destinationId,
+        updatedConfig,
+        name,
+        null);
+
+    final CheckConnectionRead checkResponse = apiClient.getDestinationApi().checkConnectionToDestinationForUpdate(destinationUpdate);
+    if (checkResponse.getStatus() != Status.SUCCEEDED) {
+      throw new RuntimeException("Check connection failed: " + checkResponse.getMessage());
+    }
+
+    return Failsafe.with(retryPolicy).get(() -> apiClient.getDestinationApi().updateDestination(destinationUpdate));
+  }
+
   public CheckConnectionRead.Status checkDestination(final UUID destinationId) throws IOException {
     return apiClient.getDestinationApi()
         .checkConnectionToDestination(new DestinationIdRequestBody(destinationId)).getStatus();
@@ -878,6 +915,10 @@ public class AcceptanceTestHarness {
 
   public JsonNode getSourceDbConfig() {
     return getDbConfig(sourcePsql, false, false, sourceDatabaseName);
+  }
+
+  public JsonNode getSourceDbConfigWithHiddenPassword() {
+    return getDbConfig(sourcePsql, true, false, sourceDatabaseName);
   }
 
   public JsonNode getDestinationDbConfig() {
@@ -912,7 +953,11 @@ public class AcceptanceTestHarness {
                                           final boolean hiddenPassword,
                                           final boolean withSchema) {
     final Map<Object, Object> dbConfig = new HashMap<>();
-    dbConfig.put(JdbcUtils.HOST_KEY, getHostname());
+    if (isCI && !isGke) {
+      dbConfig.put(JdbcUtils.HOST_KEY, psql.getHost());
+    } else {
+      dbConfig.put(JdbcUtils.HOST_KEY, getHostname());
+    }
 
     if (hiddenPassword) {
       dbConfig.put(JdbcUtils.PASSWORD_KEY, "**********");
@@ -1033,6 +1078,22 @@ public class AcceptanceTestHarness {
     return source;
   }
 
+  public SourceRead updateSource(final UUID sourceId, final JsonNode updatedConfig, final String name) throws IOException {
+    final SourceUpdate sourceUpdate = new SourceUpdate(
+        sourceId,
+        updatedConfig,
+        name,
+        null,
+        null);
+
+    final CheckConnectionRead checkResponse = apiClient.getSourceApi().checkConnectionToSourceForUpdate(sourceUpdate);
+    if (checkResponse.getStatus() != Status.SUCCEEDED) {
+      throw new RuntimeException("Check connection failed: " + checkResponse.getMessage());
+    }
+
+    return Failsafe.with(retryPolicy).get(() -> apiClient.getSourceApi().updateSource(sourceUpdate));
+  }
+
   public CheckConnectionRead checkSource(final UUID sourceId) {
     return Failsafe.with(retryPolicy).get(() -> apiClient.getSourceApi().checkConnectionToSource(new SourceIdRequestBody(sourceId)));
   }
@@ -1058,13 +1119,15 @@ public class AcceptanceTestHarness {
         .orElseThrow());
   }
 
-  public void updateDestinationDefinitionVersion(final UUID destinationDefinitionId, final String dockerImageTag) throws IOException {
-    apiClient.getDestinationDefinitionApi().updateDestinationDefinition(
+  public void updateDestinationDefinitionVersion(final UUID destinationDefinitionId, final String dockerImageTag)
+      throws IOException {
+    Failsafe.with(retryPolicy).run(() -> apiClient.getDestinationDefinitionApi().updateDestinationDefinition(
         new DestinationDefinitionUpdate(
             destinationDefinitionId,
-            null,
             dockerImageTag,
-            null));
+            defaultWorkspaceId,
+            null,
+            null)));
   }
 
   public void updateSourceDefinitionVersion(final UUID sourceDefinitionId, final String dockerImageTag) throws IOException {
@@ -1072,6 +1135,7 @@ public class AcceptanceTestHarness {
         new SourceDefinitionUpdate(
             sourceDefinitionId,
             dockerImageTag,
+            defaultWorkspaceId,
             null,
             null));
   }
@@ -1108,6 +1172,7 @@ public class AcceptanceTestHarness {
             null,
             null,
             ConnectionStatus.DEPRECATED,
+            null,
             null,
             null,
             null,
@@ -1334,6 +1399,7 @@ public class AcceptanceTestHarness {
             null,
             null,
             null,
+            null,
             nonBreakingChangesPreference,
             backfillPreference,
             null,
@@ -1382,10 +1448,12 @@ public class AcceptanceTestHarness {
             SyncMode.INCREMENTAL,
             DestinationSyncMode.APPEND,
             cursorField,
+            null,
             stream.getConfig().getPrimaryKey(),
             stream.getConfig().getAliasName(),
             stream.getConfig().getSelected(),
             stream.getConfig().getSuggested(),
+            stream.getConfig().getIncludeFiles(),
             stream.getConfig().getFieldSelectionEnabled(),
             stream.getConfig().getSelectedFields(),
             stream.getConfig().getHashedFields(),
@@ -1418,6 +1486,7 @@ public class AcceptanceTestHarness {
             operation.getOperatorConfiguration(),
             operation.getOperationId())),
         connection.getSourceCatalogId(),
+        null,
         null,
         null,
         null,

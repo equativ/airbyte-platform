@@ -22,13 +22,13 @@ import io.airbyte.featureflag.UseRuntimeSecretPersistence
 import io.airbyte.featureflag.Workspace
 import io.airbyte.persistence.job.models.IntegrationLauncherConfig
 import io.airbyte.persistence.job.models.ReplicationInput
-import io.airbyte.workers.helper.ConnectorApmSupportHelper
 import io.airbyte.workers.input.getAttemptId
 import io.airbyte.workers.input.getJobId
 import io.airbyte.workers.pod.Metadata.AWS_ASSUME_ROLE_EXTERNAL_ID
-import io.airbyte.workers.pod.ResourceConversionUtils
 import io.airbyte.workload.launcher.constants.EnvVarConstants
+import io.airbyte.workload.launcher.helper.ConnectorApmSupportHelper
 import io.airbyte.workload.launcher.model.toEnvVarList
+import io.airbyte.workload.launcher.pods.ResourceConversionUtils
 import io.fabric8.kubernetes.api.model.EnvVar
 import io.micronaut.context.annotation.Value
 import jakarta.inject.Named
@@ -67,6 +67,9 @@ class RuntimeEnvVarFactory(
     val optionsOverride: String = featureFlagClient.stringVariation(ContainerOrchestratorJavaOpts, Connection(replicationInput.connectionId))
     val javaOpts = optionsOverride.trim().ifEmpty { containerOrchestratorJavaOpts }
     val secretPersistenceEnvVars = getSecretPersistenceEnvVars(replicationInput.connectionContext.organizationId)
+    val useFileTransferEnvVar =
+      replicationInput.useFileTransfer == true &&
+        (replicationInput.omitFileTransferEnvVar == null || replicationInput.omitFileTransferEnvVar == false)
 
     return listOf(
       EnvVar(AirbyteEnvVar.OPERATION_TYPE.toString(), WorkloadType.SYNC.toString(), null),
@@ -74,7 +77,7 @@ class RuntimeEnvVarFactory(
       EnvVar(AirbyteEnvVar.JOB_ID.toString(), replicationInput.getJobId(), null),
       EnvVar(AirbyteEnvVar.ATTEMPT_ID.toString(), replicationInput.getAttemptId().toString(), null),
       EnvVar(AirbyteEnvVar.CONNECTION_ID.toString(), replicationInput.connectionId.toString(), null),
-      EnvVar(EnvVarConstants.USE_FILE_TRANSFER, replicationInput.useFileTransfer.toString(), null),
+      EnvVar(EnvVarConstants.USE_FILE_TRANSFER, useFileTransferEnvVar.toString(), null),
       EnvVar(EnvVarConstants.JAVA_OPTS_ENV_VAR, javaOpts, null),
       EnvVar(EnvVarConstants.AIRBYTE_STAGING_DIRECTORY, stagingMountPath, null),
     ) + secretPersistenceEnvVars
