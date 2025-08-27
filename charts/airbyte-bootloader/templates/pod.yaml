@@ -18,6 +18,9 @@ metadata:
       {{- include "airbyte.tplvalues.render" (dict "value" .Values.podAnnotations "context" $) | nindent 4 }}
     {{- end }}
 spec:
+  {{- if .Values.global.shareProcessNamespace }}
+  shareProcessNamespace: true
+  {{- end }}
   serviceAccountName: {{ default .Values.global.serviceAccountName .Values.serviceAccountName }}
   {{- if .Values.global.imagePullSecrets }}
   imagePullSecrets:
