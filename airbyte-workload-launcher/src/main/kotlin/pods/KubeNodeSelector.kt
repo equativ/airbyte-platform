@@ -7,11 +7,8 @@ package io.airbyte.workload.launcher.pods
 import com.google.common.annotations.VisibleForTesting
 import io.airbyte.commons.workers.config.WorkerConfigs
 import io.airbyte.featureflag.Connection
-import io.airbyte.featureflag.Context
 import io.airbyte.featureflag.FeatureFlagClient
-import io.airbyte.featureflag.Multi
 import io.airbyte.featureflag.NodeSelectorOverride
-import jakarta.inject.Named
 import jakarta.inject.Singleton
 import java.util.UUID
 
@@ -21,7 +18,6 @@ import java.util.UUID
 @Singleton
 class KubeNodeSelector(
   private val featureFlagClient: FeatureFlagClient,
-  @Named("infraFlagContexts") private val contexts: List<Context>,
 ) {
   fun getNodeSelectors(
     usesCustomConnector: Boolean,
@@ -31,18 +27,20 @@ class KubeNodeSelector(
     val overrides = getNodeSelectorsOverride(connectionId = connectionId)
     return if (!overrides.isNullOrEmpty()) {
       overrides
-    } else if (usesCustomConnector) {
-      workerConfigs.workerIsolatedKubeNodeSelectors ?: workerConfigs.workerKubeNodeSelectors
     } else {
-      workerConfigs.workerKubeNodeSelectors
+      if (usesCustomConnector) {
+        workerConfigs.workerIsolatedKubeNodeSelectors ?: workerConfigs.workerKubeNodeSelectors
+      } else {
+        workerConfigs.workerKubeNodeSelectors
+      }!!
     }
   }
 
   private fun getNodeSelectorsOverride(connectionId: UUID?): Map<String, String>? =
-    if (contexts.isEmpty() && connectionId == null) {
+    if (connectionId == null) {
       null
     } else {
-      val flagContext = Multi(contexts.toMutableList().also { contextList -> connectionId?.let { contextList.add(Connection(it)) } })
+      val flagContext = Connection(connectionId)
       val nodeSelectorOverride = featureFlagClient.stringVariation(NodeSelectorOverride, flagContext)
       if (nodeSelectorOverride.isBlank()) {
         null

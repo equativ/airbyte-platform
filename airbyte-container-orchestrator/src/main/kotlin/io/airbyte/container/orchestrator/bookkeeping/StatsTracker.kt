@@ -57,6 +57,7 @@ data class StreamStatsCounters(
   val maxSecondsBetweenStateEmittedAndCommitted: LongAccumulator = LongAccumulator(Math::max, 0),
   val meanSecondsBetweenStateEmittedAndCommitted: AtomicDouble = AtomicDouble(),
   val unreliableStateOperations: AtomicBoolean = AtomicBoolean(false),
+  val rejectedRecordsCount: AtomicLong = AtomicLong(),
 )
 
 /**
@@ -96,6 +97,8 @@ private const val DEST_COMMITTED_RECORDS_COUNT = "committedRecordsCount"
 private const val DEST_EMITTED_RECORDS_COUNT = "emittedRecordsCount"
 
 private const val DEST_COMMITTED_BYTES_COUNT = "committedBytesCount"
+
+private const val DEST_REJECTED_RECORDS_COUNT = "rejectedRecordsCount"
 
 /**
  * Track Stats for a specific stream.
@@ -137,7 +140,7 @@ class StreamStatsTracker(
     if (!isBookkeeperMode) {
       return
     }
-    logger.info { "Dummy stats message from destination $recordMessage" }
+    logger.debug { "Dummy stats message from destination $recordMessage" }
     val byteCount =
       recordMessage.additionalProperties[DEST_EMITTED_BYTES_COUNT]
         .asLongOrZero()
@@ -215,7 +218,7 @@ class StreamStatsTracker(
    */
   fun trackStateFromSource(stateMessage: AirbyteStateMessage) {
     if (isBookkeeperMode) {
-      logger.info { "State message from source $stateMessage" }
+      logger.debug { "State message from source $stateMessage" }
     }
     val currentTime = LocalDateTime.now()
     streamStats.sourceStateCount.incrementAndGet()
@@ -277,7 +280,7 @@ class StreamStatsTracker(
    */
   fun trackStateFromDestination(stateMessage: AirbyteStateMessage) {
     if (isBookkeeperMode) {
-      logger.info { "State message from destination : $stateMessage" }
+      logger.debug { "State message from destination : $stateMessage" }
     }
     val currentTime = LocalDateTime.now()
     streamStats.destinationStateCount.incrementAndGet()
@@ -321,20 +324,49 @@ class StreamStatsTracker(
       stateIds.remove(stagedStats.stateId)
 
       if (isBookkeeperMode) {
-        handleStateStatsBookkeeperMode(stateMessage, stagedStats)
-      }
+        val (totalCommittedRecords, totalCommittedBytes, totalRejectedRecords) =
+          extractBookkeeperRelatedCounts(stateMessage)
+        streamStats.apply {
+          if (emittedRecordsCount.get() < totalCommittedRecords) {
+            emittedRecordsCount.set(totalCommittedRecords)
+          }
+          if (emittedBytesCount.get() < totalCommittedBytes) {
+            emittedBytesCount.set(totalCommittedBytes)
+          }
+          committedRecordsCount.set(totalCommittedRecords)
+          committedBytesCount.set(totalCommittedBytes)
+          rejectedRecordsCount.set(totalRejectedRecords)
+          // TODO(Subodh): Once destination starts applying mappers, channel the filtered records count` as well
+          filteredOutRecords.set(0)
+          filteredOutBytesCount.set(0)
+        }
+      } else {
+        // Increment committed stats as we are un-staging stats
+        streamStats.committedBytesCount.addAndGet(
+          stagedStats.emittedStatsCounters.emittedBytesCount
+            .get()
+            .minus(stagedStats.emittedStatsCounters.filteredOutBytesCount.get()),
+        )
+        streamStats.committedRecordsCount.addAndGet(
+          stagedStats.emittedStatsCounters.remittedRecordsCount
+            .get()
+            .minus(stagedStats.emittedStatsCounters.filteredOutRecords.get()),
+        )
 
-      // Increment committed stats as we are un-staging stats
-      streamStats.committedBytesCount.addAndGet(
-        stagedStats.emittedStatsCounters.emittedBytesCount
-          .get()
-          .minus(stagedStats.emittedStatsCounters.filteredOutBytesCount.get()),
-      )
-      streamStats.committedRecordsCount.addAndGet(
-        stagedStats.emittedStatsCounters.remittedRecordsCount
-          .get()
-          .minus(stagedStats.emittedStatsCounters.filteredOutRecords.get()),
-      )
+        // If rejected records, we should decrement the record count and increment rejected
+        // The destinationStats contains the recordCount however we're continuing to the "record" count from the platform for
+        // checksum purpose. Otherwise, it would be the same as just trusting counts from the destination.
+        // RejectedRecords is an edge case because the counter is the only way for the platform to be aware of record rejection.
+        if (stagedStats.stateId == stateId) {
+          stateMessage.destinationStats?.rejectedRecordCount?.let { rejectedCount ->
+            if (rejectedCount > 0) {
+              val rejectedCountLong = rejectedCount.toLong()
+              streamStats.rejectedRecordsCount.addAndGet(rejectedCountLong)
+              streamStats.committedRecordsCount.addAndGet(0 - rejectedCountLong)
+            }
+          }
+        }
+      }
 
       if (stagedStats.stateId == stateId) {
         break
@@ -354,36 +386,36 @@ class StreamStatsTracker(
     }
   }
 
-  private fun handleStateStatsBookkeeperMode(
-    stateMessage: AirbyteStateMessage,
-    stagedStats: StagedStats,
-  ) {
-    updateCounter(
-      rawValue = stateMessage.additionalProperties[DEST_COMMITTED_RECORDS_COUNT],
-      counter = stagedStats.emittedStatsCounters.remittedRecordsCount,
-    ) {
-      stagedStats.emittedStatsCounters.filteredOutRecords.set(0)
+  private fun extractBookkeeperRelatedCounts(stateMessage: AirbyteStateMessage) =
+    when (stateMessage.type!!) {
+      AirbyteStateMessage.AirbyteStateType.GLOBAL -> {
+        val targetStreamState =
+          stateMessage.global.streamStates.find { streamState ->
+            streamState.streamDescriptor?.let { descriptor ->
+              descriptor.namespace == nameNamespacePair.namespace &&
+                descriptor.name == nameNamespacePair.name
+            } ?: false
+          }
+
+        targetStreamState?.additionalProperties?.let(::extractCounts)
+          ?: Triple(0L, 0L, 0L)
+      }
+
+      AirbyteStateMessage.AirbyteStateType.STREAM -> {
+        extractCounts(stateMessage.additionalProperties)
+      }
+
+      AirbyteStateMessage.AirbyteStateType.LEGACY -> {
+        error("Bookkeeper mode doesn't work with LEGACY state message")
+      }
     }
 
-    updateCounter(
-      rawValue = stateMessage.additionalProperties[DEST_COMMITTED_BYTES_COUNT],
-      counter = stagedStats.emittedStatsCounters.emittedBytesCount,
-    ) {
-      stagedStats.emittedStatsCounters.filteredOutBytesCount.set(0)
-    }
-  }
-
-  private inline fun updateCounter(
-    rawValue: Any?,
-    counter: AtomicLong,
-    crossinline afterUpdate: () -> Unit = {},
-  ) {
-    val newValue = (rawValue as? Number)?.toLong() ?: return
-    if (counter.get() != newValue) {
-      counter.set(newValue)
-      afterUpdate()
-    }
-  }
+  private fun extractCounts(additionalProperties: Map<String, Any>): Triple<Long, Long, Long> =
+    Triple(
+      (additionalProperties[DEST_COMMITTED_RECORDS_COUNT] as? Number)?.toLong() ?: 0,
+      (additionalProperties[DEST_COMMITTED_BYTES_COUNT] as? Number)?.toLong() ?: 0,
+      (additionalProperties[DEST_REJECTED_RECORDS_COUNT] as? Number)?.toLong() ?: 0,
+    )
 
   /**
    * Bookkeeping for when we see an estimate message.

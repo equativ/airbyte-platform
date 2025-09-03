@@ -119,7 +119,7 @@ internal class AirbyteCatalogHelperTest {
       assertThrows(BadRequestProblem::class.java) {
         AirbyteCatalogHelper.getValidConfiguredStreams(referenceCatalog = referenceCatalog, streamConfigurations = streamConfigurations, emptyList())
       }
-    val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+    val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
     assertEquals(true, problemData.message.contains("No streams found"))
   }
 
@@ -134,7 +134,7 @@ internal class AirbyteCatalogHelperTest {
       assertThrows(BadRequestProblem::class.java) {
         AirbyteCatalogHelper.getValidConfiguredStreams(referenceCatalog = referenceCatalog, streamConfigurations = streamConfigurations, emptyList())
       }
-    val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+    val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
     assertEquals(true, problemData.message.contains("Duplicate stream found"))
   }
 
@@ -165,6 +165,13 @@ internal class AirbyteCatalogHelperTest {
   }
 
   @Test
+  internal fun `test that the scheduleType is preserved`() {
+    val connectionSchedule =
+      AirbyteApiConnectionSchedule(scheduleType = ScheduleTypeEnum.MANUAL)
+    assertEquals(ScheduleTypeEnum.MANUAL, AirbyteCatalogHelper.normalizeCronExpression(connectionSchedule)?.scheduleType)
+  }
+
+  @Test
   internal fun `test that the cron configuration with a missing cron expression is invalid`() {
     val connectionSchedule =
       AirbyteApiConnectionSchedule(
@@ -175,7 +182,7 @@ internal class AirbyteCatalogHelperTest {
       assertThrows(BadRequestProblem::class.java) {
         AirbyteCatalogHelper.validateCronConfiguration(connectionSchedule = connectionSchedule)
       }
-    val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+    val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
     assertEquals(true, problemData.message.contains("Missing cron expression in the schedule."))
   }
 
@@ -191,7 +198,7 @@ internal class AirbyteCatalogHelperTest {
       assertThrows(BadRequestProblem::class.java) {
         AirbyteCatalogHelper.validateCronConfiguration(connectionSchedule = connectionSchedule)
       }
-    val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+    val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
     assertEquals(true, problemData.message.contains("Cron expression contains 10 parts but we expect one of [6, 7]"))
   }
 
@@ -207,13 +214,13 @@ internal class AirbyteCatalogHelperTest {
       assertThrows(BadRequestProblem::class.java) {
         AirbyteCatalogHelper.validateCronConfiguration(connectionSchedule = connectionSchedule)
       }
-    val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+    val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
     assertEquals(true, problemData.message.contains("Failed to parse cron expression. Invalid chars in expression!"))
   }
 
   @ParameterizedTest
   @EnumSource(ConnectionSyncModeEnum::class)
-  internal fun `test that when a stream configuration is updated, the corret sync modes are set based on the stream configuration`(
+  internal fun `test that when a stream configuration is updated, the correct sync modes are set based on the stream configuration`(
     connectionSyncMode: ConnectionSyncModeEnum,
   ) {
     val cursorField = "cursor"
@@ -230,7 +237,14 @@ internal class AirbyteCatalogHelperTest {
       AirbyteCatalogHelper.getValidConfiguredStreams(
         createAirbyteCatalog(jsonSchema = cursorPrimaryKeyJsonSchema()),
         StreamConfigurations(listOf(streamConfiguration)),
-        listOf(DestinationSyncMode.APPEND_DEDUP, DestinationSyncMode.OVERWRITE_DEDUP, DestinationSyncMode.APPEND, DestinationSyncMode.OVERWRITE),
+        listOf(
+          DestinationSyncMode.APPEND_DEDUP,
+          DestinationSyncMode.OVERWRITE_DEDUP,
+          DestinationSyncMode.APPEND,
+          DestinationSyncMode.OVERWRITE,
+          DestinationSyncMode.UPDATE,
+          DestinationSyncMode.SOFT_DELETE,
+        ),
       )
 
     assertEquals(true, configuredStreams.first().config.selected)
@@ -279,7 +293,7 @@ internal class AirbyteCatalogHelperTest {
           airbyteStream = airbyteStream,
         )
       }
-    val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+    val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
     assertEquals(true, problemData.message.contains("Cannot set sync mode to ${streamConfiguration.syncMode} for stream"))
   }
 
@@ -390,7 +404,7 @@ internal class AirbyteCatalogHelperTest {
           listOf(DestinationSyncMode.APPEND),
         )
       }
-    val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+    val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
     assertEquals(true, problemData.message.contains("Do not include a cursor field configuration for this stream"))
   }
 
@@ -453,7 +467,7 @@ internal class AirbyteCatalogHelperTest {
           airbyteStream = airbyteStream,
         )
       }
-    val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+    val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
     assertEquals(
       true,
       problemData.message.contains(
@@ -486,7 +500,7 @@ internal class AirbyteCatalogHelperTest {
           airbyteStream = airbyteStream,
         )
       }
-    val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+    val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
     assertEquals(
       true,
       problemData.message.contains(
@@ -581,6 +595,24 @@ internal class AirbyteCatalogHelperTest {
       )
     assertEquals(1, combinedSyncModes.size)
     assertEquals(listOf(ConnectionSyncModeEnum.FULL_REFRESH_OVERWRITE).first(), combinedSyncModes.first())
+  }
+
+  @Test
+  internal fun `test that the updated configuration includes destination object names`() {
+    val streamConfiguration =
+      StreamConfiguration(
+        name = "name1",
+        destinationObjectName = "destination_object_name",
+      )
+
+    val configuredStreams =
+      AirbyteCatalogHelper.getValidConfiguredStreams(
+        createAirbyteCatalog(true, jsonSchema = cursorPrimaryKeyJsonSchema()),
+        StreamConfigurations(listOf(streamConfiguration)),
+        listOf(DestinationSyncMode.APPEND_DEDUP),
+      )
+
+    assertEquals("destination_object_name", configuredStreams.first().config.destinationObjectName)
   }
 
   @Test
@@ -811,7 +843,7 @@ internal class AirbyteCatalogHelperTest {
         assertThrows(BadRequestProblem::class.java) {
           AirbyteCatalogHelper.validateFieldSelection(streamConfiguration, sourceStream)
         }
-      val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+      val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
       assertEquals(true, problemData.message.contains("No fields selected"))
     }
 
@@ -834,7 +866,7 @@ internal class AirbyteCatalogHelperTest {
         assertThrows(BadRequestProblem::class.java) {
           AirbyteCatalogHelper.validateFieldSelection(streamConfiguration, sourceStream)
         }
-      val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+      val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
       assertEquals(true, problemData.message.contains("Selected field path cannot be empty"))
     }
 
@@ -856,7 +888,7 @@ internal class AirbyteCatalogHelperTest {
         assertThrows(BadRequestProblem::class.java) {
           AirbyteCatalogHelper.validateFieldSelection(streamConfiguration, sourceStream)
         }
-      val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+      val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
       assertEquals(true, problemData.message.contains("Nested field selection not supported"))
     }
 
@@ -882,7 +914,7 @@ internal class AirbyteCatalogHelperTest {
         assertThrows(BadRequestProblem::class.java) {
           AirbyteCatalogHelper.validateFieldSelection(streamConfiguration, sourceStream)
         }
-      val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+      val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
       assertEquals(true, problemData.message.contains("Duplicate fields selected"))
     }
 
@@ -908,7 +940,7 @@ internal class AirbyteCatalogHelperTest {
         assertThrows(BadRequestProblem::class.java) {
           AirbyteCatalogHelper.validateFieldSelection(streamConfiguration, sourceStream)
         }
-      val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+      val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
       assertEquals(true, problemData.message.contains("Invalid fields selected"))
     }
 
@@ -931,7 +963,7 @@ internal class AirbyteCatalogHelperTest {
         assertThrows(BadRequestProblem::class.java) {
           AirbyteCatalogHelper.validateFieldSelection(streamConfiguration, sourceStream)
         }
-      val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+      val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
       assertEquals(true, problemData.message.contains("Primary key fields are not selected properly"))
     }
 
@@ -954,7 +986,7 @@ internal class AirbyteCatalogHelperTest {
         assertThrows(BadRequestProblem::class.java) {
           AirbyteCatalogHelper.validateFieldSelection(streamConfiguration, sourceStream)
         }
-      val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+      val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
       assertEquals(true, problemData.message.contains("Primary key fields are not selected properly"))
     }
 
@@ -979,7 +1011,7 @@ internal class AirbyteCatalogHelperTest {
         assertThrows(BadRequestProblem::class.java) {
           AirbyteCatalogHelper.validateFieldSelection(streamConfiguration, sourceStream)
         }
-      val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+      val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
       assertEquals(true, problemData.message.contains("Cursor field is not selected properly"))
     }
 
@@ -1004,7 +1036,7 @@ internal class AirbyteCatalogHelperTest {
         assertThrows(BadRequestProblem::class.java) {
           AirbyteCatalogHelper.validateFieldSelection(streamConfiguration, sourceStream)
         }
-      val problemData: ProblemMessageData = throwable.problem.data as ProblemMessageData
+      val problemData: ProblemMessageData = throwable.problem.getData() as ProblemMessageData
       assertEquals(true, problemData.message.contains("Cursor field is not selected properly"))
     }
   }
@@ -1070,6 +1102,10 @@ internal class AirbyteCatalogHelperTest {
       ConnectionSyncModeEnum.INCREMENTAL_APPEND -> SyncMode.INCREMENTAL
       ConnectionSyncModeEnum.INCREMENTAL_DEDUPED_HISTORY -> SyncMode.INCREMENTAL
       ConnectionSyncModeEnum.FULL_REFRESH_OVERWRITE_DEDUPED -> SyncMode.FULL_REFRESH
+      ConnectionSyncModeEnum.INCREMENTAL_UPDATE -> SyncMode.INCREMENTAL
+      ConnectionSyncModeEnum.FULL_REFRESH_UPDATE -> SyncMode.FULL_REFRESH
+      ConnectionSyncModeEnum.INCREMENTAL_SOFT_DELETE -> SyncMode.INCREMENTAL
+      ConnectionSyncModeEnum.FULL_REFRESH_SOFT_DELETE -> SyncMode.FULL_REFRESH
     }
 
   private fun getDestinationSyncMode(connectionSyncMode: ConnectionSyncModeEnum): DestinationSyncMode =
@@ -1079,5 +1115,9 @@ internal class AirbyteCatalogHelperTest {
       ConnectionSyncModeEnum.INCREMENTAL_APPEND -> DestinationSyncMode.APPEND
       ConnectionSyncModeEnum.INCREMENTAL_DEDUPED_HISTORY -> DestinationSyncMode.APPEND_DEDUP
       ConnectionSyncModeEnum.FULL_REFRESH_OVERWRITE_DEDUPED -> DestinationSyncMode.OVERWRITE_DEDUP
+      ConnectionSyncModeEnum.INCREMENTAL_UPDATE -> DestinationSyncMode.UPDATE
+      ConnectionSyncModeEnum.FULL_REFRESH_UPDATE -> DestinationSyncMode.UPDATE
+      ConnectionSyncModeEnum.INCREMENTAL_SOFT_DELETE -> DestinationSyncMode.SOFT_DELETE
+      ConnectionSyncModeEnum.FULL_REFRESH_SOFT_DELETE -> DestinationSyncMode.SOFT_DELETE
     }
 }

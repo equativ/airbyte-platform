@@ -15,10 +15,9 @@ import io.airbyte.config.ReplicationAttemptSummary
 import io.airbyte.config.ReplicationOutput
 import io.airbyte.config.StandardSyncSummary.ReplicationStatus
 import io.airbyte.config.StreamDescriptor
+import io.airbyte.config.StreamSyncStats
 import io.airbyte.config.SyncStats
 import io.airbyte.config.WorkerDestinationConfig
-import io.airbyte.config.adapters.AirbyteJsonRecordAdapter
-import io.airbyte.config.adapters.AirbyteRecord
 import io.airbyte.container.orchestrator.bookkeeping.AirbyteMessageOrigin
 import io.airbyte.container.orchestrator.bookkeeping.AirbyteMessageTracker
 import io.airbyte.container.orchestrator.bookkeeping.SyncStatsTracker
@@ -34,6 +33,7 @@ import io.airbyte.container.orchestrator.worker.context.ReplicationContext
 import io.airbyte.container.orchestrator.worker.filter.FieldSelector
 import io.airbyte.container.orchestrator.worker.io.AirbyteDestination
 import io.airbyte.container.orchestrator.worker.io.AirbyteSource
+import io.airbyte.container.orchestrator.worker.model.adapter.AirbyteJsonRecordAdapter
 import io.airbyte.container.orchestrator.worker.model.attachIdToStateMessageFromSource
 import io.airbyte.container.orchestrator.worker.util.BytesSizeHelper.byteCountToDisplaySize
 import io.airbyte.mappers.application.RecordMapper
@@ -184,7 +184,7 @@ class ReplicationWorkerHelper(
   }
 
   fun endOfSource() {
-    val bytes = byteCountToDisplaySize(syncStatsTracker.getTotalBytesEmitted())
+    val bytes = byteCountToDisplaySize(syncStatsTracker.getStats().values.sumOf { it.bytesEmitted })
     logger.info { "Total records read: ($bytes)" }
     fieldSelector?.reportMetrics(context.replicationContext.sourceId)
     timeTracker.trackSourceReadEndTime()
@@ -211,8 +211,8 @@ class ReplicationWorkerHelper(
         else -> ReplicationStatus.COMPLETED
       }
     val completed = outputStatus == ReplicationStatus.COMPLETED
-    val totalStats = getTotalStats(timeTracker, completed)
     val streamStats = syncStatsTracker.getPerStreamStats(completed)
+    val totalStats = getTotalStats(streamStats, timeTracker, completed)
 
     if (!completed && syncStatsTracker.getUnreliableStateTimingMetrics()) {
       logger.warn { "Unreliable committed record counts; setting committed record stats to null" }
@@ -221,8 +221,8 @@ class ReplicationWorkerHelper(
     val summary =
       ReplicationAttemptSummary()
         .withStatus(outputStatus)
-        .withRecordsSynced(syncStatsTracker.getTotalRecordsCommitted())
-        .withBytesSynced(syncStatsTracker.getTotalBytesCommitted())
+        .withRecordsSynced(totalStats.recordsCommitted)
+        .withBytesSynced(totalStats.bytesCommitted)
         .withTotalStats(totalStats)
         .withStreamStats(streamStats)
         .withStartTime(timeTracker.replicationStartTime)
@@ -323,17 +323,18 @@ class ReplicationWorkerHelper(
       ?.let { mapper?.mapMessage(it) ?: it }
       ?.let { Optional.of(it) } ?: Optional.empty()
 
-  internal fun applyTransformationMappers(message: AirbyteRecord) {
+  internal fun applyTransformationMappers(message: AirbyteJsonRecordAdapter) {
     streamMappers[message.streamDescriptor]?.takeIf { it.isNotEmpty() }?.let { mappers ->
       recordMapper.applyMappers(message, mappers)
     }
   }
 
   private fun getTotalStats(
+    streamStats: List<StreamSyncStats>,
     timeTracker: ThreadedTimeTracker,
     completed: Boolean,
   ): SyncStats =
-    syncStatsTracker.getTotalStats(completed).apply {
+    syncStatsTracker.getTotalStats(streamStats, completed).apply {
       replicationStartTime = timeTracker.replicationStartTime
       replicationEndTime = timeTracker.replicationEndTime
       sourceReadStartTime = timeTracker.sourceReadStartTime
@@ -374,7 +375,7 @@ class ReplicationWorkerHelper(
     if (recordsRead == 5000L) {
       totalRecordsRead += recordsRead
       logger.info {
-        val bytes = byteCountToDisplaySize(syncStatsTracker.getTotalBytesEmitted())
+        val bytes = byteCountToDisplaySize(syncStatsTracker.getStats().values.sumOf { it.bytesEmitted })
         "Records read: $totalRecordsRead ($bytes)"
       }
       recordsRead = 0

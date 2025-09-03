@@ -15,6 +15,7 @@ dependencies {
   implementation(platform(libs.micronaut.platform))
   implementation(libs.bundles.micronaut)
   implementation(libs.bundles.micronaut.metrics)
+  implementation(libs.kotlin.logging)
 
   implementation(project(":oss:airbyte-commons-storage"))
   implementation(project(":oss:airbyte-config:config-models"))
@@ -44,7 +45,7 @@ dependencies {
 airbyte {
   application {
     name = "airbyte-metrics-reporter"
-    mainClass = "io.airbyte.metrics.reporter.Application"
+    mainClass = "io.airbyte.metrics.reporter.ApplicationKt"
     defaultJvmArgs = listOf("-XX:+ExitOnOutOfMemoryError", "-XX:MaxRAMPercentage=75.0")
   }
   docker {

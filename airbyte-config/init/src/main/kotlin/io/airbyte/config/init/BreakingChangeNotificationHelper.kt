@@ -12,12 +12,15 @@ import io.airbyte.data.services.WorkspaceService
 import io.airbyte.featureflag.FeatureFlagClient
 import io.airbyte.featureflag.NotifyOnConnectorBreakingChanges
 import io.airbyte.featureflag.Workspace
+import io.airbyte.metrics.MetricClient
 import io.airbyte.notification.CustomerioNotificationClient
 import io.airbyte.notification.NotificationClient
+import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.inject.Singleton
-import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.util.UUID
+
+private val log = KotlinLogging.logger {}
 
 /**
  * Helper class for notifying users about breaking changes.
@@ -25,7 +28,6 @@ import java.util.UUID
 @Singleton
 class BreakingChangeNotificationHelper {
   companion object {
-    private val log = LoggerFactory.getLogger(BreakingChangeNotificationHelper::class.java)
   }
 
   /**
@@ -49,10 +51,10 @@ class BreakingChangeNotificationHelper {
   private val notificationClient: NotificationClient
   private val featureFlagClient: FeatureFlagClient
 
-  constructor(workspaceService: WorkspaceService, featureFlagClient: FeatureFlagClient) {
+  constructor(workspaceService: WorkspaceService, featureFlagClient: FeatureFlagClient, metricClient: MetricClient? = null) {
     this.workspaceService = workspaceService
     this.featureFlagClient = featureFlagClient
-    this.notificationClient = CustomerioNotificationClient()
+    this.notificationClient = CustomerioNotificationClient(metricClient = metricClient)
   }
 
   @VisibleForTesting
@@ -162,8 +164,7 @@ class BreakingChangeNotificationHelper {
       val notificationSettings = workspace.notificationSettings
 
       val notificationItem =
-        if (notificationType == BreakingChangeNotificationType.WARNING
-        ) {
+        if (notificationType == BreakingChangeNotificationType.WARNING) {
           notificationSettings.sendOnBreakingChangeWarning
         } else {
           notificationSettings.sendOnBreakingChangeSyncsDisabled

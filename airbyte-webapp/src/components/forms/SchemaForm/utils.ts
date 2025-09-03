@@ -10,14 +10,18 @@ export class AirbyteJsonSchemaExtention implements JSONSchemaExtension {
   linkable?: boolean;
   deprecated?: boolean;
   deprecation_message?: string;
+  interpolation_context?: string[];
 }
 
 export type AirbyteJsonSchema = Exclude<ExtendedJSONSchema<AirbyteJsonSchemaExtention>, boolean>;
 
 export const getDeclarativeSchemaTypeValue = (
   propertyName: string,
-  property: ExtendedJSONSchema<AirbyteJsonSchemaExtention>
+  property: ExtendedJSONSchema<AirbyteJsonSchemaExtention> | undefined
 ) => {
+  if (!property) {
+    return undefined;
+  }
   if (propertyName !== "type") {
     return undefined;
   }
@@ -35,13 +39,26 @@ export const hasFields = <T extends object>(object: T | {}): object is T => {
   return Object.keys(object).length > 0;
 };
 
-export const isEmptyObject = (object: object): boolean => {
-  return typeof object === "object" && !Array.isArray(object) && Object.keys(object).length === 0;
+export const isEmptyObject = (object: unknown): boolean => {
+  return typeof object === "object" && object !== null && !Array.isArray(object) && Object.keys(object).length === 0;
 };
 
 // Convert a $ref of the form "#/path/to/field" to a path of the form "path.to.field"
-export const convertRefToPath = (ref: string) => {
-  return ref.replace("#/", "").replace(/\//g, ".");
+export const convertRefToPath = (ref: string, basePath?: string) => {
+  const convertedPath = ref.replace("#/", "").replace(/\//g, ".");
+  if (basePath) {
+    return `${basePath}.${convertedPath}`;
+  }
+  return convertedPath;
+};
+
+// Convert a path of the form "path.to.field" to a $ref of the form "#/path/to/field"
+export const convertPathToRef = (path: string, basePath?: string) => {
+  const convertedRefValue = path.replace(/\./g, "/");
+  if (basePath && convertedRefValue.startsWith(basePath)) {
+    return `#${convertedRefValue.replace(basePath, "")}`;
+  }
+  return `#/${convertedRefValue}`;
 };
 
 /**
@@ -51,7 +68,13 @@ export const convertRefToPath = (ref: string) => {
  * @param visitedRefs Set of already visited references to avoid circular references
  * @returns A new object with all references resolved
  */
-export const resolveRefs = <T>(obj: T, root?: unknown, visitedRefs: Set<string> = new Set()): T => {
+export const resolveRefs = <T>(
+  obj: T,
+  root?: unknown,
+  basePath?: string,
+  refTargetPath?: string,
+  visitedRefs: Set<string> = new Set()
+): T => {
   if (!obj || typeof obj !== "object") {
     return obj;
   }
@@ -62,7 +85,7 @@ export const resolveRefs = <T>(obj: T, root?: unknown, visitedRefs: Set<string> 
     // For all arrays, give each item its own independent tracking of visited references
     // This prevents cross-contamination where a circular reference in one item
     // would block resolution of other items
-    return obj.map((item) => resolveRefs(item, rootObj, new Set(visitedRefs))) as unknown as T;
+    return obj.map((item) => resolveRefs(item, rootObj, basePath, refTargetPath, new Set(visitedRefs))) as unknown as T;
   }
 
   if ("$ref" in obj && typeof obj.$ref === "string") {
@@ -77,7 +100,10 @@ export const resolveRefs = <T>(obj: T, root?: unknown, visitedRefs: Set<string> 
     // Add this reference to visited set before resolving it
     visitedRefs.add(ref);
 
-    const path = convertRefToPath(ref);
+    const path = convertRefToPath(ref, basePath);
+    if (refTargetPath && !path.startsWith(refTargetPath)) {
+      return obj;
+    }
     const target = get(rootObj, path);
 
     // If target doesn't exist, return the original object as-is
@@ -88,7 +114,12 @@ export const resolveRefs = <T>(obj: T, root?: unknown, visitedRefs: Set<string> 
 
     // Keep keys from the original object if they overlap with those in the resolved target,
     // as this is the only way to override titles and descriptions for $ref'd schemas.
-    const resolvedTarget = resolveRefs(target, rootObj, visitedRefs);
+    const resolvedTarget = resolveRefs(target, rootObj, basePath, refTargetPath, visitedRefs);
+
+    if (typeof resolvedTarget !== "object") {
+      return resolvedTarget;
+    }
+
     const { $ref, ...withoutRef } = obj;
     const resolvedObj: Record<string, unknown> = { ...withoutRef };
     Object.entries(resolvedTarget).forEach(([key, value]) => {
@@ -106,7 +137,8 @@ export const resolveRefs = <T>(obj: T, root?: unknown, visitedRefs: Set<string> 
   // Process each object property with its own independent reference tracking
   // This prevents cross-contamination between properties
   for (const [key, value] of Object.entries(obj)) {
-    result[key] = resolveRefs(value, rootObj, new Set(visitedRefs));
+    const resolved = resolveRefs(value, rootObj, basePath, refTargetPath, new Set(visitedRefs));
+    result[key] = resolved;
   }
 
   return result as T;
@@ -162,14 +194,6 @@ export const isAdvancedField = (fullFieldPath: string, objectPath: string, nonAd
   }
   const nonAdvancedFullPaths = nonAdvancedFields.map((field) => `${objectPath}.${field}`);
   return !nonAdvancedFullPaths.includes(fullFieldPath);
-};
-
-export const nestPath = (path: string, rootPath?: string) => {
-  return rootPath && !path.startsWith(rootPath) ? `${rootPath}${path ? `.${path}` : ""}` : path;
-};
-
-export const unnestPath = (path: string, rootPath?: string) => {
-  return rootPath && path.startsWith(rootPath) ? path.slice(rootPath.length + 1) : path;
 };
 
 export const scrollFieldIntoView = (path: string) => {

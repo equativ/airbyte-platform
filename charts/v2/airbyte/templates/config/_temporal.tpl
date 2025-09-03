@@ -515,6 +515,17 @@ TEMPORAL_CLOUD_CLIENT_KEY: {{ include "airbyte.temporal.cloud.credentials.client
 {{- end }}
 
 {{/*
+Renders the temporal.database secret name
+*/}}
+{{- define "airbyte.temporal.database.secretName" }}
+{{- if .Values.temporal.database.secretName }}
+    {{- .Values.temporal.database.secretName }}
+{{- else }}
+    {{- .Values.global.secretName | default (printf "%s-airbyte-secrets" .Release.Name) }}
+{{- end }}
+{{- end }}
+
+{{/*
 Renders the temporal.database.engine value
 */}}
 {{- define "airbyte.temporal.database.engine" }}
@@ -533,6 +544,13 @@ Renders the temporal.database.engine environment variable
 {{- end }}
 
 {{/*
+Renders the temporal.database.host value
+*/}}
+{{- define "airbyte.temporal.database.host" }}
+    {{- .Values.temporal.database.host }}
+{{- end }}
+
+{{/*
 Renders the temporal.database.host environment variable
 */}}
 {{- define "airbyte.temporal.database.host.env" }}
@@ -541,6 +559,13 @@ Renders the temporal.database.host environment variable
     configMapKeyRef:
       name: {{ .Release.Name }}-airbyte-env
       key: DATABASE_HOST
+{{- end }}
+
+{{/*
+Renders the temporal.database.port value
+*/}}
+{{- define "airbyte.temporal.database.port" }}
+    {{- .Values.temporal.database.port }}
 {{- end }}
 
 {{/*
@@ -555,10 +580,17 @@ Renders the temporal.database.port environment variable
 {{- end }}
 
 {{/*
+Renders the temporal.database.user value
+*/}}
+{{- define "airbyte.temporal.database.user" }}
+    {{- .Values.temporal.database.user }}
+{{- end }}
+
+{{/*
 Renders the temporal.database.user secret key
 */}}
 {{- define "airbyte.temporal.database.user.secretKey" }}
-	{{- .Values.temporal.database.userSecretKey | default "DATABASE_USER" }}
+	{{- .Values.temporal.database.userSecretKey | default (include "airbyte.database.user.secretKey" .) }}
 {{- end }}
 
 {{/*
@@ -573,10 +605,17 @@ Renders the temporal.database.user environment variable
 {{- end }}
 
 {{/*
+Renders the temporal.database.password value
+*/}}
+{{- define "airbyte.temporal.database.password" }}
+    {{- .Values.temporal.database.password }}
+{{- end }}
+
+{{/*
 Renders the temporal.database.password secret key
 */}}
 {{- define "airbyte.temporal.database.password.secretKey" }}
-	{{- .Values.temporal.database.passwordSecretKey | default "DATABASE_PASSWORD" }}
+	{{- .Values.temporal.database.passwordSecretKey | default (include "airbyte.database.password.secretKey" .) }}
 {{- end }}
 
 {{/*
@@ -686,6 +725,14 @@ POSTGRES_TLS_ENABLED: {{ include "airbyte.temporal.database.tlsEnabled" . | quot
 POSTGRES_TLS_DISABLE_HOST_VERIFICATION: {{ include "airbyte.temporal.database.tlsDisableHostVerification" . | quote }}
 SQL_TLS_ENABLED: {{ include "airbyte.temporal.database.sqlTlsEnabled" . | quote }}
 SQL_TLS_DISABLE_HOST_VERIFICATION: {{ include "airbyte.temporal.database.sqlTlsDisableHostVerification" . | quote }}
+{{- end }}
+
+{{/*
+Renders the set of all temporal.database secret variables
+*/}}
+{{- define "airbyte.temporal.database.secrets" }}
+POSTGRES_USER: {{ include "airbyte.temporal.database.user" . | quote }}
+POSTGRES_PWD: {{ include "airbyte.temporal.database.password" . | quote }}
 {{- end }}
 
 {{/*

@@ -1,5 +1,5 @@
-import classNames from "classnames";
 import isBoolean from "lodash/isBoolean";
+import isEqual from "lodash/isEqual";
 import { useCallback, useMemo } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 
@@ -7,7 +7,6 @@ import { ListBox } from "components/ui/ListBox";
 
 import { AdditionalPropertiesControl } from "./AdditionalPropertiesControl";
 import { ControlGroup } from "./ControlGroup";
-import styles from "./MultiOptionControl.module.scss";
 import { ObjectControl } from "./ObjectControl";
 import { SchemaFormControl } from "./SchemaFormControl";
 import { BaseControlComponentProps, OverrideByPath, BaseControlProps } from "./types";
@@ -25,7 +24,7 @@ export const MultiOptionControl = ({
   nonAdvancedFields,
 }: BaseControlComponentProps) => {
   const value: unknown = useWatch({ name: baseProps.name });
-  const { setValue, clearErrors } = useFormContext();
+  const { setValue, clearErrors, unregister } = useFormContext();
   const {
     schema: rootSchema,
     getSelectedOptionSchema,
@@ -120,7 +119,7 @@ export const MultiOptionControl = ({
       data-field-path={baseProps["data-field-path"]}
       control={
         <ListBox
-          className={classNames({ [styles.listBoxError]: !!displayError })}
+          hasError={!!displayError}
           isDisabled={baseProps.disabled}
           options={displayOptions.map((option) => ({
             label: `${getOptionLabel(option)} ${option.deprecated ? " (Deprecated)" : ""}`,
@@ -133,7 +132,20 @@ export const MultiOptionControl = ({
               return;
             }
 
+            if (isEqual(selectedOption, currentlySelectedOption)) {
+              return;
+            }
+
             const defaultValues = extractDefaultValuesFromSchema(selectedOption);
+            // If the current option is a number and we are changing it to an empty string,
+            // then we need to first unregister the field so that the setValueAs override doesn't
+            // switch the new value back to null and cause it to stay as a number input.
+            if (
+              (currentlySelectedOption?.type === "number" || currentlySelectedOption?.type === "integer") &&
+              defaultValues === ""
+            ) {
+              unregister(baseProps.name);
+            }
             setValue(baseProps.name, defaultValues, { shouldValidate: false });
 
             // Only clear the error for the parent field itself, without validating
@@ -205,6 +217,7 @@ const renderOptionContents = (
         // If the selectedOption has no title, then don't render any title for this field
         // since the parent parent MultiOptionControl is already rendering the title
         title: selectedOption.title ?? "",
+        interpolation_context: baseProps.interpolationContext,
       }}
       isRequired
     />

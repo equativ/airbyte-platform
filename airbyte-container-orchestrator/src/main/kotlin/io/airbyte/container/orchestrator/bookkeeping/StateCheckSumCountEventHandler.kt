@@ -25,6 +25,17 @@ import io.airbyte.featureflag.LogStateMsgs
 import io.airbyte.featureflag.LogStreamNamesInSateMessage
 import io.airbyte.featureflag.Multi
 import io.airbyte.featureflag.Workspace
+import io.airbyte.metrics.MetricAttribute
+import io.airbyte.metrics.MetricClient
+import io.airbyte.metrics.OssMetricsRegistry
+import io.airbyte.metrics.lib.MetricTags.ATTEMPT_NUMBER
+import io.airbyte.metrics.lib.MetricTags.CONNECTION_ID
+import io.airbyte.metrics.lib.MetricTags.DESTINATION_IMAGE
+import io.airbyte.metrics.lib.MetricTags.FAILURE_ORIGIN
+import io.airbyte.metrics.lib.MetricTags.JOB_ID
+import io.airbyte.metrics.lib.MetricTags.SOURCE_IMAGE
+import io.airbyte.metrics.lib.MetricTags.WORKSPACE_ID
+import io.airbyte.persistence.job.models.ReplicationInput
 import io.airbyte.protocol.models.v0.AirbyteStateMessage
 import io.airbyte.protocol.models.v0.AirbyteStateStats
 import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair
@@ -59,6 +70,8 @@ class StateCheckSumCountEventHandler(
   @Named("epochMilliSupplier") private val epochMilliSupplier: Supplier<Long>,
   @Named("idSupplier") private val idSupplier: Supplier<UUID>,
   @Value("\${airbyte.platform-mode}") private val platformMode: String,
+  private val metricClient: MetricClient,
+  private val replicationInput: ReplicationInput,
 ) {
   private val emitStatsCounterFlag: Boolean by lazy {
     val connectionContext = Multi(listOf(Connection(connectionId), Workspace(workspaceId)))
@@ -204,6 +217,7 @@ class StateCheckSumCountEventHandler(
     if (stats != null) {
       stats.recordCount?.let { stateRecordCount ->
         if (origin == AirbyteMessageOrigin.DESTINATION) {
+          val destinationTotalCount = stateRecordCount + (stats.rejectedRecordCount ?: 0.0)
           val sourceStats: AirbyteStateStats? = stateMessage.sourceStats
           if (sourceStats != null) {
             sourceStats.recordCount?.let { sourceRecordCount ->
@@ -211,18 +225,18 @@ class StateCheckSumCountEventHandler(
                   sourceRecordCount.minus(
                     filteredOutRecords,
                   )
-                ) != stateRecordCount ||
-                (platformRecordCount.minus(filteredOutRecords)) != stateRecordCount
+                ) != destinationTotalCount ||
+                (platformRecordCount.minus(filteredOutRecords)) != destinationTotalCount
               ) {
                 misMatchWhenAllThreeCountsArePresent(
-                  origin,
-                  sourceRecordCount,
-                  stateRecordCount,
-                  platformRecordCount,
-                  includeStreamInLogs,
-                  stateMessage,
-                  failOnInvalidChecksum,
-                  checksumValidationEnabled,
+                  origin = origin,
+                  sourceRecordCount = sourceRecordCount,
+                  destinationRecordCount = destinationTotalCount,
+                  platformRecordCount = platformRecordCount,
+                  includeStreamInLogs = includeStreamInLogs,
+                  stateMessage = stateMessage,
+                  failOnInvalidChecksum = failOnInvalidChecksum,
+                  validData = checksumValidationEnabled,
                 )
               } else {
                 val shouldIncludeStreamInLogs = includeStreamInLogs || featureFlagClient.boolVariation(LogStateMsgs, Connection(connectionId))
@@ -230,10 +244,10 @@ class StateCheckSumCountEventHandler(
               }
             }
           } else {
-            if (platformRecordCount != stateRecordCount) {
+            if (platformRecordCount != destinationTotalCount) {
               misMatchBetweenStateCountAndPlatformCount(
                 origin = origin,
-                stateRecordCount = stateRecordCount,
+                stateRecordCount = destinationTotalCount,
                 platformRecordCount = platformRecordCount,
                 includeStreamInLogs = includeStreamInLogs,
                 stateMessage = stateMessage,
@@ -242,7 +256,7 @@ class StateCheckSumCountEventHandler(
                 streamPlatformRecordCounts = streamPlatformRecordCounts,
               )
             }
-            sourceIsMissingButDestinationIsPresent(stateRecordCount, platformRecordCount, stateMessage, checksumValidationEnabled)
+            sourceIsMissingButDestinationIsPresent(destinationTotalCount, platformRecordCount, stateMessage, checksumValidationEnabled)
           }
         } else if (stateRecordCount != platformRecordCount) {
           misMatchBetweenStateCountAndPlatformCount(
@@ -421,6 +435,21 @@ class StateCheckSumCountEventHandler(
         "The sync appears to have dropped records",
         InvalidChecksumException(errorMessage),
         stateMessage,
+      )
+      val attributes =
+        arrayOf(
+          MetricAttribute(ATTEMPT_NUMBER, attemptNumber.toString()),
+          MetricAttribute(CONNECTION_ID, connectionId.toString()),
+          MetricAttribute(DESTINATION_IMAGE, replicationInput.destinationLauncherConfig.dockerImage),
+          MetricAttribute(FAILURE_ORIGIN, failureOrigin.toString()),
+          MetricAttribute(JOB_ID, jobId.toString()),
+          MetricAttribute(SOURCE_IMAGE, replicationInput.sourceLauncherConfig.dockerImage),
+          MetricAttribute(WORKSPACE_ID, workspaceId.toString()),
+        )
+      metricClient.count(
+        metric = OssMetricsRegistry.STATE_CHECKSUM_COUNT_ERROR,
+        value = 1L,
+        attributes = attributes,
       )
     }
   }

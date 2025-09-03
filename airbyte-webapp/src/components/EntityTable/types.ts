@@ -1,32 +1,11 @@
 import {
-  ActorDefinitionVersionBreakingChanges,
   ActorDefinitionVersionRead,
   ConnectionScheduleData,
   ConnectionScheduleType,
   SchemaChange,
-  SupportState,
   Tag,
   WebBackendConnectionListItem,
 } from "../../core/api/types/AirbyteClient";
-
-interface EntityTableDataItem {
-  entityId: string;
-  entityName: string;
-  connectorName: string;
-  connectEntities: Array<{
-    name: string;
-    connector: string;
-    status: string;
-    lastSyncStatus: string | null;
-  }>;
-  enabled: boolean;
-  lastSync?: number | null;
-  connectorIcon?: string;
-  isActive: boolean;
-  breakingChanges?: ActorDefinitionVersionBreakingChanges;
-  isVersionOverrideApplied: boolean;
-  supportState?: SupportState;
-}
 
 interface ConnectionTableDataItem {
   connectionId: string;
@@ -63,5 +42,5 @@ enum SortOrderEnum {
   ASC = "asc",
 }
 
-export type { ConnectionTableDataItem, EntityTableDataItem };
+export type { ConnectionTableDataItem };
 export { Status, SortOrderEnum };

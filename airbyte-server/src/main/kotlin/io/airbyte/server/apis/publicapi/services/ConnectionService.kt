@@ -13,7 +13,6 @@ import io.airbyte.api.model.generated.Pagination
 import io.airbyte.api.problems.throwable.generated.UnexpectedProblem
 import io.airbyte.commons.server.handlers.ConnectionsHandler
 import io.airbyte.commons.server.support.CurrentUserService
-import io.airbyte.data.services.DataplaneGroupService
 import io.airbyte.publicApi.server.generated.models.ConnectionCreateRequest
 import io.airbyte.publicApi.server.generated.models.ConnectionPatchRequest
 import io.airbyte.publicApi.server.generated.models.ConnectionResponse
@@ -21,16 +20,14 @@ import io.airbyte.publicApi.server.generated.models.ConnectionsResponse
 import io.airbyte.publicApi.server.generated.models.SourceResponse
 import io.airbyte.server.apis.publicapi.constants.HTTP_RESPONSE_BODY_DEBUG_MESSAGE
 import io.airbyte.server.apis.publicapi.errorHandlers.ConfigClientErrorHandler
-import io.airbyte.server.apis.publicapi.helpers.DataResidencyHelper
 import io.airbyte.server.apis.publicapi.mappers.ConnectionCreateMapper
 import io.airbyte.server.apis.publicapi.mappers.ConnectionReadMapper
 import io.airbyte.server.apis.publicapi.mappers.ConnectionUpdateMapper
 import io.airbyte.server.apis.publicapi.mappers.ConnectionsResponseMapper
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Secondary
 import io.micronaut.context.annotation.Value
-import jakarta.inject.Inject
 import jakarta.inject.Singleton
-import org.slf4j.LoggerFactory
 import java.util.Collections
 import java.util.UUID
 
@@ -63,6 +60,8 @@ interface ConnectionService {
   ): ConnectionsResponse
 }
 
+private val log = KotlinLogging.logger {}
+
 @Singleton
 @Secondary
 class ConnectionServiceImpl(
@@ -70,16 +69,7 @@ class ConnectionServiceImpl(
   private val sourceService: SourceService,
   private val connectionHandler: ConnectionsHandler,
   private val currentUserService: CurrentUserService,
-  private val dataplaneGroupService: DataplaneGroupService,
-  private val dataResidencyHelper: DataResidencyHelper,
 ) : ConnectionService {
-  companion object {
-    private val log = LoggerFactory.getLogger(ConnectionServiceImpl::class.java)
-  }
-
-  @Inject
-  private lateinit var dataplaneService: DataplaneService
-
   @Value("\${airbyte.api.host}")
   var publicApiHost: String? = null
 
@@ -97,25 +87,23 @@ class ConnectionServiceImpl(
         connectionCreateRequest,
         catalogId,
         configuredCatalog,
-        dataResidencyHelper.getDataplaneGroupFromResidencyAndAirbyteEdition(connectionCreateRequest.dataResidency)?.id,
       )
 
     val result: Result<ConnectionRead> =
       kotlin
         .runCatching { connectionHandler.createConnection(connectionCreateOss) }
         .onFailure {
-          log.error("Error while creating connection: ", it)
+          log.error(it) { "Error while creating connection" }
           throw ConfigClientErrorHandler.handleCreateConnectionError(it, connectionCreateRequest)
-        }.onSuccess { log.debug(HTTP_RESPONSE_BODY_DEBUG_MESSAGE + it) }
+        }.onSuccess { log.debug { HTTP_RESPONSE_BODY_DEBUG_MESSAGE + it } }
 
     return try {
       ConnectionReadMapper.from(
         result.getOrNull()!!,
         workspaceId,
-        dataplaneGroupService.getDataplaneGroup(result.getOrNull()!!.dataplaneGroupId).name,
       )
     } catch (e: Exception) {
-      log.error("Error while reading response and converting to Connection read: ", e)
+      log.error(e) { "Error while reading response and converting to Connection read" }
       throw UnexpectedProblem()
     }
   }
@@ -129,10 +117,10 @@ class ConnectionServiceImpl(
         .runCatching {
           connectionHandler.deleteConnection(connectionId)
         }.onFailure {
-          log.error("Error while deleting connection: ", it)
+          log.error(it) { "Error while deleting connection" }
           ConfigClientErrorHandler.handleError(it)
         }
-    log.debug(HTTP_RESPONSE_BODY_DEBUG_MESSAGE + result.getOrNull())
+    log.debug { HTTP_RESPONSE_BODY_DEBUG_MESSAGE + result.getOrNull() }
   }
 
   /**
@@ -143,10 +131,10 @@ class ConnectionServiceImpl(
       runCatching {
         connectionHandler.getConnection(connectionId)
       }.onFailure {
-        log.error("Error while getting connection: ", it)
+        log.error(it) { "Error while getting connection" }
         ConfigClientErrorHandler.handleError(it)
       }
-    log.debug(HTTP_RESPONSE_BODY_DEBUG_MESSAGE + result)
+    log.debug { HTTP_RESPONSE_BODY_DEBUG_MESSAGE + result }
 
     val connectionRead = result.getOrNull()!!
 
@@ -156,7 +144,6 @@ class ConnectionServiceImpl(
     return ConnectionReadMapper.from(
       connectionRead,
       UUID.fromString(sourceResponse.workspaceId),
-      dataplaneGroupService.getDataplaneGroup(connectionRead.dataplaneGroupId).name,
     )
   }
 
@@ -170,20 +157,12 @@ class ConnectionServiceImpl(
     configuredCatalog: AirbyteCatalog?,
     workspaceId: UUID,
   ): ConnectionResponse {
-    val dataplaneGroupId: UUID? =
-      if (connectionPatchRequest.dataResidency != null) {
-        dataResidencyHelper.getDataplaneGroupFromResidencyAndAirbyteEdition(connectionPatchRequest.dataResidency)?.id
-      } else {
-        null
-      }
-
     val connectionUpdate: ConnectionUpdate =
       ConnectionUpdateMapper.from(
         connectionId,
         connectionPatchRequest,
         catalogId,
         configuredCatalog,
-        dataplaneGroupId,
       )
 
     // this is kept as a string to easily parse the error response to determine if a source or a
@@ -192,10 +171,10 @@ class ConnectionServiceImpl(
       kotlin
         .runCatching { connectionHandler.updateConnection(connectionUpdate, null, false) }
         .onFailure {
-          log.error("Error while updating connection: ", it)
+          log.error(it) { "Error while updating connection" }
           ConfigClientErrorHandler.handleError(it)
         }
-    log.debug(HTTP_RESPONSE_BODY_DEBUG_MESSAGE + result)
+    log.debug { HTTP_RESPONSE_BODY_DEBUG_MESSAGE + result }
 
     val connectionRead = result.getOrNull()!!
 
@@ -203,10 +182,9 @@ class ConnectionServiceImpl(
       ConnectionReadMapper.from(
         connectionRead,
         workspaceId,
-        dataplaneGroupService.getDataplaneGroup(connectionRead.dataplaneGroupId).name,
       )
     } catch (e: java.lang.Exception) {
-      log.error("Error while reading and converting to Connection Response: ", e)
+      log.error(e) { "Error while reading and converting to Connection Response" }
       throw UnexpectedProblem()
     }
   }
@@ -222,7 +200,7 @@ class ConnectionServiceImpl(
     includeDeleted: Boolean,
   ): ConnectionsResponse {
     val pagination: Pagination = Pagination().pageSize(limit).rowOffset(offset)
-    val workspaceIdsToQuery = workspaceIds.ifEmpty { userService.getAllWorkspaceIdsForUser(currentUserService.currentUser.userId) }
+    val workspaceIdsToQuery = workspaceIds.ifEmpty { userService.getAllWorkspaceIdsForUser(currentUserService.getCurrentUser().userId) }
 
     val listConnectionsForWorkspacesRequestBody =
       ListConnectionsForWorkspacesRequestBody()
@@ -236,10 +214,10 @@ class ConnectionServiceImpl(
         .runCatching {
           connectionHandler.listConnectionsForWorkspaces(listConnectionsForWorkspacesRequestBody)
         }.onFailure {
-          log.error("Error while listing connections for workspaces: ", it)
+          log.error(it) { "Error while listing connections for workspaces" }
           ConfigClientErrorHandler.handleError(it)
         }
-    log.debug(HTTP_RESPONSE_BODY_DEBUG_MESSAGE + result)
+    log.debug { HTTP_RESPONSE_BODY_DEBUG_MESSAGE + result }
     val connectionReadList = result.getOrNull()!!
 
     return ConnectionsResponseMapper.from(
@@ -249,9 +227,6 @@ class ConnectionServiceImpl(
       limit,
       offset,
       publicApiHost!!,
-      connectionReadList.connections.map {
-        dataplaneGroupService.getDataplaneGroup(it.dataplaneGroupId).name
-      },
     )
   }
 }

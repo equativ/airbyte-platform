@@ -4,7 +4,7 @@
 
 package io.airbyte.server.apis.publicapi.services
 
-import io.airbyte.commons.constants.DEFAULT_ORGANIZATION_ID
+import io.airbyte.commons.DEFAULT_ORGANIZATION_ID
 import io.airbyte.commons.server.support.CurrentUserService
 import io.airbyte.config.DataplaneGroup
 import io.airbyte.data.services.DataplaneGroupService
@@ -40,7 +40,7 @@ interface RegionService {
   fun controllerDeleteRegion(regionId: UUID): Response
 }
 
-private val logger = KotlinLogging.logger {}
+private val log = KotlinLogging.logger {}
 
 @Singleton
 class RegionServiceImpl(
@@ -50,14 +50,14 @@ class RegionServiceImpl(
   private val currentUserService: CurrentUserService,
 ) : RegionService {
   override fun controllerListRegions(organizationId: UUID): Response {
-    val userId = currentUserService.currentUser.userId
+    val userId = currentUserService.getCurrentUser().userId
     val regions =
       trackingHelper.callWithTracker(
         {
           kotlin
             .runCatching { dataplaneGroupService.listDataplaneGroups(listOf(DEFAULT_ORGANIZATION_ID, organizationId), false) }
             .onFailure {
-              logger.error { "Error listing regions" }
+              log.error { "Error listing regions" }
               ConfigClientErrorHandler.handleError(it)
             }.getOrNull()
         },
@@ -70,7 +70,7 @@ class RegionServiceImpl(
   }
 
   override fun controllerCreateRegion(regionCreateRequest: RegionCreateRequest): Response {
-    val userId = currentUserService.currentUser.userId
+    val userId = currentUserService.getCurrentUser().userId
 
     val regionCreate =
       DataplaneGroup()
@@ -86,7 +86,7 @@ class RegionServiceImpl(
           kotlin
             .runCatching { dataplaneGroupService.writeDataplaneGroup(regionCreate) }
             .onFailure {
-              logger.error { "Error creating region" }
+              log.error { "Error creating region" }
               ConfigClientErrorHandler.handleError(it)
             }.getOrNull()
         },
@@ -99,7 +99,7 @@ class RegionServiceImpl(
   }
 
   override fun controllerGetRegion(regionId: UUID): Response {
-    val userId = currentUserService.currentUser.userId
+    val userId = currentUserService.getCurrentUser().userId
 
     val region =
       trackingHelper.callWithTracker(
@@ -107,7 +107,7 @@ class RegionServiceImpl(
           kotlin
             .runCatching { dataplaneGroupService.getDataplaneGroup(regionId) }
             .onFailure {
-              logger.error { "Error fetching region" }
+              log.error { "Error fetching region" }
               ConfigClientErrorHandler.handleError(it)
             }.getOrNull()
         },
@@ -123,7 +123,7 @@ class RegionServiceImpl(
     regionId: UUID,
     regionPatchRequest: RegionPatchRequest,
   ): Response {
-    val userId = currentUserService.currentUser.userId
+    val userId = currentUserService.getCurrentUser().userId
 
     val existing = dataplaneGroupService.getDataplaneGroup(regionId)
 
@@ -138,7 +138,7 @@ class RegionServiceImpl(
         {
           runCatching { dataplaneGroupService.writeDataplaneGroup(updated) }
             .onFailure {
-              logger.error { "Error updating region" }
+              log.error { "Error updating region" }
               ConfigClientErrorHandler.handleError(it)
             }.getOrNull()
         },
@@ -151,7 +151,7 @@ class RegionServiceImpl(
   }
 
   override fun controllerDeleteRegion(regionId: UUID): Response {
-    val userId = currentUserService.currentUser.userId
+    val userId = currentUserService.getCurrentUser().userId
 
     val delete =
       trackingHelper.callWithTracker(
@@ -171,7 +171,7 @@ class RegionServiceImpl(
 
               tombstonedGroup
             }.onFailure {
-              logger.error { "Error deleting region" }
+              log.error { "Error deleting region" }
               ConfigClientErrorHandler.handleError(it)
             }.getOrNull()
         },

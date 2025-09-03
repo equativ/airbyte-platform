@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { EnterpriseSourcePage } from "components/source/enterpriseStubs/EnterpriseSourcePage";
 
+import { UserSettingsRoutes } from "area/settings/UserSettingsRoutes";
 import { useCurrentWorkspace } from "core/api";
 import { usePrefetchWorkspaceData } from "core/api/cloud";
 import { useAnalyticsRegisterValues } from "core/services/analytics/useAnalyticsService";
@@ -18,7 +19,8 @@ import { AccountSettingsView } from "packages/cloud/views/users/AccountSettingsV
 import { ApplicationSettingsView } from "packages/cloud/views/users/ApplicationSettingsView/ApplicationSettingsView";
 import { WorkspaceSettingsView } from "packages/cloud/views/workspaces/WorkspaceSettingsView";
 import WorkspaceUsagePage from "packages/cloud/views/workspaces/WorkspaceUsagePage";
-import { RoutePaths, DestinationPaths, SourcePaths } from "pages/routePaths";
+import { OnboardingPage } from "pages/OnboardingPage/OnboardingPage";
+import { RoutePaths, DestinationPaths, SourcePaths, SettingsRoutePaths } from "pages/routePaths";
 import AdvancedSettingsPage from "pages/SettingsPage/pages/AdvancedSettingsPage";
 import {
   SourcesPage as SettingsSourcesPage,
@@ -54,8 +56,7 @@ export const WorkspacesRoutes: React.FC = () => {
   const canViewOrgSettings = useIntent("ViewOrganizationSettings", { organizationId: workspace.organizationId });
   const canManageOrganizationBilling = useGeneratedIntent(Intent.ManageOrganizationBilling);
   const canViewOrganizationUsage = useGeneratedIntent(Intent.ViewOrganizationUsage);
-  const allowConfigTemplateEndpoints = useExperiment("platform.allow-config-template-endpoints");
-  const canManageEmbedded = useIntent("CreateConfigTemplate", { organizationId: workspace.organizationId });
+  const showOnboarding = useExperiment("onboarding.surveyEnabled");
 
   useExperimentContext("organization", workspace.organizationId);
 
@@ -92,6 +93,7 @@ export const WorkspacesRoutes: React.FC = () => {
         </Route>
       </Route>
       <Route path={`${RoutePaths.Connections}/*`} element={<ConnectionsRoutes />} />
+      {showOnboarding && <Route path={RoutePaths.Onboarding} element={<OnboardingPage />} />}
       <Route path={`${RoutePaths.Settings}/*`} element={<CloudSettingsPage />}>
         <Route path={CloudSettingsRoutePaths.Account} element={<AccountSettingsView />} />
         <Route path={CloudSettingsRoutePaths.Applications} element={<ApplicationSettingsView />} />
@@ -100,9 +102,7 @@ export const WorkspacesRoutes: React.FC = () => {
         <Route path={CloudSettingsRoutePaths.Source} element={<SettingsSourcesPage />} />
         <Route path={CloudSettingsRoutePaths.Destination} element={<SettingsDestinationsPage />} />
         <Route path={CloudSettingsRoutePaths.Notifications} element={<NotificationPage />} />
-        {allowConfigTemplateEndpoints && canManageEmbedded && (
-          <Route path={RoutePaths.EmbeddedOnboarding} element={<EmbeddedSettingsPage />} />
-        )}
+        <Route path={SettingsRoutePaths.Embedded} element={<EmbeddedSettingsPage />} />
         {supportsCloudDbtIntegration && (
           <Route path={CloudSettingsRoutePaths.DbtCloud} element={<DbtCloudSettingsView />} />
         )}
@@ -123,6 +123,7 @@ export const WorkspacesRoutes: React.FC = () => {
         <Route path="*" element={<Navigate to={CloudSettingsRoutePaths.Account} replace />} />
       </Route>
       <Route path={`${RoutePaths.ConnectorBuilder}/*`} element={<ConnectorBuilderRoutes />} />
+      <Route path={`${SettingsRoutePaths.User}/*`} element={<UserSettingsRoutes />} />
       <Route path="*" element={<Navigate to={RoutePaths.Connections} replace />} />
     </Routes>
   );

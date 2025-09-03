@@ -234,7 +234,7 @@ object SecretsHelpers {
       return JsonNodeFactory.instance.objectNode()
     }
 
-    var config = configWithRefs.config
+    var config = configWithRefs.originalConfig
     for ((hydrationPath, secretRefConfig) in configWithRefs.referencedSecrets) {
       val secretPersistence = resolvePersistence(secretRefConfig.secretStorageId)
       val secretValue = getOrThrowSecretValue(secretPersistence, secretRefConfig.secretCoordinate)
@@ -253,7 +253,7 @@ object SecretsHelpers {
    * return in an ascending alphabetical order.
    */
   @VisibleForTesting
-  fun getSortedSecretPaths(spec: JsonNode?): List<String> =
+  fun getSortedSecretPaths(spec: JsonNode): List<String> =
     JsonSchemas
       .collectPathsThatMeetCondition(
         spec,
@@ -265,10 +265,8 @@ object SecretsHelpers {
           .stream()
           .anyMatch { (key): Map.Entry<String, JsonNode> -> AirbyteSecretConstants.AIRBYTE_SECRET_FIELD == key }
       }.stream()
-      .map { jsonSchemaPath: List<JsonSchemas.FieldNameOrList?>? ->
-        JsonPaths.mapJsonSchemaPathToJsonPath(
-          jsonSchemaPath,
-        )
+      .map { jsonSchemaPath: List<JsonSchemas.FieldNameOrList> ->
+        JsonPaths.mapJsonSchemaPathToJsonPath(jsonSchemaPath)
       }.distinct()
       .sorted()
       .toList()
@@ -485,17 +483,17 @@ object SecretsHelpers {
    * @param secretCoordinateAsJson The co-ordinate at which we expect the secret value to be present
    * in the secret persistence
    * @param readOnlySecretPersistence The secret persistence
-   * @return Original secret value as JsonNode
+   * @return Original secret value
    */
   fun hydrateSecretCoordinate(
     secretCoordinateAsJson: JsonNode,
     readOnlySecretPersistence: ReadOnlySecretPersistence,
-  ): JsonNode {
+  ): String {
     val secretCoordinate: SecretCoordinate =
       getCoordinateFromTextNode(
         secretCoordinateAsJson[COORDINATE_FIELD],
       )
-    return Jsons.deserialize(getOrThrowSecretValue(readOnlySecretPersistence, secretCoordinate))
+    return getOrThrowSecretValue(readOnlySecretPersistence, secretCoordinate)
   }
 
   /**

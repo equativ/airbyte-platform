@@ -1,24 +1,24 @@
-import { Icon } from "components/ui/Icon";
+import classNames from "classnames";
+
 import { ListBox, ListBoxControlButtonProps, ListBoxProps } from "components/ui/ListBox";
 import { Text } from "components/ui/Text";
 
 import styles from "./InnerListBox.module.scss";
 
-const ControlButton = <T,>(props: ListBoxControlButtonProps<T>) => {
+const ControlButton = <T,>(props: ListBoxControlButtonProps<T>) => (
+  <Text size="md" className={styles.buttonText}>
+    {props.selectedOption?.label ?? ""}
+  </Text>
+);
+
+type InnerListBoxProps<T> = Omit<ListBoxProps<T>, "controlButton">;
+
+export const InnerListBox = <T,>({ buttonClassName, ...restProps }: InnerListBoxProps<T>) => {
   return (
-    <>
-      {props.selectedOption && (
-        <Text size="md" className={styles.buttonText}>
-          {props.selectedOption.label}
-        </Text>
-      )}
-      <Icon type="chevronDown" className={styles.arrow} />
-    </>
+    <ListBox
+      buttonClassName={classNames(styles.button, buttonClassName)}
+      {...restProps}
+      controlButtonContent={ControlButton}
+    />
   );
-};
-
-type InnerListBoxProps<T> = Omit<ListBoxProps<T>, "controlButton" | "buttonClassName">;
-
-export const InnerListBox = <T,>(props: InnerListBoxProps<T>) => {
-  return <ListBox {...props} buttonClassName={styles.button} controlButton={ControlButton} />;
 };

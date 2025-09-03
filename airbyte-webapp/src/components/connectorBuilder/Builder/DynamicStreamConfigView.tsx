@@ -1,3 +1,4 @@
+import classNames from "classnames";
 import React, { useCallback } from "react";
 import { useFormContext } from "react-hook-form";
 import { FormattedMessage, useIntl } from "react-intl";
@@ -17,8 +18,8 @@ import { BuilderView } from "services/connectorBuilder/ConnectorBuilderStateServ
 import { BuilderConfigView } from "./BuilderConfigView";
 import styles from "./DynamicStreamConfigView.module.scss";
 import { StreamConfigView } from "./StreamConfigView";
-import { getStreamFieldPath, StreamId } from "../types";
-
+import { StreamId } from "../types";
+import { getStreamFieldPath } from "../utils";
 interface DynamicStreamConfigViewProps {
   streamId: StreamId;
 }
@@ -68,9 +69,9 @@ export const DynamicStreamConfigView: React.FC<DynamicStreamConfigViewProps> = (
   }
 
   return (
-    <BuilderConfigView className={styles.fullHeight}>
+    <BuilderConfigView className={classNames(styles.fullHeight, styles.relative)}>
       <FlexContainer direction="column" gap="2xl" className={styles.fullHeight}>
-        <FlexContainer justifyContent="space-between" alignItems="center">
+        <FlexContainer justifyContent="flex-end" alignItems="center">
           <SchemaFormControl
             path={dynamicStreamFieldPath("name")}
             titleOverride={null}

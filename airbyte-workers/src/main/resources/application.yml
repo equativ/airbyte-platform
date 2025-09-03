@@ -38,15 +38,6 @@ micronaut:
     # the rest of this section is ignored if enabled=false
     filter:
       enabled: false
-    oauth2:
-      clients:
-        keycloak:
-          client-id: ${KEYCLOAK_CLIENT_ID:}
-          client-secret: ${KEYCLOAK_CLIENT_SECRET:}
-          client-credentials:
-            enabled: true
-          openid:
-            issuer: ${KEYCLOAK_INTERNAL_REALM_ISSUER:}
 
 airbyte:
   airbyte-url: ${AIRBYTE_URL:}
@@ -58,7 +49,6 @@ airbyte:
     max-timeout: ${ACTIVITY_MAX_TIMEOUT_SECOND:120}
     check-timeout: ${ACTIVITY_CHECK_TIMEOUT:10}
     discovery-timeout: ${ACTIVITY_DISCOVERY_TIMEOUT:30}
-    async-timeout: ${ACTIVITY_ASYNC_TIMEOUT_SECONDS:120}
   acceptance:
     test:
       enabled: ${ACCEPTANCE_TEST_ENABLED:false}
@@ -110,15 +100,15 @@ airbyte:
     api-key: ${LAUNCHDARKLY_KEY:}
     base-url: ${FEATURE_FLAG_BASEURL:}
   internal-api:
-    auth-header:
-      name: ${AIRBYTE_API_AUTH_HEADER_NAME:}
-      value: ${AIRBYTE_API_AUTH_HEADER_VALUE:}
     base-path: ${INTERNAL_API_HOST}/api
     connect-timeout-seconds: ${AIRBYTE_API_CONNECT_TIMEOUT_SECONDS:30}
     read-timeout-seconds: ${AIRBYTE_API_READ_TIMEOUT_SECONDS:600}
     retries:
       delay-seconds: ${AIRBYTE_API_RETRY_DELAY_SECONDS:2}
       max: ${AIRBYTE_API_MAX_RETRIES:5}
+    auth:
+      type: INTERNAL_CLIENT_TOKEN
+      signature-secret: ${AB_JWT_SIGNATURE_SECRET:}
   notification:
     customerio:
       apikey: ${CUSTOMERIO_API_KEY:}
@@ -193,6 +183,7 @@ airbyte:
       gcp:
         credentials: ${SECRET_STORE_GCP_CREDENTIALS:}
         project-id: ${SECRET_STORE_GCP_PROJECT_ID:}
+        region: ${SECRET_STORE_GCP_REGION:}
       vault:
         address: ${VAULT_ADDRESS:}
         prefix: ${VAULT_PREFIX:}
@@ -217,7 +208,6 @@ airbyte:
       restart-delay: ${WORKFLOW_FAILURE_RESTART_DELAY_SECONDS:600}
   workload-api:
     base-path: ${WORKLOAD_API_HOST:}
-    bearer-token: ${WORKLOAD_API_BEARER_TOKEN:}
     connect-timeout-seconds: ${WORKLOAD_API_CONNECT_TIMEOUT_SECONDS:30}
     read-timeout-seconds: ${WORKLOAD_API_READ_TIMEOUT_SECONDS:300}
     retries:

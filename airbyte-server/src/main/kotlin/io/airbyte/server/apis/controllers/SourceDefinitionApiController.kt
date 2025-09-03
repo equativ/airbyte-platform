@@ -16,15 +16,17 @@ import io.airbyte.api.model.generated.SourceDefinitionIdWithWorkspaceId
 import io.airbyte.api.model.generated.SourceDefinitionRead
 import io.airbyte.api.model.generated.SourceDefinitionReadList
 import io.airbyte.api.model.generated.SourceDefinitionUpdate
+import io.airbyte.api.model.generated.WorkspaceIdActorDefinitionRequestBody
 import io.airbyte.api.model.generated.WorkspaceIdRequestBody
-import io.airbyte.commons.auth.AuthRoleConstants
 import io.airbyte.commons.auth.generated.Intent
 import io.airbyte.commons.auth.permissions.RequiresIntent
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.server.handlers.EnterpriseSourceStubsHandler
 import io.airbyte.commons.server.handlers.SourceDefinitionsHandler
 import io.airbyte.commons.server.scheduling.AirbyteTaskExecutors
 import io.airbyte.commons.server.validation.ActorDefinitionAccessValidator
 import io.airbyte.server.apis.execute
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Context
 import io.micronaut.http.HttpStatus
 import io.micronaut.http.annotation.Body
@@ -34,9 +36,6 @@ import io.micronaut.http.annotation.Status
 import io.micronaut.scheduling.annotation.ExecuteOn
 import io.micronaut.security.annotation.Secured
 import io.micronaut.security.rules.SecurityRule
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
-import java.lang.invoke.MethodHandles
 import java.util.concurrent.Callable
 
 @Controller("/api/v1/source_definitions")
@@ -177,7 +176,7 @@ open class SourceDefinitionApiController(
   @Secured(AuthRoleConstants.WORKSPACE_READER, AuthRoleConstants.ORGANIZATION_READER)
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun listSourceDefinitionsForWorkspace(
-    @Body workspaceIdRequestBody: WorkspaceIdRequestBody,
+    @Body workspaceIdRequestBody: WorkspaceIdActorDefinitionRequestBody,
   ): io.airbyte.api.model.generated.SourceDefinitionReadList? =
     execute {
       sourceDefinitionsHandler.listSourceDefinitionsForWorkspace(
@@ -209,6 +208,6 @@ open class SourceDefinitionApiController(
   }
 
   companion object {
-    private val log: Logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass())
+    private val log = KotlinLogging.logger {}
   }
 }

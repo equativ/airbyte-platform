@@ -13,6 +13,7 @@ import io.airbyte.api.model.generated.WebBackendConnectionListRequestBody
 import io.airbyte.api.model.generated.WebBackendConnectionRead
 import io.airbyte.api.model.generated.WebBackendConnectionReadList
 import io.airbyte.api.model.generated.WebBackendConnectionRequestBody
+import io.airbyte.api.model.generated.WebBackendConnectionStatusCounts
 import io.airbyte.api.model.generated.WebBackendConnectionUpdate
 import io.airbyte.api.model.generated.WebBackendCronExpressionDescription
 import io.airbyte.api.model.generated.WebBackendDescribeCronExpressionRequestBody
@@ -21,10 +22,10 @@ import io.airbyte.api.model.generated.WebBackendValidateMappersResponse
 import io.airbyte.api.model.generated.WebBackendWorkspaceState
 import io.airbyte.api.model.generated.WebBackendWorkspaceStateResult
 import io.airbyte.api.model.generated.WebappConfigResponse
+import io.airbyte.api.model.generated.WorkspaceIdRequestBody
 import io.airbyte.commons.annotation.AuditLogging
 import io.airbyte.commons.annotation.AuditLoggingProvider
-import io.airbyte.commons.auth.AuthRoleConstants
-import io.airbyte.commons.lang.MoreBooleans
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.server.authorization.RoleResolver
 import io.airbyte.commons.server.handlers.WebBackendCheckUpdatesHandler
 import io.airbyte.commons.server.handlers.WebBackendConnectionsHandler
@@ -79,7 +80,10 @@ open class WebBackendApiController(
     @Body webBackendConnectionCreate: WebBackendConnectionCreate,
   ): WebBackendConnectionRead? =
     execute {
-      TracingHelper.addSourceDestination(webBackendConnectionCreate.sourceId, webBackendConnectionCreate.destinationId)
+      TracingHelper.addSourceDestination(
+        webBackendConnectionCreate.sourceId,
+        webBackendConnectionCreate.destinationId,
+      )
       webBackendConnectionsHandler.webBackendCreateConnection(webBackendConnectionCreate)
     }
 
@@ -91,11 +95,11 @@ open class WebBackendApiController(
   ): WebBackendConnectionRead? =
     execute {
       TracingHelper.addConnection(webBackendConnectionRequestBody.connectionId)
-      if (MoreBooleans.isTruthy(webBackendConnectionRequestBody.withRefreshedCatalog)) {
+      if (webBackendConnectionRequestBody.withRefreshedCatalog == true) {
         // only allow refresh catalog if the user is at least a workspace editor or
         // organization editor for the connection's workspace
         roleResolver
-          .Request()
+          .newRequest()
           .withCurrentUser()
           .withRef(AuthenticationId.CONNECTION_ID, webBackendConnectionRequestBody.connectionId.toString())
           .requireRole(AuthRoleConstants.WORKSPACE_EDITOR)
@@ -122,7 +126,20 @@ open class WebBackendApiController(
   ): WebBackendConnectionReadList? =
     execute {
       TracingHelper.addWorkspace(webBackendConnectionListRequestBody.workspaceId)
-      webBackendConnectionsHandler.webBackendListConnectionsForWorkspace(webBackendConnectionListRequestBody)
+      webBackendConnectionsHandler.webBackendListConnectionsForWorkspace(
+        webBackendConnectionListRequestBody,
+      )
+    }
+
+  @Post("/connections/status_counts")
+  @Secured(AuthRoleConstants.WORKSPACE_READER, AuthRoleConstants.ORGANIZATION_READER)
+  @ExecuteOn(AirbyteTaskExecutors.IO)
+  override fun webBackendGetConnectionStatusCounts(
+    @Body workspaceIdRequestBody: WorkspaceIdRequestBody,
+  ): WebBackendConnectionStatusCounts? =
+    execute {
+      TracingHelper.addWorkspace(workspaceIdRequestBody.workspaceId)
+      webBackendConnectionsHandler.webBackendGetConnectionStatusCounts(workspaceIdRequestBody)
     }
 
   @Post("/connections/update")
@@ -177,16 +194,21 @@ open class WebBackendApiController(
       launchdarklyKey = webappConfig.webApp["launchdarkly-key"]
       osanoKey = webappConfig.webApp["osano-key"]
       segmentToken = webappConfig.webApp["segment-token"]
+      sonarApiUrl = webappConfig.webApp["sonar-api-url"]
       zendeskKey = webappConfig.webApp["zendesk-key"]
+      posthogApiKey = webappConfig.webApp["posthog-api-key"]
+      posthogHost = webappConfig.webApp["posthog-host"]
     }
 }
 
 /**
- * This class is populated by Micronaut with the values from the `airbyte.web-app` section in the application.yaml.
+ * This class is populated by Micronaut with the values from the `airbyte.web-app` section in the
+ * application.yaml.
  *
  * It is only used for by [WebBackendApiController.getWebappConfig].
  *
- * This class should be internal, but due to airbyte-server-wrapped extending the [WebBackendApiController] class, this must be public.
+ * This class should be internal, but due to airbyte-server-wrapped extending the
+ * [WebBackendApiController] class, this must be public.
  */
 @ConfigurationProperties("airbyte")
 data class WebappConfig(

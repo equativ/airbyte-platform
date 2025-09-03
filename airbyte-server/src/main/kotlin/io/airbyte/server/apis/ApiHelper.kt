@@ -19,7 +19,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.jooq.exception.DataAccessException
 import java.io.IOException
 import java.util.concurrent.Callable
-import io.airbyte.data.exceptions.ConfigNotFoundException as DataConfigNotFoundException
+import io.airbyte.data.ConfigNotFoundException as DataConfigNotFoundException
 
 val logger = KotlinLogging.logger {}
 
@@ -42,7 +42,7 @@ internal fun <T> execute(call: Callable<T>): T? {
       )
       is OperationNotAllowedException -> throw e
       is IOException -> throw RuntimeException(e)
-      is DataAccessException -> throw ConflictException("Failed to access database. Check the server logs for more information")
+      is DataAccessException -> throw ConflictException("Failed to access database. Check the server logs for more information", e)
       else -> {
         logger.error(e) { "Unexpected Exception" }
         throw e

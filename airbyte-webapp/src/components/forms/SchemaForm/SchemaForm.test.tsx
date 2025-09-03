@@ -321,7 +321,7 @@ describe("SchemaForm", () => {
       <SchemaForm schema={basicSchema} onSubmit={() => Promise.resolve()}>
         <SchemaFormControl
           overrideByPath={{
-            name: <FormControl name="name" label="Custom Name Label" fieldType="input" />,
+            name: () => <FormControl name="name" label="Custom Name Label" fieldType="input" />,
           }}
         />
         <FormSubmissionButtons />
@@ -690,7 +690,7 @@ describe("SchemaForm", () => {
         <SchemaFormControl
           path="age"
           overrideByPath={{
-            age: <FormControl name="age" label="Age (in years)" fieldType="input" type="number" />,
+            age: () => <FormControl name="age" label="Age (in years)" fieldType="input" type="number" />,
           }}
         />
         <FormSubmissionButtons />
@@ -916,7 +916,7 @@ describe("SchemaForm", () => {
           <SchemaFormControl path="name" />
           <SchemaFormRemainingFields
             overrideByPath={{
-              age: <FormControl name="age" label="Custom Age" fieldType="input" type="number" />,
+              age: () => <FormControl name="age" label="Custom Age" fieldType="input" type="number" />,
             }}
           />
           <FormSubmissionButtons />
@@ -1428,6 +1428,45 @@ describe("SchemaForm", () => {
         expect(submitData.primaryKey).toContain("key-part1");
         expect(submitData.primaryKey).toContain("key-part2");
       });
+    });
+  });
+
+  it("validates fields that are not actively rendered", async () => {
+    const schema = {
+      type: "object",
+      properties: {
+        streams: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", title: "Name" },
+            },
+            required: ["name"],
+          },
+        },
+      },
+    } as const;
+
+    const mockOnSubmit = jest.fn().mockResolvedValue(undefined);
+
+    await render(
+      <SchemaForm
+        schema={schema}
+        initialValues={{ streams: [{ name: "Stream 0" }, { name: "" }] }}
+        onSubmit={mockOnSubmit}
+      >
+        <SchemaFormControl path="streams.0" />
+        <FormSubmissionButtons allowInvalidSubmit allowNonDirtySubmit />
+      </SchemaForm>
+    );
+
+    const submitButton = screen.getByRole("button", { name: "Submit" });
+    await userEvent.click(submitButton);
+
+    // should not submit because the unrendered second stream has an error
+    await waitFor(() => {
+      expect(mockOnSubmit).not.toHaveBeenCalled();
     });
   });
 });

@@ -11,6 +11,8 @@ import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.launchdarkly.sdk.ContextKind
 import com.launchdarkly.sdk.LDContext
 import com.launchdarkly.sdk.server.LDClient
+import io.airbyte.commons.annotation.InternalForTesting
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Property
 import io.micronaut.context.annotation.Requires
 import io.micronaut.context.annotation.Secondary
@@ -19,7 +21,6 @@ import jakarta.inject.Named
 import jakarta.inject.Singleton
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.slf4j.LoggerFactory
 import java.lang.Thread.MIN_PRIORITY
 import java.nio.file.Path
 import java.nio.file.StandardWatchEventKinds
@@ -30,6 +31,8 @@ import kotlin.concurrent.thread
 import kotlin.concurrent.write
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.notExists
+
+private val log = KotlinLogging.logger {}
 
 /**
  * Feature-Flag Client interface.
@@ -107,13 +110,27 @@ internal const val CONFIG_FF_PATH = "airbyte.feature-flag.path"
 internal const val CONFIG_FF_BASEURL = "airbyte.feature-flag.base-url"
 
 /**
- * Config file based feature-flag client.
+ * A file-based feature flag client that reads flag configurations from YAML files.
  *
- * If no [config] is provided, will return the default state for each [Flag] requested.
- * Supports [EnvVar] flags as well.
+ * This client is ideal for:
+ * - Development and testing environments
+ * - Self-hosted deployments where external feature flag services aren't desired
+ * - Quick flag configuration changes without external dependencies
  *
- * @param [config] optional location of the yaml config file that contains the feature-flag definitions.
- * If the [config] is provided, it will be watched for changes and the internal representation of the [config] will be updated to match.
+ * Key features:
+ * - Real-time file watching with automatic configuration reloading
+ * - Context-aware flag evaluation based on workspace, user, organization, etc.
+ * - Thread-safe flag updates using read-write locks
+ * - Graceful fallback to default values when configuration is missing
+ * - Support for legacy [EnvVar] flags during migration
+ *
+ * The YAML configuration format supports:
+ * - Simple flag values (boolean, string, int)
+ * - Context-specific overrides for targeted rollouts
+ * - Multiple context types and inclusion lists
+ *
+ * @param config Optional path to the YAML configuration file. If null, all flags return defaults.
+ *               If provided, the file will be monitored for changes and reloaded automatically.
  */
 @Singleton
 @Requires(property = CONFIG_FF_CLIENT, notEquals = CONFIG_FF_CLIENT_VAL_FFS)
@@ -130,8 +147,8 @@ class ConfigFileClient(
   init {
     config?.also { path ->
       when {
-        path.notExists() -> log.info("path $path does not exist, will return default flag values")
-        !path.isRegularFile() -> log.info("path $path does not reference a file, will return default values")
+        path.notExists() -> log.info { "path $path does not exist, will return default flag values" }
+        !path.isRegularFile() -> log.info { "path $path does not reference a file, will return default values" }
         else -> {
           flags = readConfig(path)
           path.onChange {
@@ -163,42 +180,75 @@ class ConfigFileClient(
     flag: Flag<Int>,
     context: Context,
   ): Int = flags[flag.key]?.serve(context)?.let { it as? Int } ?: flag.default
-
-  companion object {
-    private val log = LoggerFactory.getLogger(ConfigFileClient::class.java)
-  }
 }
 
 /**
- * FeatureFlagService based feature-flag client.
+ * LaunchDarkly-based feature flag client for production feature flag management.
  *
- * @param [client] the Launch-Darkly client for interfacing with Launch-Darkly.
+ * This client integrates with LaunchDarkly's service to provide:
+ * - Advanced targeting and segmentation capabilities
+ * - Real-time flag updates without deployments
+ * - A/B testing and gradual rollouts
+ * - Comprehensive analytics and monitoring
+ * - Enterprise-grade reliability and performance
+ *
+ * The client supports:
+ * - Context interception for dynamic context enrichment
+ * - All Airbyte context types (User, Workspace, Organization, etc.)
+ * - Fallback to default values when LaunchDarkly is unavailable
+ * - Legacy [EnvVar] flag support during migration
+ *
+ * @param client The LaunchDarkly SDK client instance for communicating with LaunchDarkly services
  */
 @Singleton
 @Requires(property = CONFIG_FF_CLIENT, value = CONFIG_FF_CLIENT_VAL_LAUNCHDARKLY)
 class LaunchDarklyClient(
   private val client: LDClient,
 ) : FeatureFlagClient {
+  private var contextInterceptor: ContextInterceptor? = null
+
   override fun boolVariation(
     flag: Flag<Boolean>,
     context: Context,
   ): Boolean =
     when (flag) {
       is EnvVar -> flag.enabled(context)
-      else -> client.boolVariation(flag.key, context.toLDContext(), flag.default)
+      else -> client.boolVariation(flag.key, getFinalContext(context), flag.default)
     }
 
   override fun stringVariation(
     flag: Flag<String>,
     context: Context,
-  ): String = client.stringVariation(flag.key, context.toLDContext(), flag.default)
+  ): String = client.stringVariation(flag.key, getFinalContext(context), flag.default)
 
   override fun intVariation(
     flag: Flag<Int>,
     context: Context,
-  ): Int = client.intVariation(flag.key, context.toLDContext(), flag.default)
+  ): Int = client.intVariation(flag.key, getFinalContext(context), flag.default)
+
+  fun registerContextInterceptor(interceptor: ContextInterceptor) {
+    contextInterceptor = interceptor
+  }
+
+  private fun getFinalContext(context: Context): LDContext = (contextInterceptor?.intercept(context) ?: context).toLDContext()
 }
 
+/**
+ * Custom Airbyte Feature Flag Service client for HTTP-based flag evaluation.
+ *
+ * This client communicates with Airbyte's custom feature flag service via HTTP API.
+ * It's designed for scenarios where LaunchDarkly isn't suitable or available,
+ * but more sophisticated targeting is needed than simple config files provide.
+ *
+ * Features:
+ * - HTTP-based flag evaluation with REST API
+ * - Context serialization as query parameters
+ * - Graceful fallback to default values on service errors
+ * - Configurable base URL for different environments
+ *
+ * @param httpClient The HTTP client for making requests to the feature flag service
+ * @param baseUrl The base URL of the feature flag service API
+ */
 @Singleton
 @Requires(property = CONFIG_FF_CLIENT, value = CONFIG_FF_CLIENT_VAL_FFS)
 class FeatureFlagServiceClient(
@@ -372,10 +422,22 @@ private val yamlMapper = ObjectMapper(YAMLFactory()).registerKotlinModule()
 private fun readConfig(path: Path): Map<String, ConfigFileFlag> = yamlMapper.readValue<ConfigFileFlags>(path.toFile()).flags.associateBy { it.name }
 
 /**
- * Monitors a [Path] for changes, calling [block] when a change is detected.
+ * Extension function that monitors a file path for changes and executes a callback when changes occur.
  *
- * @receiver Path
- * @param [block] function called anytime a change is detected on this [Path]
+ * This function sets up a file system watcher using Java NIO's WatchService to monitor
+ * the parent directory of the given file. When the file is modified or created, the
+ * provided callback function is executed.
+ *
+ * The implementation:
+ * - Registers the parent directory with the WatchService (since individual files can't be watched)
+ * - Filters events to only respond to changes to the specific file
+ * - Runs the watcher in a low-priority daemon thread to avoid blocking the main application
+ * - Handles both ENTRY_MODIFY and ENTRY_CREATE events
+ *
+ * This is used by ConfigFileClient to reload flag configurations in real-time.
+ *
+ * @receiver The Path to the file to monitor for changes
+ * @param block The callback function to execute when the file changes
  */
 private fun Path.onChange(block: () -> Unit) {
   val watcher: WatchService = fileSystem.newWatchService()
@@ -409,7 +471,8 @@ private fun Path.onChange(block: () -> Unit) {
 /**
  * LaunchDarkly v6 version
  */
-private fun Context.toLDContext(): LDContext {
+@InternalForTesting
+internal fun Context.toLDContext(): LDContext {
   if (this is Multi) {
     val builder = LDContext.multiBuilder()
     contexts.forEach { builder.add(it.toLDContext()) }

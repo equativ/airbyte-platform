@@ -10,7 +10,7 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
 import io.airbyte.api.model.generated.DestinationSyncMode
 import io.airbyte.api.model.generated.SyncMode
 import io.airbyte.api.problems.throwable.generated.UnexpectedProblem
-import io.airbyte.commons.auth.AuthRoleConstants
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.server.authorization.RoleResolver
 import io.airbyte.commons.server.scheduling.AirbyteTaskExecutors
 import io.airbyte.commons.server.support.AuthenticationId
@@ -24,13 +24,13 @@ import io.airbyte.server.apis.publicapi.constants.GET
 import io.airbyte.server.apis.publicapi.constants.STREAMS_PATH
 import io.airbyte.server.apis.publicapi.services.DestinationService
 import io.airbyte.server.apis.publicapi.services.SourceService
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.http.HttpStatus
 import io.micronaut.http.annotation.Controller
 import io.micronaut.scheduling.annotation.ExecuteOn
 import io.micronaut.security.annotation.Secured
 import io.micronaut.security.rules.SecurityRule
 import jakarta.ws.rs.core.Response
-import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.util.UUID
 
@@ -44,7 +44,7 @@ class StreamsController(
   private val currentUserService: CurrentUserService,
 ) : PublicStreamsApi {
   companion object {
-    private val log: org.slf4j.Logger? = LoggerFactory.getLogger(StreamsController::class.java)
+    private val log = KotlinLogging.logger {}
   }
 
   @ExecuteOn(AirbyteTaskExecutors.PUBLIC_API)
@@ -54,11 +54,11 @@ class StreamsController(
     ignoreCache: Boolean,
   ): Response {
     // Check permission for source and destination
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     val authReq =
       roleResolver
-        .Request()
+        .newRequest()
         .withCurrentUser()
         .withRef(AuthenticationId.SOURCE_ID, sourceId)
 
@@ -137,7 +137,7 @@ class StreamsController(
       try {
         yamlMapper.readTree(connectorSchema!!.traverse())
       } catch (e: IOException) {
-        log?.error("Error getting stream fields from schema", e)
+        log.error(e) { "Error getting stream fields from schema" }
         throw UnexpectedProblem()
       }
     val fields = spec.fields()
@@ -179,6 +179,12 @@ class StreamsController(
       if (destinationSyncModes.contains(DestinationSyncMode.OVERWRITE)) {
         connectionSyncModes.add(ConnectionSyncModeEnum.FULL_REFRESH_OVERWRITE)
       }
+      if (destinationSyncModes.contains(DestinationSyncMode.UPDATE)) {
+        connectionSyncModes.add(ConnectionSyncModeEnum.FULL_REFRESH_UPDATE)
+      }
+      if (destinationSyncModes.contains(DestinationSyncMode.SOFT_DELETE)) {
+        connectionSyncModes.add(ConnectionSyncModeEnum.FULL_REFRESH_SOFT_DELETE)
+      }
     }
     if (sourceSyncModes.contains(SyncMode.INCREMENTAL)) {
       if (destinationSyncModes.contains(DestinationSyncMode.APPEND)) {
@@ -186,6 +192,12 @@ class StreamsController(
       }
       if (destinationSyncModes.contains(DestinationSyncMode.APPEND_DEDUP)) {
         connectionSyncModes.add(ConnectionSyncModeEnum.INCREMENTAL_DEDUPED_HISTORY)
+      }
+      if (destinationSyncModes.contains(DestinationSyncMode.UPDATE)) {
+        connectionSyncModes.add(ConnectionSyncModeEnum.INCREMENTAL_UPDATE)
+      }
+      if (destinationSyncModes.contains(DestinationSyncMode.SOFT_DELETE)) {
+        connectionSyncModes.add(ConnectionSyncModeEnum.INCREMENTAL_SOFT_DELETE)
       }
     }
     return connectionSyncModes

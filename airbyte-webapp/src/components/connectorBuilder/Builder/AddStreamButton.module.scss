@@ -7,7 +7,7 @@ $buttonWidth: 26px;
 .body {
   display: flex;
   flex-direction: column;
-  gap: variables.$spacing-xl;
+  gap: 0;
   overflow: visible;
 }
 
@@ -44,4 +44,9 @@ $animation-size: -20px;
 
 .buttonContainer--pulse::after {
   z-index: 1;
+}
+
+.relativeWithPadding {
+  padding-bottom: 30px;
+  position: relative;
 }

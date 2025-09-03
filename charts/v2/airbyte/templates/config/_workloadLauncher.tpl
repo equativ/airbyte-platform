@@ -103,7 +103,7 @@ Renders the workloadLauncher.dataPlane.clientId value
 Renders the workloadLauncher.dataPlane.clientId secret key
 */}}
 {{- define "airbyte.workloadLauncher.dataPlane.clientId.secretKey" }}
-	{{- .Values.workloadLauncher.dataPlane.clientIdSecretKey | default "DATAPLANE_CLIENT_ID" }}
+	{{- .Values.workloadLauncher.dataPlane.clientIdSecretKey | default (include "airbyte.auth.bootstrap.dataPlane.clientIdSecretKey" .) }}
 {{- end }}
 
 {{/*
@@ -139,7 +139,7 @@ Renders the workloadLauncher.dataPlane.clientIdSecretName environment variable
 Renders the workloadLauncher.dataPlane.clientIdSecretKey value
 */}}
 {{- define "airbyte.workloadLauncher.dataPlane.clientIdSecretKey" }}
-    {{- .Values.workloadLauncher.dataPlane.clientIdSecretKey | default (include "airbyte.workloadLauncher.dataPlane.clientId.secretKey" .) }}
+    {{- .Values.workloadLauncher.dataPlane.clientIdSecretKey | default (include "airbyte.auth.bootstrap.dataPlane.clientIdSecretKey" .) }}
 {{- end }}
 
 {{/*
@@ -164,7 +164,7 @@ Renders the workloadLauncher.dataPlane.clientSecret value
 Renders the workloadLauncher.dataPlane.clientSecret secret key
 */}}
 {{- define "airbyte.workloadLauncher.dataPlane.clientSecret.secretKey" }}
-	{{- .Values.workloadLauncher.dataPlane.clientSecretSecretKey | default "DATAPLANE_CLIENT_SECRET" }}
+	{{- .Values.workloadLauncher.dataPlane.clientSecretSecretKey | default (include "airbyte.auth.bootstrap.dataPlane.clientSecretSecretKey" .) }}
 {{- end }}
 
 {{/*
@@ -200,7 +200,7 @@ Renders the workloadLauncher.dataPlane.clientSecretSecretName environment variab
 Renders the workloadLauncher.dataPlane.clientSecretSecretKey value
 */}}
 {{- define "airbyte.workloadLauncher.dataPlane.clientSecretSecretKey" }}
-    {{- .Values.workloadLauncher.dataPlane.clientSecretSecretKey | default (include "airbyte.workloadLauncher.dataPlane.clientSecret.secretKey" .) }}
+    {{- .Values.workloadLauncher.dataPlane.clientSecretSecretKey | default (include "airbyte.auth.bootstrap.dataPlane.clientSecretSecretKey" .) }}
 {{- end }}
 
 {{/*
@@ -242,6 +242,24 @@ Renders the set of all workloadLauncher.dataPlane secret variables
 {{- define "airbyte.workloadLauncher.dataPlane.secrets" }}
 DATAPLANE_CLIENT_ID: {{ include "airbyte.workloadLauncher.dataPlane.clientId" . | quote }}
 DATAPLANE_CLIENT_SECRET: {{ include "airbyte.workloadLauncher.dataPlane.clientSecret" . | quote }}
+{{- end }}
+
+{{/*
+Renders the global.image.registry value
+*/}}
+{{- define "airbyte.workloadLauncher.images.registry" }}
+    {{- .Values.global.image.registry }}
+{{- end }}
+
+{{/*
+Renders the workloadLauncher.images.registry environment variable
+*/}}
+{{- define "airbyte.workloadLauncher.images.registry.env" }}
+- name: JOB_KUBE_CONNECTOR_IMAGE_REGISTRY
+  valueFrom:
+    configMapKeyRef:
+      name: {{ .Release.Name }}-airbyte-env
+      key: JOB_KUBE_CONNECTOR_IMAGE_REGISTRY
 {{- end }}
 
 {{/*
@@ -338,6 +356,7 @@ Renders the workloadLauncher.images.workloadInit.image environment variable
 Renders the set of all workloadLauncher.images environment variables
 */}}
 {{- define "airbyte.workloadLauncher.images.envs" }}
+{{- include "airbyte.workloadLauncher.images.registry.env" . }}
 {{- include "airbyte.workloadLauncher.images.connectorProfiler.image.env" . }}
 {{- include "airbyte.workloadLauncher.images.connectorSidecar.image.env" . }}
 {{- include "airbyte.workloadLauncher.images.containerOrchestrator.enabled.env" . }}
@@ -349,6 +368,7 @@ Renders the set of all workloadLauncher.images environment variables
 Renders the set of all workloadLauncher.images config map variables
 */}}
 {{- define "airbyte.workloadLauncher.images.configVars" }}
+JOB_KUBE_CONNECTOR_IMAGE_REGISTRY: {{ include "airbyte.workloadLauncher.images.registry" . | quote }}
 CONNECTOR_PROFILER_IMAGE: {{ include "airbyte.workloadLauncher.images.connectorProfiler.image" . | quote }}
 CONNECTOR_SIDECAR_IMAGE: {{ include "airbyte.workloadLauncher.images.connectorSidecar.image" . | quote }}
 CONTAINER_ORCHESTRATOR_ENABLED: {{ include "airbyte.workloadLauncher.images.containerOrchestrator.enabled" . | quote }}

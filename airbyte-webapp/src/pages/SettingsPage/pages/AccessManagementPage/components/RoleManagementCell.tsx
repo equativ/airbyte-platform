@@ -6,10 +6,10 @@ import { FlexContainer } from "components/ui/Flex";
 import { Text } from "components/ui/Text";
 import { Tooltip } from "components/ui/Tooltip";
 
-import { useCurrentWorkspace } from "core/api";
+import { useCurrentOrganizationId } from "area/organization/utils/useCurrentOrganizationId";
 import { useCurrentUser } from "core/services/auth";
 import { FeatureItem, useFeature } from "core/services/features";
-import { useIntent } from "core/utils/rbac";
+import { Intent, useGeneratedIntent, useIntent } from "core/utils/rbac";
 import { RbacRole } from "core/utils/rbac/rbacPermissionsQuery";
 
 import { GuestBadge } from "./GuestBadge";
@@ -59,15 +59,15 @@ export const PendingInvitationBadge: React.FC<{ scope: ResourceType }> = ({ scop
 };
 export const RoleManagementCell: React.FC<RoleManagementCellProps> = ({ user, resourceType }) => {
   const indicateGuestUsers = useFeature(FeatureItem.IndicateGuestUsers);
-  const { workspaceId, organizationId } = useCurrentWorkspace();
+  const organizationId = useCurrentOrganizationId();
   const workspaceAccessLevel = getWorkspaceAccessLevel(user);
   const organizationAccessLevel = getOrganizationAccessLevel(user);
   const currentUser = useCurrentUser();
 
-  const canEditPermissions = useIntent(
-    resourceType === "workspace" ? "UpdateWorkspacePermissions" : "UpdateOrganizationPermissions",
-    { workspaceId, organizationId }
-  );
+  const canEditWorkspacePermissions = useGeneratedIntent(Intent.UpdateWorkspacePermissions);
+  const canEditOrganizationPermissions = useGeneratedIntent(Intent.UpdateOrganizationPermissions);
+  const canEditPermissions =
+    resourceType === "workspace" ? canEditWorkspacePermissions : canEditOrganizationPermissions;
 
   const canListOrganizationUsers = useIntent("ListOrganizationMembers", {
     organizationId,

@@ -6,7 +6,6 @@ package pods.factories
 
 import io.airbyte.featureflag.AllowSpotInstances
 import io.airbyte.featureflag.FeatureFlagClient
-import io.airbyte.featureflag.PlaneName
 import io.airbyte.featureflag.TestClient
 import io.airbyte.workload.launcher.pods.factories.NodeSelectionFactory
 import io.fabric8.kubernetes.api.model.Toleration
@@ -24,7 +23,7 @@ class NodeSelectionFactoryTest {
     val nodeSelectionFactory = Fixtures.createNodeSelectionFactory(featureFlagClient = featureFlagClient)
     val nodeSelectors = mapOf("label" to "value")
 
-    val nodeSelection = nodeSelectionFactory.createReplicationNodeSelection(nodeSelectors, mapOf())
+    val nodeSelection = nodeSelectionFactory.createNodeSelection(nodeSelectors, mapOf())
 
     assertTrue(nodeSelection.tolerations.containsAll(Fixtures.defaultTolerations))
     assertEquals(useSpotTolerations, nodeSelection.tolerations.contains(Fixtures.spotToleration))
@@ -54,7 +53,6 @@ class NodeSelectionFactoryTest {
       NodeSelectionFactory(
         featureFlagClient = featureFlagClient,
         tolerations = defaultTolerations,
-        infraFlagContexts = listOf(PlaneName("test")),
         spotToleration = spotToleration,
       )
   }

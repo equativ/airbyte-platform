@@ -9,8 +9,8 @@ import io.airbyte.api.model.generated.CreateOrUpdateSecretsPersistenceConfigRequ
 import io.airbyte.api.model.generated.ScopeType
 import io.airbyte.api.model.generated.SecretPersistenceConfig
 import io.airbyte.api.model.generated.SecretPersistenceConfigGetRequestBody
-import io.airbyte.commons.auth.AuthRoleConstants
-import io.airbyte.commons.enums.Enums
+import io.airbyte.commons.auth.roles.AuthRoleConstants
+import io.airbyte.commons.enums.convertTo
 import io.airbyte.commons.json.Jsons
 import io.airbyte.commons.server.errors.BadObjectSchemaKnownException
 import io.airbyte.commons.server.handlers.SecretPersistenceConfigHandler
@@ -67,10 +67,7 @@ class SecretsPersistenceConfigApiController(
     execute {
       val secretCoordinate =
         secretPersistenceConfigHandler.buildRsmCoordinate(
-          Enums.convertTo(
-            requestBody.scope,
-            io.airbyte.config.ScopeType::class.java,
-          ),
+          requestBody.scope.convertTo<io.airbyte.config.ScopeType>(),
           requestBody.scopeId,
         )
       val secretPersistenceConfigCoordinate =
@@ -79,15 +76,9 @@ class SecretsPersistenceConfigApiController(
           Jsons.serialize(requestBody.configuration),
         )
       secretPersistenceConfigService.createOrUpdate(
-        Enums.convertTo(
-          requestBody.scope,
-          io.airbyte.config.ScopeType::class.java,
-        ),
+        requestBody.scope.convertTo<io.airbyte.config.ScopeType>(),
         requestBody.scopeId,
-        Enums.convertTo(
-          requestBody.secretPersistenceType,
-          io.airbyte.config.SecretPersistenceConfig.SecretPersistenceType::class.java,
-        ),
+        requestBody.secretPersistenceType.convertTo<io.airbyte.config.SecretPersistenceConfig.SecretPersistenceType>(),
         secretPersistenceConfigCoordinate,
       )
     }
@@ -107,7 +98,7 @@ class SecretsPersistenceConfigApiController(
     }
     return execute {
       val secretPersistenceConfig =
-        secretPersistenceConfigService[io.airbyte.config.ScopeType.ORGANIZATION, requestBody.scopeId]
+        secretPersistenceConfigService.get(io.airbyte.config.ScopeType.ORGANIZATION, requestBody.scopeId)
       secretPersistenceConfigHandler.buildSecretPersistenceConfigResponse(secretPersistenceConfig)
     }
   }

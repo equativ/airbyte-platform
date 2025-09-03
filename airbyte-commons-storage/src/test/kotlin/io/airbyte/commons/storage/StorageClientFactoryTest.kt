@@ -37,6 +37,7 @@ private val bucket =
     activityPayload = "payload",
     auditLogging = null,
     profilerOutput = null,
+    replicationDump = null,
   )
 
 @MicronautTest
@@ -62,6 +63,7 @@ class LocalStorageClientFactoryTest {
           activityPayload = "ap",
           auditLogging = null,
           profilerOutput = null,
+          replicationDump = null,
         )
     }
 
@@ -75,6 +77,9 @@ class LocalStorageClientFactoryTest {
 
     val log: LocalStorageClient = factory.create(DocumentType.LOGS) as LocalStorageClient
     assertEquals("/tmp/test/job-logging/foo", log.toPath("foo").toString())
+
+    val dump: LocalStorageClient = factory.create(DocumentType.REPLICATION_DUMP) as LocalStorageClient
+    assertEquals("/tmp/test/replication-dump/foo", dump.toPath("foo").toString())
   }
 }
 
@@ -106,6 +111,7 @@ class GcsStorageClientFactoryTest {
   @Test
   fun `get returns correct class`() {
     assertTrue(factory.create(DocumentType.LOGS) is GcsStorageClient, "log returned wrong type")
+    assertTrue(factory.create(DocumentType.REPLICATION_DUMP) is GcsStorageClient, "dump returned wrong type")
     assertTrue(factory.create(DocumentType.STATE) is GcsStorageClient, "state returned wrong type")
     assertTrue(factory.create(DocumentType.WORKLOAD_OUTPUT) is GcsStorageClient, "workload returned wrong type")
   }
@@ -141,6 +147,7 @@ class MinioStorageClientFactoryTest {
   @Test
   fun `get returns correct class`() {
     assertTrue(factory.create(DocumentType.LOGS) is MinioStorageClient, "log returned wrong type")
+    assertTrue(factory.create(DocumentType.REPLICATION_DUMP) is MinioStorageClient, "dump returned wrong type")
     assertTrue(factory.create(DocumentType.STATE) is MinioStorageClient, "state returned wrong type")
     assertTrue(factory.create(DocumentType.WORKLOAD_OUTPUT) is MinioStorageClient, "workload returned wrong type")
   }
@@ -176,6 +183,7 @@ class S3StorageClientFactoryTest {
   @Test
   fun `get returns correct class`() {
     assertTrue(factory.create(DocumentType.LOGS) is S3StorageClient, "log returned wrong type")
+    assertTrue(factory.create(DocumentType.REPLICATION_DUMP) is S3StorageClient, "dump returned wrong type")
     assertTrue(factory.create(DocumentType.STATE) is S3StorageClient, "state returned wrong type")
     assertTrue(factory.create(DocumentType.WORKLOAD_OUTPUT) is S3StorageClient, "workload returned wrong type")
   }

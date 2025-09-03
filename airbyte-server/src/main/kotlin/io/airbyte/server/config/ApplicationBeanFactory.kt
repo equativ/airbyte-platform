@@ -41,6 +41,7 @@ import io.airbyte.featureflag.LogStateMsgs
 import io.airbyte.featureflag.PrintLongRecordPks
 import io.airbyte.featureflag.RemoveValidationLimit
 import io.airbyte.featureflag.ReplicationBufferOverride
+import io.airbyte.featureflag.ShouldFailSyncIfHeartbeatFailure
 import io.airbyte.featureflag.ShouldFailSyncOnDestinationTimeout
 import io.airbyte.featureflag.WorkloadHeartbeatRate
 import io.airbyte.featureflag.WorkloadHeartbeatTimeout
@@ -64,7 +65,6 @@ import jakarta.inject.Named
 import jakarta.inject.Singleton
 import java.net.http.HttpClient
 import java.nio.file.Path
-import java.util.List
 import java.util.UUID
 import java.util.function.Supplier
 
@@ -78,18 +78,18 @@ class ApplicationBeanFactory {
   fun randomUUIDSupplier(): Supplier<UUID> = Supplier { UUID.randomUUID() }
 
   @Singleton
-  fun eventRunner(temporalClient: TemporalClient?): EventRunner = TemporalEventRunner(temporalClient)
+  fun eventRunner(temporalClient: TemporalClient): EventRunner = TemporalEventRunner(temporalClient)
 
   @Singleton
   fun jobTracker(
-    jobPersistence: JobPersistence?,
-    trackingClient: TrackingClient?,
-    actorDefinitionVersionHelper: ActorDefinitionVersionHelper?,
-    sourceService: SourceService?,
-    destinationService: DestinationService?,
-    connectionService: ConnectionService?,
-    operationService: OperationService?,
-    workspaceService: WorkspaceService?,
+    jobPersistence: JobPersistence,
+    trackingClient: TrackingClient,
+    actorDefinitionVersionHelper: ActorDefinitionVersionHelper,
+    sourceService: SourceService,
+    destinationService: DestinationService,
+    connectionService: ConnectionService,
+    operationService: OperationService,
+    workspaceService: WorkspaceService,
   ): JobTracker =
     JobTracker(
       jobPersistence,
@@ -104,15 +104,15 @@ class ApplicationBeanFactory {
 
   @Singleton
   fun jobNotifier(
-    trackingClient: TrackingClient?,
-    webUrlHelper: WebUrlHelper?,
-    workspaceHelper: WorkspaceHelper?,
-    actorDefinitionVersionHelper: ActorDefinitionVersionHelper?,
-    sourceService: SourceService?,
-    destinationService: DestinationService?,
-    connectionService: ConnectionService?,
-    workspaceService: WorkspaceService?,
-    metricClient: MetricClient?,
+    trackingClient: TrackingClient,
+    webUrlHelper: WebUrlHelper,
+    workspaceHelper: WorkspaceHelper,
+    actorDefinitionVersionHelper: ActorDefinitionVersionHelper,
+    sourceService: SourceService,
+    destinationService: DestinationService,
+    connectionService: ConnectionService,
+    workspaceService: WorkspaceService,
+    metricClient: MetricClient,
   ): JobNotifier =
     JobNotifier(
       webUrlHelper,
@@ -128,29 +128,29 @@ class ApplicationBeanFactory {
 
   @Singleton
   fun defaultJobCreator(
-    jobPersistence: JobPersistence?,
-    workerConfigsProvider: WorkerConfigsProvider?,
-    featureFlagClient: FeatureFlagClient?,
-    streamRefreshesRepository: StreamRefreshesRepository?,
+    jobPersistence: JobPersistence,
+    workerConfigsProvider: WorkerConfigsProvider,
+    featureFlagClient: FeatureFlagClient,
+    streamRefreshesRepository: StreamRefreshesRepository,
     @Value("\${airbyte.worker.kube-job-config-variant-override}") variantOverride: String?,
   ): DefaultJobCreator = DefaultJobCreator(jobPersistence, workerConfigsProvider, featureFlagClient, streamRefreshesRepository, variantOverride)
 
   @Singleton
   fun jobFactory(
-    jobPersistence: JobPersistence?,
+    jobPersistence: JobPersistence,
     @Property(
       name = "airbyte.connector.specific-resource-defaults-enabled",
       defaultValue = "false",
     ) connectorSpecificResourceDefaultsEnabled: Boolean,
-    jobCreator: DefaultJobCreator?,
-    oAuthConfigSupplier: OAuthConfigSupplier?,
-    configInjector: ConfigInjector?,
-    actorDefinitionVersionHelper: ActorDefinitionVersionHelper?,
-    sourceService: SourceService?,
-    destinationService: DestinationService?,
-    connectionService: ConnectionService?,
-    operationService: OperationService?,
-    workspaceService: WorkspaceService?,
+    jobCreator: DefaultJobCreator,
+    oAuthConfigSupplier: OAuthConfigSupplier,
+    configInjector: ConfigInjector,
+    actorDefinitionVersionHelper: ActorDefinitionVersionHelper,
+    sourceService: SourceService,
+    destinationService: DestinationService,
+    connectionService: ConnectionService,
+    operationService: OperationService,
+    workspaceService: WorkspaceService,
   ): SyncJobFactory =
     DefaultSyncJobFactory(
       connectorSpecificResourceDefaultsEnabled,
@@ -208,7 +208,7 @@ class ApplicationBeanFactory {
     OAuthImplementationFactory(HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build())
 
   @Singleton
-  fun builderProjectUpdater(connectorBuilderService: ConnectorBuilderService?): BuilderProjectUpdater {
+  fun builderProjectUpdater(connectorBuilderService: ConnectorBuilderService): BuilderProjectUpdater {
     val pathToConnectors = EnvVar.PATH_TO_CONNECTORS.fetch()
     val configRepositoryProjectUpdater = ConfigRepositoryBuilderProjectUpdater(connectorBuilderService)
     return if (pathToConnectors == null || pathToConnectors.isEmpty()) {
@@ -248,7 +248,7 @@ class ApplicationBeanFactory {
   @Named("replicationFeatureFlags")
   fun replicationFeatureFlags(): ReplicationFeatureFlags {
     val featureFlags =
-      List.of<Flag<*>>(
+      listOf<Flag<*>>(
         DestinationTimeoutEnabled,
         DestinationTimeoutSeconds,
         FailSyncOnInvalidChecksum,
@@ -258,6 +258,7 @@ class ApplicationBeanFactory {
         PrintLongRecordPks,
         RemoveValidationLimit,
         ReplicationBufferOverride,
+        ShouldFailSyncIfHeartbeatFailure,
         ShouldFailSyncOnDestinationTimeout,
         WorkloadHeartbeatRate,
         WorkloadHeartbeatTimeout,

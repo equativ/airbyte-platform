@@ -36,12 +36,15 @@ import jakarta.annotation.Nullable
 import jakarta.inject.Named
 import jakarta.inject.Singleton
 import java.nio.file.Path
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.function.Supplier
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
 
 /**
  * Defines and creates any singletons that are only required when running in any mode.
@@ -165,7 +168,12 @@ class CommonBeanFactory {
   @Named("onReplicationRunning")
   fun replicationRunningCallback(
     @Named("workloadId") workloadId: String,
-  ): VoidCallable = VoidCallable { workloadId }
+  ): VoidCallable =
+    object : VoidCallable {
+      override fun voidCall() {
+        println("workloadId = $workloadId")
+      }
+    }
 
   @Singleton
   @Named("startReplicationJobs")
@@ -207,4 +215,20 @@ class CommonBeanFactory {
           logMdcHelper.getJobLogPathMdcKey() to logMdcHelper.fullLogPath(jobRoot),
         ),
       )
+
+  @Singleton
+  @Named("workloadHeartbeatInterval")
+  fun workloadHeartbeatInterval(
+    @Value("\${airbyte.workload-api.heartbeat.interval-seconds}") interval: Long,
+  ): Duration = interval.seconds.toJavaDuration()
+
+  @Singleton
+  @Named("workloadHeartbeatTimeout")
+  fun workloadHeartbeatTimeout(
+    @Value("\${airbyte.workload-api.heartbeat.timeout-seconds}") timeout: Long,
+  ): Duration = timeout.seconds.toJavaDuration()
+
+  @Singleton
+  @Named("hardExitCallable")
+  fun hardExitCallable(): () -> Unit = { kotlin.system.exitProcess(2) }
 }

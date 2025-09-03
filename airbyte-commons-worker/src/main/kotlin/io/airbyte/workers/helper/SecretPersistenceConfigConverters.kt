@@ -7,25 +7,18 @@ package io.airbyte.workers.helper
 import io.airbyte.api.client.model.generated.ScopeType
 import io.airbyte.api.client.model.generated.SecretStorageRead
 import io.airbyte.api.client.model.generated.SecretStorageType
-import io.airbyte.commons.enums.Enums
+import io.airbyte.commons.enums.convertTo
 import io.airbyte.commons.json.Jsons
 import io.airbyte.config.SecretPersistenceConfig
 import io.airbyte.api.client.model.generated.SecretPersistenceConfig as ApiSecretPersistenceConfig
 
 fun ApiSecretPersistenceConfig.toModel(): SecretPersistenceConfig =
   SecretPersistenceConfig()
-    .withScopeType(
-      Enums.convertTo(
-        this.scopeType,
-        io.airbyte.config.ScopeType::class.java,
-      ),
-    ).withScopeId(this.scopeId)
+    .withScopeType(this.scopeType.convertTo<io.airbyte.config.ScopeType>())
+    .withScopeId(this.scopeId)
     .withConfiguration(Jsons.deserializeToStringMap(this.configuration))
     .withSecretPersistenceType(
-      Enums.convertTo(
-        this.secretPersistenceType,
-        SecretPersistenceConfig.SecretPersistenceType::class.java,
-      ),
+      this.secretPersistenceType.convertTo<SecretPersistenceConfig.SecretPersistenceType>(),
     )
 
 fun SecretStorageRead.toConfigModel(): SecretPersistenceConfig =
@@ -36,7 +29,7 @@ fun SecretStorageRead.toConfigModel(): SecretPersistenceConfig =
         ScopeType.WORKSPACE -> io.airbyte.config.ScopeType.WORKSPACE
       },
     ).withScopeId(this.scopeId)
-    .withConfiguration(Jsons.deserializeToStringMap(this.config))
+    .withConfiguration(this.config?.let { Jsons.deserializeToStringMap(it) })
     .withSecretPersistenceType(
       when (this.secretStorageType) {
         SecretStorageType.AWS_SECRETS_MANAGER -> SecretPersistenceConfig.SecretPersistenceType.AWS

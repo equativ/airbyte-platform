@@ -72,6 +72,11 @@ open class SecretStorageService(
     secretStorageId: SecretStorageId,
     currentUserId: UserId?,
   ) {
+    if (storageConfig == null) {
+      // No config to store
+      return
+    }
+
     val secretCoordinate =
       secretsRepositoryWriter.storeInDefaultPersistence(
         SecretCoordinate.AirbyteManagedSecretCoordinate(
@@ -100,6 +105,10 @@ open class SecretStorageService(
     secretStorageCreate: SecretStorageCreate,
     storageConfig: JsonNode?,
   ): SecretStorage {
+    if (!secretStorageCreate.configuredFromEnvironment && storageConfig == null) {
+      throw IllegalArgumentException("Storage config must be provided when `configuredFromEnvironment` is false")
+    }
+
     val secretStorage = secretStorageRepository.create(secretStorageCreate)
     writeStorageCredentials(secretStorageCreate, storageConfig, secretStorage.id, secretStorageCreate.createdBy)
     return secretStorage
@@ -219,7 +228,7 @@ open class SecretStorageService(
     // the secretStorage's secretConfig should specify an explicit secretStorageId, but we don't yet
     // represent the default secret persistence as a secretStorage in the control plane so we
     // instead just assume the coordinate resides in the default secret persistence.
-    val config = secretsRepositoryReader.fetchSecretFromDefaultSecretPersistence(SecretCoordinate.fromFullCoordinate(secretCoordinate))
+    val config = secretsRepositoryReader.fetchJsonSecretFromDefaultSecretPersistence(SecretCoordinate.fromFullCoordinate(secretCoordinate))
     return SecretStorageWithConfig(
       secretStorage,
       config,

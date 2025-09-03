@@ -7,14 +7,19 @@ import { LicenseBanner } from "components/LicenseBanner/LicenseBanner";
 import { FlexContainer } from "components/ui/Flex";
 
 import { SideBar } from "area/layout/SideBar";
+import { usePrefetchOrganizationSummaries } from "core/api/";
 import { DefaultErrorBoundary, ForbiddenErrorBoundary } from "core/errors";
 import { useIsCloudApp } from "core/utils/app";
 import { StatusBanner } from "packages/cloud/area/billing/components/StatusBanner";
+import { useTrialEndedModal } from "packages/cloud/area/billing/utils/useTrialEndedModal";
 
 import styles from "./MainLayout.module.scss";
 
 const MainLayout: React.FC<React.PropsWithChildren> = () => {
   const isCloudApp = useIsCloudApp();
+  usePrefetchOrganizationSummaries()();
+  useTrialEndedModal();
+
   return (
     <ForbiddenErrorBoundary>
       <FlexContainer className={classNames(styles.wrapper)} direction="column" gap="none">

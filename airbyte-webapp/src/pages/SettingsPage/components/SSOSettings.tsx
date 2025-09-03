@@ -1,84 +1,30 @@
 import { Disclosure, DisclosureButton, DisclosurePanel } from "@headlessui/react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useMemo } from "react";
-import { useFormContext, useFormState, useWatch } from "react-hook-form";
+import { useFormState } from "react-hook-form";
 import { FormattedMessage, useIntl } from "react-intl";
-import { z } from "zod";
 
 import { FormControl } from "components/forms/FormControl";
+import { FormSubmissionButtons } from "components/forms/FormSubmissionButtons";
 import { Box } from "components/ui/Box";
+import { BrandingBadge } from "components/ui/BrandingBadge";
 import { Button } from "components/ui/Button";
 import { FlexContainer } from "components/ui/Flex";
 import { Icon } from "components/ui/Icon";
 import { ExternalLink } from "components/ui/Link";
+import { Message } from "components/ui/Message";
 import { Text } from "components/ui/Text";
 
+import { useSSOConfigManagement } from "core/api";
+import { FeatureItem, IfFeatureEnabled } from "core/services/features";
 import { links } from "core/utils/links";
 
 import styles from "./SSOSettings.module.scss";
-import { BaseOrganizationFormValues } from "../UpdateOrganizationSettingsForm";
-
-export const ssoValidationSchema = z.object({
-  emailDomain: z.string().trim().optional(),
-  clientId: z.string().trim().optional(),
-  clientSecret: z.string().trim().optional(),
-  discoveryEndpoint: z.string().trim().optional(),
-  subdomain: z.string().trim().optional(),
-});
-
-type SsoFormValues = z.infer<typeof ssoValidationSchema>;
-
-const SSO_FIELDS = Object.keys(ssoValidationSchema.shape) as Array<keyof SsoFormValues>;
-
-export const ssoRefinementFunction = (data: SsoFormValues & BaseOrganizationFormValues, ctx: z.RefinementCtx) => {
-  // filter sso fields from data
-  const ssoFields = Object.fromEntries(
-    Object.entries(data).filter(([key]) => SSO_FIELDS.includes(key as keyof SsoFormValues))
-  );
-
-  const hasAnyValue = Object.values(ssoFields).some((value) => value && value.length > 0);
-  // skip validation if all SSO fields are empty
-  if (!hasAnyValue) {
-    return;
-  }
-
-  // validate all SSO fields are filled when at least one has a value
-  const emptyFields = Object.entries(ssoFields)
-    .filter(([_, value]) => !value || value.length === 0)
-    .map(([key]) => key);
-
-  emptyFields.forEach((field) => {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "form.empty.error",
-      path: [field],
-    });
-  });
-};
+import { SSOFormValues } from "../UpdateSSOSettingsForm";
 
 export const SSOSettings = () => {
   const { formatMessage } = useIntl();
-
-  const { clearErrors } = useFormContext<SsoFormValues>();
-  const { errors } = useFormState();
-
-  const [emailDomain, clientId, clientSecret, discoveryEndpoint, subdomain] = useWatch({ name: SSO_FIELDS });
-
-  const isSSOConfigured = useMemo(() => {
-    return emailDomain && clientId && clientSecret && discoveryEndpoint && subdomain;
-  }, [emailDomain, clientId, clientSecret, discoveryEndpoint, subdomain]);
-
-  const allSSOFieldsAreEmpty = useMemo(() => {
-    return !emailDomain && !clientId && !clientSecret && !discoveryEndpoint && !subdomain;
-  }, [emailDomain, clientId, clientSecret, discoveryEndpoint, subdomain]);
-
-  useEffect(() => {
-    const hasErrors = SSO_FIELDS.some((field) => field in errors);
-
-    if (hasErrors && allSSOFieldsAreEmpty) {
-      clearErrors(SSO_FIELDS);
-    }
-  }, [clearErrors, errors, allSSOFieldsAreEmpty]);
+  const { isSSOConfigured, isLoading } = useSSOConfigManagement();
+  const { isSubmitting } = useFormState();
 
   return (
     <div className={styles.card}>
@@ -92,13 +38,18 @@ export const SSOSettings = () => {
                     <Icon type="chevronRight" />
                   </motion.div>
                   <Text bold>{formatMessage({ id: "settings.organizationSettings.sso.label" })}</Text>
-                  {isSSOConfigured ? (
+                  {isLoading || isSubmitting ? (
+                    <Icon type="loading" />
+                  ) : isSSOConfigured ? (
                     <Icon type="check" color="primary" />
                   ) : (
                     <Text size="sm" color="grey300" italicized>
                       {formatMessage({ id: "settings.organizationSettings.sso.label.optional" })}
                     </Text>
                   )}
+                  <IfFeatureEnabled feature={FeatureItem.CloudForTeamsBranding}>
+                    <BrandingBadge product="cloudForTeams" testId="sso-label-cloud-for-teams-badge" />
+                  </IfFeatureEnabled>
                 </FlexContainer>
               </DisclosureButton>
               <ExternalLink href={links.ssoDocs} className={styles["card__header-link"]}>
@@ -125,38 +76,48 @@ export const SSOSettings = () => {
                   transition={{ duration: 0.2, ease: "easeInOut" }}
                 >
                   <DisclosurePanel static>
-                    <Box mt="md">
-                      <FormControl<SsoFormValues>
-                        label={formatMessage({ id: "settings.organizationSettings.sso.emailDomain" })}
-                        fieldType="input"
-                        name="emailDomain"
-                        required
-                      />
-                      <FormControl<SsoFormValues>
-                        label={formatMessage({ id: "settings.organizationSettings.sso.clientId" })}
-                        fieldType="input"
-                        name="clientId"
-                        required
-                      />
-                      <FormControl<SsoFormValues>
-                        label={formatMessage({ id: "settings.organizationSettings.sso.clientSecret" })}
-                        fieldType="input"
-                        type="password"
-                        name="clientSecret"
-                        required
-                      />
-                      <FormControl<SsoFormValues>
-                        label={formatMessage({ id: "settings.organizationSettings.sso.discoveryEndpoint" })}
-                        fieldType="input"
-                        name="discoveryEndpoint"
-                        required
-                      />
-                      <FormControl<SsoFormValues>
-                        label={formatMessage({ id: "settings.organizationSettings.sso.subdomain" })}
-                        fieldType="input"
-                        name="subdomain"
-                        required
-                      />
+                    <Box mt="lg">
+                      {isSSOConfigured ? (
+                        <FlexContainer direction="column" alignItems="flex-start">
+                          <Message text={formatMessage({ id: "settings.organizationSettings.sso.configured" })} />
+                        </FlexContainer>
+                      ) : (
+                        <>
+                          <FormControl<SSOFormValues>
+                            label={formatMessage({ id: "settings.organizationSettings.sso.companyIdentifier" })}
+                            fieldType="input"
+                            name="companyIdentifier"
+                            required
+                          />
+                          <FormControl<SSOFormValues>
+                            label={formatMessage({ id: "settings.organizationSettings.sso.clientId" })}
+                            fieldType="input"
+                            name="clientId"
+                            required
+                          />
+                          <FormControl<SSOFormValues>
+                            label={formatMessage({ id: "settings.organizationSettings.sso.clientSecret" })}
+                            fieldType="input"
+                            type="password"
+                            name="clientSecret"
+                            required
+                          />
+                          <FormControl<SSOFormValues>
+                            label={formatMessage({ id: "settings.organizationSettings.sso.discoveryUrl" })}
+                            fieldType="input"
+                            name="discoveryUrl"
+                            required
+                          />
+                          <FormControl<SSOFormValues>
+                            label={formatMessage({ id: "settings.organizationSettings.sso.emailDomain" })}
+                            fieldType="input"
+                            name="emailDomain"
+                            required
+                          />
+
+                          <FormSubmissionButtons noCancel justify="flex-start" submitKey="form.saveChanges" />
+                        </>
+                      )}
                     </Box>
                   </DisclosurePanel>
                 </motion.div>

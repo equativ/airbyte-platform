@@ -18,6 +18,7 @@ import io.airbyte.commons.json.Jsons
 import io.airbyte.test.utils.AcceptanceTestUtils
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -28,20 +29,20 @@ import java.util.UUID
 
 @Tag("api")
 class DefinitionsPublicApiTests {
-  val testResources = AcceptanceTestsResources()
-  val sourceDefinitionsApi =
+  private val testResources = AcceptanceTestsResources()
+  private val sourceDefinitionsApi =
     PublicSourceDefinitionsApi(
-      basePath = AcceptanceTestsResources.AIRBYTE_SERVER_HOST + "/api/",
+      basePath = AcceptanceTestUtils.getAirbyteApiUrl(),
       client = AcceptanceTestUtils.createOkHttpClient(),
     )
-  val destinationDefinitionsApi =
+  private val destinationDefinitionsApi =
     PublicDestinationDefinitionsApi(
-      basePath = AcceptanceTestsResources.AIRBYTE_SERVER_HOST + "/api/",
+      basePath = AcceptanceTestUtils.getAirbyteApiUrl(),
       client = AcceptanceTestUtils.createOkHttpClient(),
     )
-  val declarativeSourceDefinitionsApi =
+  private val declarativeSourceDefinitionsApi =
     PublicDeclarativeSourceDefinitionsApi(
-      basePath = AcceptanceTestsResources.AIRBYTE_SERVER_HOST + "/api/",
+      basePath = AcceptanceTestUtils.getAirbyteApiUrl(),
       client = AcceptanceTestUtils.createOkHttpClient(),
     )
 
@@ -64,9 +65,12 @@ class DefinitionsPublicApiTests {
     assert(res.data.isNotEmpty())
 
     // check for a well-known public source
-    val faker = res.data.first { it.name == "Sample Data (Faker)" }
+    val faker = res.data.firstOrNull { it.name == "Sample Data" }
+    // TODO why don't we filter by definition ID + assertEquals the name?
+    //   anyway, adding this assert as a stopgap
+    assertNotNull(faker, "Expected at least one source connector to be named `Sample Data`")
 
-    val get = sourceDefinitionsApi.publicGetSourceDefinition(testResources.workspaceId, UUID.fromString(faker.id))
+    val get = sourceDefinitionsApi.publicGetSourceDefinition(testResources.workspaceId, UUID.fromString(faker!!.id))
     assertEquals(faker.dockerRepository, get.dockerRepository)
     assertEquals(faker.dockerImageTag, get.dockerImageTag)
   }

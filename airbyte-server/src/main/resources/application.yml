@@ -183,6 +183,11 @@ airbyte:
   connector:
     specific-resource-defaults-enabled: ${CONNECTOR_SPECIFIC_RESOURCE_DEFAULTS_ENABLED:false}
     datadog-support-names: ${CONNECTOR_DATADOG_SUPPORT_NAMES:}
+  connector-builder-server:
+    github:
+      airbyte-pat-token: ${BUILDER_GITHUB_AIRBYTE_PAT_TOKEN:}
+    ai-assist:
+      url-base: ${AI_ASSIST_URL_BASE:}
   connector-registry:
     remote:
       base-url: ${CONNECTOR_REGISTRY_BASE_URL:}
@@ -207,6 +212,10 @@ airbyte:
     path: ${FEATURE_FLAG_PATH:/flags}
     api-key: ${LAUNCHDARKLY_KEY:}
     base-url: ${FEATURE_FLAG_BASEURL:}
+  entitlement:
+    client: ${ENTITLEMENT_CLIENT:}
+    stigg:
+      api-key: ${STIGG_API_KEY:}
   flyway:
     configs:
       initialization-timeout-ms: ${CONFIGS_DATABASE_INITIALIZATION_TIMEOUT_MS:60000}
@@ -227,6 +236,7 @@ airbyte:
       gcp:
         credentials: ${SECRET_STORE_GCP_CREDENTIALS:}
         project-id: ${SECRET_STORE_GCP_PROJECT_ID:}
+        region: ${SECRET_STORE_GCP_REGION:}
       vault:
         address: ${VAULT_ADDRESS:}
         prefix: ${VAULT_PREFIX:}
@@ -391,7 +401,10 @@ airbyte:
     launchdarkly_key: ${WEBAPP_LAUNCHDARKLY_KEY:}
     osano_key: ${WEBAPP_OSANO_KEY:}
     segment_token: ${WEBAPP_SEGMENT_TOKEN:}
+    sonar_api_url: ${WEBAPP_SONAR_API_URL:}
     zendesk_key: ${WEBAPP_ZENDESK_KEY:}
+    posthog_api_key: ${WEBAPP_POSTHOG_API_KEY:}
+    posthog_host: ${WEBAPP_POSTHOG_HOST:}
 
   workspace:
     root: ${WORKSPACE_ROOT}
@@ -422,12 +435,9 @@ airbyte:
 
   connector-builder-server-api:
     base-path: ${CONNECTOR_BUILDER_SERVER_API_HOST:}
+    signature-secret: ${AB_JWT_SIGNATURE_SECRET:}
     connect-timeout-seconds: ${CONNECTOR_BUILDER_SERVER_API_CONNECT_TIMEOUT_SECONDS:30}
     read-timeout-seconds: ${CONNECTOR_BUILDER_SERVER_API_READ_TIMEOUT_SECONDS:300}
-  internal-api:
-    auth-header:
-      name: ${AIRBYTE_API_AUTH_HEADER_NAME:}
-      value: ${AIRBYTE_API_AUTH_HEADER_VALUE:}
 
   # Enterprise feature
   audit:
@@ -466,6 +476,7 @@ datasources:
     username: ${DATABASE_USER}
     password: ${DATABASE_PASSWORD:}
     leak-detection-threshold: 40000 # This should be slightly higher than the connection-timeout setting but not too high to avoid false positives and negatives.
+    max-lifetime: 600000
   local-secrets:
     connection-test-query: SELECT 1
     connection-timeout: 30000

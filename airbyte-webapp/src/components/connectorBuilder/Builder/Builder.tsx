@@ -1,33 +1,31 @@
+import cloneDeep from "lodash/cloneDeep";
 import isEqual from "lodash/isEqual";
 import { Range } from "monaco-editor";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useWatch, useFormContext, get } from "react-hook-form";
-import { useIntl } from "react-intl";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFormContext, get } from "react-hook-form";
 import { useUpdateEffect } from "react-use";
 
-import { SchemaForm } from "components/forms/SchemaForm/SchemaForm";
-import { AirbyteJsonSchema } from "components/forms/SchemaForm/utils";
-
-import { ConnectorManifest, DeclarativeComponentSchema } from "core/api/types/ConnectorManifest";
+import { CheckDynamicStreamType, CheckStreamType, ConnectorManifest } from "core/api/types/ConnectorManifest";
+import { useConnectorBuilderSchema } from "core/services/connectorBuilder/ConnectorBuilderSchemaContext";
 import { assertNever } from "core/utils/asserts";
 import {
   useConnectorBuilderFormState,
   useConnectorBuilderFormManagementState,
 } from "services/connectorBuilder/ConnectorBuilderStateService";
-import { getPatternDescriptor } from "views/Connector/ConnectorForm/utils";
 
 import styles from "./Builder.module.scss";
+import { OAUTH_INPUT_SPEC_PATH } from "./BuilderDeclarativeOAuth";
 import { BuilderSidebar } from "./BuilderSidebar";
 import { ComponentsView } from "./ComponentsView";
 import { DynamicStreamConfigView } from "./DynamicStreamConfigView";
-import { GeneratedStreamView } from "./GeneratedStreamView";
 import { GlobalConfigView } from "./GlobalConfigView";
-import { InputForm, newInputInEditing } from "./InputsForm";
+import { InputModal, newInputInEditing } from "./InputModal";
 import { InputsView } from "./InputsView";
 import { StreamConfigView } from "./StreamConfigView";
-import declarativeComponentSchema from "../../../../build/declarative_component_schema.yaml";
-import { BuilderState, DEFAULT_JSON_MANIFEST_VALUES } from "../types";
+import { BuilderFormInput, BuilderState } from "../types";
+import { useAuthenticatorInputs, isHttpRequesterAuthenticator } from "../useAuthenticatorInputs";
 import { useBuilderWatch } from "../useBuilderWatch";
+import { useStreamNames } from "../useStreamNames";
 import { useSetStreamToStale } from "../useStreamTestMetadata";
 
 function getView(selectedView: BuilderState["view"], scrollToTop: () => void) {
@@ -49,7 +47,13 @@ function getView(selectedView: BuilderState["view"], scrollToTop: () => void) {
         />
       );
     case "generated_stream":
-      return <GeneratedStreamView streamId={selectedView} scrollToTop={scrollToTop} />;
+      return (
+        <StreamConfigView
+          key={`${selectedView.type}-${selectedView.dynamicStreamName}-${selectedView.index}`}
+          streamId={selectedView}
+          scrollToTop={scrollToTop}
+        />
+      );
     default:
       assertNever(selectedView);
   }
@@ -100,163 +104,184 @@ export const Builder: React.FC = () => {
     () => (
       <div className={styles.container}>
         <BuilderSidebar />
-        <SchemaForm<AirbyteJsonSchema, DeclarativeComponentSchema>
-          schema={declarativeComponentSchema}
-          nestedUnderPath="manifest"
-          refTargetPath="manifest.definitions.linked"
-          onlyShowErrorIfTouched
-        >
-          <SyncValuesToBuilderState />
-          <ValidateTestingValues />
-          <div className={styles.builderView} ref={builderViewRef}>
-            {getView(view, scrollToTop)}
-          </div>
-          {newUserInputContext && (
-            <InputForm
-              inputInEditing={newInputInEditing()}
-              onClose={(newInput) => {
-                const { model, position } = newUserInputContext;
-                setNewUserInputContext(undefined);
-                if (!newInput) {
-                  // put cursor back to the original position by applying an empty edit
-                  model.applyEdits([
-                    {
-                      range: new Range(position.lineNumber, position.column, position.lineNumber, position.column),
-                      text: "",
-                      forceMoveMarkers: true,
-                    },
-                  ]);
-                  return;
-                }
+        <TriggerStateEffects />
+        <UpdateSchemaForTestingValues />
+        <UpdateCheckStreams />
+        <div className={styles.builderView} ref={builderViewRef}>
+          {getView(view, scrollToTop)}
+        </div>
+        {newUserInputContext && (
+          <InputModal
+            inputInEditing={newInputInEditing()}
+            onClose={(newInput: BuilderFormInput | undefined) => {
+              const { model, position } = newUserInputContext;
+              setNewUserInputContext(undefined);
+              if (!newInput) {
+                // put cursor back to the original position by applying an empty edit
                 model.applyEdits([
                   {
                     range: new Range(position.lineNumber, position.column, position.lineNumber, position.column),
-                    text: `config['${newInput.key}']`,
+                    text: "",
                     forceMoveMarkers: true,
                   },
                 ]);
-              }}
-            />
-          )}
-        </SchemaForm>
+                return;
+              }
+              model.applyEdits([
+                {
+                  range: new Range(position.lineNumber, position.column, position.lineNumber, position.column),
+                  text: `config['${newInput.key}']`,
+                  forceMoveMarkers: true,
+                },
+              ]);
+            }}
+          />
+        )}
       </div>
     ),
     [newUserInputContext, view, scrollToTop, setNewUserInputContext]
   );
 };
 
-const SyncValuesToBuilderState = () => {
+const TriggerStateEffects = () => {
   const {
-    updateJsonManifest,
-    setFormValuesValid,
     undoRedo: { registerChange },
   } = useConnectorBuilderFormState();
-  const { trigger, watch } = useFormContext();
+  const { watch, trigger, getValues } = useFormContext();
   const setStreamToStale = useSetStreamToStale();
-  const builderState = useWatch();
-  // set stream to stale when it changes
+  const { updateUserInputsForAuth, updateUserInputsForDeclarativeOAuth, updateUserInputsForTokenUpdater } =
+    useAuthenticatorInputs();
+
+  const previousBuilderState = useRef(cloneDeep(getValues()));
+
   useEffect(() => {
     const subscription = watch((data, { name }) => {
+      if (!name) {
+        return;
+      }
+
+      trigger(name);
       if (data?.manifest) {
         registerChange(data.manifest as ConnectorManifest);
       }
-      if (name?.startsWith("manifest.streams.")) {
-        const oldValue = get(builderState, name);
+      if (name.startsWith("manifest.streams.")) {
+        const oldValue = get(previousBuilderState.current, name);
         const newValue = get(data, name);
         if (!isEqual(oldValue, newValue)) {
           const streamIndexString = name.match(/manifest\.streams\.(\d+)\..*/)?.[1];
           try {
             const streamIndex = streamIndexString ? parseInt(streamIndexString, 10) : undefined;
-            if (streamIndex) {
+            if (streamIndex !== undefined) {
               setStreamToStale({ type: "stream", index: streamIndex });
             }
           } catch (error) {}
         }
       }
+      if (name.endsWith("authenticator")) {
+        const oldValue = get(previousBuilderState.current, name);
+        const oldAuth = isHttpRequesterAuthenticator(oldValue) ? oldValue : undefined;
+        const newValue = get(data, name);
+        const newAuth = isHttpRequesterAuthenticator(newValue) ? newValue : undefined;
+        if (oldAuth || newAuth) {
+          updateUserInputsForAuth(oldAuth, newAuth);
+        }
+      }
+      if (name === OAUTH_INPUT_SPEC_PATH) {
+        const value = get(data, name);
+        updateUserInputsForDeclarativeOAuth(value);
+      }
+      if (name.endsWith("authenticator.refresh_token_updater")) {
+        const value = get(data, name);
+        updateUserInputsForTokenUpdater(name, value);
+      }
+
+      previousBuilderState.current = cloneDeep(data);
     });
     return () => subscription.unsubscribe();
-  }, [watch, setStreamToStale, builderState, registerChange]);
-
-  useEffect(() => {
-    // The validation logic isn't updated until the next render cycle, so wait for that
-    // before triggering validation and updating the builder state
-    setTimeout(() => {
-      trigger().then((isValid) => {
-        setFormValuesValid(isValid);
-        updateJsonManifest(builderState.manifest ?? DEFAULT_JSON_MANIFEST_VALUES);
-      });
-    }, 0);
-  }, [builderState, setFormValuesValid, trigger, updateJsonManifest]);
+  }, [
+    watch,
+    setStreamToStale,
+    registerChange,
+    trigger,
+    updateUserInputsForAuth,
+    updateUserInputsForDeclarativeOAuth,
+    updateUserInputsForTokenUpdater,
+  ]);
 
   return null;
 };
 
-const ValidateTestingValues = () => {
-  const { formatMessage } = useIntl();
-  const { register, unregister, clearErrors } = useFormContext();
-  const spec = useBuilderWatch("manifest.spec");
-  const [registeredFields, setRegisteredFields] = useState<Set<string>>(new Set());
-  const specSchema = spec?.connection_specification as AirbyteJsonSchema | undefined;
+/**
+ * When the spec schema changes, we must update the schema for testing values
+ * to match it so that the testing values inputs are properly validated.
+ *
+ * We also need to trigger a re-validation of the testing values after the state
+ * schema gets updated to ensure the errors are up to date.
+ */
+const UpdateSchemaForTestingValues = () => {
+  const { builderStateSchema, setBuilderStateSchema } = useConnectorBuilderSchema();
+  const { trigger } = useFormContext();
+  const specSchema = useBuilderWatch("manifest.spec.connection_specification");
 
   useEffect(() => {
-    const properties = specSchema?.properties as Record<string, AirbyteJsonSchema> | undefined;
-    if (specSchema && properties) {
-      const specFields = Object.keys(properties);
-      const required: string[] = isArrayOfStrings(specSchema.required) ? specSchema.required : [];
-
-      const allFields = new Set([...specFields, ...registeredFields]);
-      allFields.forEach((field) => {
-        const path = `testingValues.${field}`;
-        if (!specFields.includes(field)) {
-          unregister(path);
-          // Must wait until next render cycle when field is unregistered to clear errors,
-          // otherwise the errors will return
-          setTimeout(() => {
-            clearErrors(path);
-          }, 0);
-          setRegisteredFields((current) => {
-            current.delete(field);
-            return current;
-          });
-          return;
-        }
-
-        const validatePattern = (value: unknown) => {
-          const pattern = properties[field].pattern;
-          if (pattern && typeof value === "string") {
-            const regex = new RegExp(pattern);
-            if (!regex.test(value)) {
-              return formatMessage({ id: "form.pattern.error" }, { pattern: getPatternDescriptor(properties[field]) });
-            }
-          }
-          return true;
-        };
-
-        if (required.includes(field)) {
-          register(path, {
-            validate: (value) => {
-              if (value === undefined || value === null || value === "") {
-                return formatMessage({ id: "form.empty.error" });
-              }
-              return validatePattern(value);
-            },
-          });
-        } else {
-          register(path, {
-            validate: (value) => validatePattern(value),
-          });
-        }
-        setRegisteredFields((current) => {
-          current.add(field);
-          return current;
-        });
-      });
+    if (specSchema) {
+      setBuilderStateSchema((prevSchema) => ({
+        ...prevSchema,
+        properties: {
+          ...prevSchema.properties,
+          testingValues: specSchema,
+        },
+      }));
     }
-  }, [formatMessage, register, registeredFields, unregister, clearErrors, specSchema]);
+  }, [specSchema, setBuilderStateSchema, trigger]);
+
+  useUpdateEffect(() => {
+    trigger("testingValues");
+  }, [builderStateSchema]);
 
   return null;
 };
 
-function isArrayOfStrings(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
+/**
+ * Updates the `check` field in the manifest to keep it in sync with the
+ * current stream names in the manifest.
+ */
+const UpdateCheckStreams = () => {
+  const { streamNames, dynamicStreamNames } = useStreamNames();
+  const checkStreams = useBuilderWatch("manifest.check");
+  const { setValue } = useFormContext();
+  useUpdateEffect(() => {
+    if (checkStreams.type === CheckDynamicStreamType.CheckDynamicStream) {
+      if (dynamicStreamNames.length > 0) {
+        return;
+      }
+      if (streamNames.length === 0) {
+        return;
+      }
+      setValue("manifest.check", {
+        type: CheckStreamType.CheckStream,
+        stream_names: [streamNames[0]],
+      });
+      return;
+    }
+
+    const filteredCheckStaticStreamNames =
+      checkStreams.stream_names?.filter((streamName) => streamNames.includes(streamName)) ?? [];
+
+    if (
+      filteredCheckStaticStreamNames.length > 0 &&
+      filteredCheckStaticStreamNames.length !== checkStreams.stream_names?.length
+    ) {
+      setValue("manifest.check.stream_names", filteredCheckStaticStreamNames);
+    } else if (filteredCheckStaticStreamNames.length === 0) {
+      const nonEmptyStreamNames = streamNames.filter((streamName) => streamName.trim() !== "");
+      if (nonEmptyStreamNames.length > 0) {
+        setValue("manifest.check.stream_names", [nonEmptyStreamNames[0]]);
+      } else {
+        setValue("manifest.check.stream_names", []);
+      }
+    }
+  }, [streamNames, dynamicStreamNames]);
+
+  return null;
+};

@@ -91,12 +91,12 @@ internal class ApplyDefinitionsHelperTest {
         connectorRolloutService,
       )
 
-    every { actorDefinitionService.actorDefinitionIdsInUse } returns emptySet()
-    every { actorDefinitionService.actorDefinitionIdsToDefaultVersionsMap } returns emptyMap()
+    every { actorDefinitionService.getActorDefinitionIdsInUse() } returns emptySet()
+    every { actorDefinitionService.getActorDefinitionIdsToDefaultVersionsMap() } returns emptyMap()
     every { definitionsProvider.getDestinationDefinitions() } returns emptyList()
     every { definitionsProvider.getSourceDefinitions() } returns emptyList()
     every { airbyteCompatibleConnectorsValidator.validate(any(), any()) } returns ConnectorPlatformCompatibilityValidationResult(true, null)
-    every { jobPersistence.currentProtocolVersionRange } returns Optional.of(AirbyteProtocolVersionRange(Version("2.0.0"), Version("3.0.0")))
+    every { jobPersistence.getCurrentProtocolVersionRange() } returns Optional.of(AirbyteProtocolVersionRange(Version("2.0.0"), Version("3.0.0")))
     every { actorDefinitionVersionResolver.fetchRemoteActorDefinitionVersion(any(), any(), any()) } returns Optional.empty()
     every { seedDefinitionsProviderType.ordinal } returns SeedDefinitionsProviderType.REMOTE.ordinal
     mockVoidReturningFunctions()
@@ -118,13 +118,13 @@ internal class ApplyDefinitionsHelperTest {
       ConnectorRegistryConverters.toActorDefinitionVersion(SOURCE_POSTGRES)
     seededDefinitionsAndDefaultVersions[S3_ID] =
       ConnectorRegistryConverters.toActorDefinitionVersion(DESTINATION_S3)
-    every { actorDefinitionService.actorDefinitionIdsToDefaultVersionsMap } returns seededDefinitionsAndDefaultVersions
+    every { actorDefinitionService.getActorDefinitionIdsToDefaultVersionsMap() } returns seededDefinitionsAndDefaultVersions
   }
 
   @Throws(IOException::class)
   private fun verifyActorDefinitionServiceInteractions() {
-    verify { actorDefinitionService.actorDefinitionIdsToDefaultVersionsMap }
-    verify { actorDefinitionService.actorDefinitionIdsInUse }
+    verify { actorDefinitionService.getActorDefinitionIdsToDefaultVersionsMap() }
+    verify { actorDefinitionService.getActorDefinitionIdsInUse() }
   }
 
   @ParameterizedTest
@@ -133,14 +133,14 @@ internal class ApplyDefinitionsHelperTest {
     IOException::class,
     JsonValidationException::class,
     ConfigNotFoundException::class,
-    io.airbyte.data.exceptions.ConfigNotFoundException::class,
+    io.airbyte.data.ConfigNotFoundException::class,
   )
   fun `a new connector should always be written`(
     updateAll: Boolean,
     reImport: Boolean,
   ) {
-    every { definitionsProvider.sourceDefinitions } returns listOf(SOURCE_POSTGRES)
-    every { definitionsProvider.destinationDefinitions } returns listOf(DESTINATION_S3)
+    every { definitionsProvider.getSourceDefinitions() } returns listOf(SOURCE_POSTGRES)
+    every { definitionsProvider.getDestinationDefinitions() } returns listOf(DESTINATION_S3)
 
     applyDefinitionsHelper.apply(updateAll, reImport)
     verifyActorDefinitionServiceInteractions()
@@ -182,7 +182,7 @@ internal class ApplyDefinitionsHelperTest {
     IOException::class,
     JsonValidationException::class,
     ConfigNotFoundException::class,
-    io.airbyte.data.exceptions.ConfigNotFoundException::class,
+    io.airbyte.data.ConfigNotFoundException::class,
   )
   fun `a connector with release candidate should write RC ADVS and ConnectorRollout`(
     updateAll: Boolean,
@@ -190,13 +190,14 @@ internal class ApplyDefinitionsHelperTest {
   ) {
     mockSeedInitialDefinitions()
 
-    every { definitionsProvider.sourceDefinitions } returns listOf(SOURCE_POSTGRES_WITH_RC)
-    every { definitionsProvider.destinationDefinitions } returns listOf(DESTINATION_S3_WITH_RC)
+    every { definitionsProvider.getSourceDefinitions() } returns listOf(SOURCE_POSTGRES_WITH_RC)
+    every { definitionsProvider.getDestinationDefinitions() } returns listOf(DESTINATION_S3_WITH_RC)
     every { connectorRolloutService.insertConnectorRollout(any()) } returns
       ConnectorRollout(
         id = UUID.randomUUID(),
         workflowRunId = "fake-workflow-run-id",
         actorDefinitionId = UUID.randomUUID(),
+        initialVersionId = UUID.randomUUID(),
         releaseCandidateVersionId = UUID.randomUUID(),
         hasBreakingChanges = false,
         createdAt = Instant.now().toEpochMilli(),
@@ -292,12 +293,12 @@ internal class ApplyDefinitionsHelperTest {
     IOException::class,
     JsonValidationException::class,
     ConfigNotFoundException::class,
-    io.airbyte.data.exceptions.ConfigNotFoundException::class,
+    io.airbyte.data.ConfigNotFoundException::class,
   )
   fun `applyReleaseCandidates should not write ConnectorRollout if a rollout exists in a non-canceled state`(state: ConnectorEnumRolloutState) {
     mockSeedInitialDefinitions()
-    every { definitionsProvider.sourceDefinitions } returns listOf(SOURCE_POSTGRES_WITH_RC)
-    every { definitionsProvider.destinationDefinitions } returns listOf(DESTINATION_S3_WITH_RC)
+    every { definitionsProvider.getSourceDefinitions() } returns listOf(SOURCE_POSTGRES_WITH_RC)
+    every { definitionsProvider.getDestinationDefinitions() } returns listOf(DESTINATION_S3_WITH_RC)
 
     val fakeAdvId = UUID.randomUUID()
     val fakeInitialAdvId = UUID.randomUUID()
@@ -320,6 +321,7 @@ internal class ApplyDefinitionsHelperTest {
           workflowRunId = "fake-workflow-run-id",
           actorDefinitionId = UUID.randomUUID(),
           releaseCandidateVersionId = UUID.randomUUID(),
+          initialVersionId = UUID.randomUUID(),
           hasBreakingChanges = false,
           createdAt = Instant.now().toEpochMilli(),
           updatedAt = Instant.now().toEpochMilli(),
@@ -359,7 +361,7 @@ internal class ApplyDefinitionsHelperTest {
     IOException::class,
     JsonValidationException::class,
     ConfigNotFoundException::class,
-    io.airbyte.data.exceptions.ConfigNotFoundException::class,
+    io.airbyte.data.ConfigNotFoundException::class,
   )
   fun `applyReleaseCandidates should write ConnectorRollout if a rollout exists in canceled state`(state: ConnectorEnumRolloutState) {
     mockSeedInitialDefinitions()
@@ -385,6 +387,7 @@ internal class ApplyDefinitionsHelperTest {
           workflowRunId = "fake-workflow-run-id",
           actorDefinitionId = UUID.randomUUID(),
           releaseCandidateVersionId = UUID.randomUUID(),
+          initialVersionId = UUID.randomUUID(),
           hasBreakingChanges = false,
           createdAt = Instant.now().toEpochMilli(),
           updatedAt = Instant.now().toEpochMilli(),
@@ -398,6 +401,7 @@ internal class ApplyDefinitionsHelperTest {
         workflowRunId = "fake-workflow-run-id",
         actorDefinitionId = UUID.randomUUID(),
         releaseCandidateVersionId = UUID.randomUUID(),
+        initialVersionId = UUID.randomUUID(),
         hasBreakingChanges = false,
         createdAt = Instant.now().toEpochMilli(),
         updatedAt = Instant.now().toEpochMilli(),
@@ -475,7 +479,7 @@ internal class ApplyDefinitionsHelperTest {
     IOException::class,
     JsonValidationException::class,
     ConfigNotFoundException::class,
-    io.airbyte.data.exceptions.ConfigNotFoundException::class,
+    io.airbyte.data.ConfigNotFoundException::class,
   )
   fun `a connector with malformed release candidate should not raise an error`(
     updateAll: Boolean,
@@ -483,7 +487,7 @@ internal class ApplyDefinitionsHelperTest {
   ) {
     mockSeedInitialDefinitions()
 
-    every { definitionsProvider.sourceDefinitions } returns listOf(SOURCE_POSTGRES_WITH_MALFORMED_RC)
+    every { definitionsProvider.getSourceDefinitions() } returns listOf(SOURCE_POSTGRES_WITH_MALFORMED_RC)
 
     every {
       actorDefinitionService.writeActorDefinitionVersion(any())
@@ -505,7 +509,7 @@ internal class ApplyDefinitionsHelperTest {
     IOException::class,
     JsonValidationException::class,
     ConfigNotFoundException::class,
-    io.airbyte.data.exceptions.ConfigNotFoundException::class,
+    io.airbyte.data.ConfigNotFoundException::class,
   )
   fun `a connector with release candidate with no initial version does not write connector rollout`(
     updateAll: Boolean,
@@ -513,8 +517,8 @@ internal class ApplyDefinitionsHelperTest {
   ) {
     mockSeedInitialDefinitions()
 
-    every { definitionsProvider.sourceDefinitions } returns listOf(SOURCE_POSTGRES_WITH_RC)
-    every { definitionsProvider.destinationDefinitions } returns listOf(DESTINATION_S3_WITH_RC)
+    every { definitionsProvider.getSourceDefinitions() } returns listOf(SOURCE_POSTGRES_WITH_RC)
+    every { definitionsProvider.getDestinationDefinitions() } returns listOf(DESTINATION_S3_WITH_RC)
     every { actorDefinitionService.getDefaultVersionForActorDefinitionIdOptional(any()) } returns Optional.empty()
     every { connectorRolloutService.insertConnectorRollout(any()) } returns
       ConnectorRollout(
@@ -522,6 +526,7 @@ internal class ApplyDefinitionsHelperTest {
         workflowRunId = "fake-workflow-run-id",
         actorDefinitionId = UUID.randomUUID(),
         releaseCandidateVersionId = UUID.randomUUID(),
+        initialVersionId = UUID.randomUUID(),
         hasBreakingChanges = false,
         createdAt = Instant.now().toEpochMilli(),
         updatedAt = Instant.now().toEpochMilli(),
@@ -556,18 +561,18 @@ internal class ApplyDefinitionsHelperTest {
     IOException::class,
     JsonValidationException::class,
     ConfigNotFoundException::class,
-    io.airbyte.data.exceptions.ConfigNotFoundException::class,
+    io.airbyte.data.ConfigNotFoundException::class,
   )
   fun `an existing connector that is not in use should always be updated`(
     updateAll: Boolean,
     reImport: Boolean,
   ) {
     mockSeedInitialDefinitions()
-    every { actorDefinitionService.actorDefinitionIdsInUse } returns emptySet()
+    every { actorDefinitionService.getActorDefinitionIdsInUse() } returns emptySet()
 
     // New definitions come in
-    every { definitionsProvider.sourceDefinitions } returns listOf(SOURCE_POSTGRES_2)
-    every { definitionsProvider.destinationDefinitions } returns listOf(DESTINATION_S3_2)
+    every { definitionsProvider.getSourceDefinitions() } returns listOf(SOURCE_POSTGRES_2)
+    every { definitionsProvider.getDestinationDefinitions() } returns listOf(DESTINATION_S3_2)
 
     applyDefinitionsHelper.apply(updateAll, reImport)
     verifyActorDefinitionServiceInteractions()
@@ -606,10 +611,10 @@ internal class ApplyDefinitionsHelperTest {
   @Test
   fun `reImport should refresh the existing definition`() {
     mockSeedInitialDefinitions()
-    every { actorDefinitionService.actorDefinitionIdsInUse } returns setOf(POSTGRES_ID, S3_ID)
+    every { actorDefinitionService.getActorDefinitionIdsInUse() } returns setOf(POSTGRES_ID, S3_ID)
 
-    every { definitionsProvider.sourceDefinitions } returns listOf(SOURCE_POSTGRES_2)
-    every { definitionsProvider.destinationDefinitions } returns listOf(DESTINATION_S3_2)
+    every { definitionsProvider.getSourceDefinitions() } returns listOf(SOURCE_POSTGRES_2)
+    every { definitionsProvider.getDestinationDefinitions() } returns listOf(DESTINATION_S3_2)
 
     val versionDefinition1 =
       ActorDefinitionVersion()
@@ -631,17 +636,17 @@ internal class ApplyDefinitionsHelperTest {
     IOException::class,
     JsonValidationException::class,
     ConfigNotFoundException::class,
-    io.airbyte.data.exceptions.ConfigNotFoundException::class,
+    io.airbyte.data.ConfigNotFoundException::class,
   )
   fun `updateAll should affect whether existing connectors in use have their versions updated`(
     updateAll: Boolean,
     reImport: Boolean,
   ) {
     mockSeedInitialDefinitions()
-    every { actorDefinitionService.actorDefinitionIdsInUse } returns setOf(POSTGRES_ID, S3_ID)
+    every { actorDefinitionService.getActorDefinitionIdsInUse() } returns setOf(POSTGRES_ID, S3_ID)
 
-    every { definitionsProvider.sourceDefinitions } returns listOf(SOURCE_POSTGRES_2)
-    every { definitionsProvider.destinationDefinitions } returns listOf(DESTINATION_S3_2)
+    every { definitionsProvider.getSourceDefinitions() } returns listOf(SOURCE_POSTGRES_2)
+    every { definitionsProvider.getDestinationDefinitions() } returns listOf(DESTINATION_S3_2)
 
     applyDefinitionsHelper.apply(updateAll, reImport)
     verifyActorDefinitionServiceInteractions()
@@ -700,18 +705,18 @@ internal class ApplyDefinitionsHelperTest {
     JsonValidationException::class,
     IOException::class,
     ConfigNotFoundException::class,
-    io.airbyte.data.exceptions.ConfigNotFoundException::class,
+    io.airbyte.data.ConfigNotFoundException::class,
   )
   fun `new definitions that are incompatible with the protocol version range should not be written`(
     updateAll: Boolean,
     reImport: Boolean,
   ) {
-    every { jobPersistence.currentProtocolVersionRange } returns Optional.of(AirbyteProtocolVersionRange(Version("2.0.0"), Version("3.0.0")))
+    every { jobPersistence.getCurrentProtocolVersionRange() } returns Optional.of(AirbyteProtocolVersionRange(Version("2.0.0"), Version("3.0.0")))
     val postgresWithOldProtocolVersion = Jsons.clone(SOURCE_POSTGRES).withSpec(ConnectorSpecification().withProtocolVersion("1.0.0"))
     val s3withOldProtocolVersion = Jsons.clone(DESTINATION_S3).withSpec(ConnectorSpecification().withProtocolVersion("1.0.0"))
 
-    every { definitionsProvider.sourceDefinitions } returns listOf(postgresWithOldProtocolVersion, SOURCE_POSTGRES_2)
-    every { definitionsProvider.destinationDefinitions } returns listOf(s3withOldProtocolVersion, DESTINATION_S3_2)
+    every { definitionsProvider.getSourceDefinitions() } returns listOf(postgresWithOldProtocolVersion, SOURCE_POSTGRES_2)
+    every { definitionsProvider.getDestinationDefinitions() } returns listOf(s3withOldProtocolVersion, DESTINATION_S3_2)
 
     applyDefinitionsHelper.apply(updateAll, reImport)
     verifyActorDefinitionServiceInteractions()
@@ -779,7 +784,7 @@ internal class ApplyDefinitionsHelperTest {
     JsonValidationException::class,
     IOException::class,
     ConfigNotFoundException::class,
-    io.airbyte.data.exceptions.ConfigNotFoundException::class,
+    io.airbyte.data.ConfigNotFoundException::class,
   )
   fun `new definitions that are incompatible with the airbyte version range should not be written`(
     updateAll: Boolean,
@@ -793,8 +798,8 @@ internal class ApplyDefinitionsHelperTest {
     } returns ConnectorPlatformCompatibilityValidationResult(false, "S3 Destination 0.1.0 can't be updated")
     every { airbyteCompatibleConnectorsValidator.validate(any(), "0.2.0") } returns ConnectorPlatformCompatibilityValidationResult(true, null)
 
-    every { definitionsProvider.sourceDefinitions } returns listOf(SOURCE_POSTGRES, SOURCE_POSTGRES_2)
-    every { definitionsProvider.destinationDefinitions } returns listOf(DESTINATION_S3, DESTINATION_S3_2)
+    every { definitionsProvider.getSourceDefinitions() } returns listOf(SOURCE_POSTGRES, SOURCE_POSTGRES_2)
+    every { definitionsProvider.getDestinationDefinitions() } returns listOf(DESTINATION_S3, DESTINATION_S3_2)
 
     applyDefinitionsHelper.apply(updateAll, reImport)
     verifyActorDefinitionServiceInteractions()
@@ -883,9 +888,10 @@ internal class ApplyDefinitionsHelperTest {
         .withDockerRepository("airbyte/destination-new")
         .withDestinationDefinitionId(UUID.randomUUID())
 
-    every { definitionsProvider.sourceDefinitions } returns listOf(SOURCE_POSTGRES, malformedRegistrySourceDefinition, anotherNewSourceDefinition)
+    every { definitionsProvider.getSourceDefinitions() } returns
+      listOf(SOURCE_POSTGRES, malformedRegistrySourceDefinition, anotherNewSourceDefinition)
     every {
-      definitionsProvider.destinationDefinitions
+      definitionsProvider.getDestinationDefinitions()
     } returns listOf(DESTINATION_S3, malformedRegistryDestinationDefinition, anotherNewDestinationDefinition)
 
     applyDefinitionsHelper.apply(true)

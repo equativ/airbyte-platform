@@ -6,7 +6,7 @@ package io.airbyte.commons.server.converters
 
 import io.airbyte.api.model.generated.DestinationDiscoverRead
 import io.airbyte.api.model.generated.DestinationSyncMode
-import io.airbyte.commons.enums.Enums
+import io.airbyte.commons.enums.convertTo
 import io.airbyte.config.DestinationCatalogWithId
 import io.airbyte.api.model.generated.DestinationCatalog as ApiDestinationCatalog
 import io.airbyte.api.model.generated.DestinationOperation as ApiDestinationOperation
@@ -25,6 +25,19 @@ fun DestinationCatalogModel.toApi(): ApiDestinationCatalog =
 fun DestinationOperationModel.toApi(): ApiDestinationOperation =
   ApiDestinationOperation()
     .objectName(this.objectName)
-    .syncMode(Enums.convertTo(this.syncMode, DestinationSyncMode::class.java))
+    .syncMode(this.syncMode.convertTo<DestinationSyncMode>())
     .schema(this.jsonSchema)
     .matchingKeys(this.matchingKeys)
+
+fun ApiDestinationOperation.toModel(): DestinationOperationModel =
+  DestinationOperationModel(
+    objectName = objectName,
+    syncMode = syncMode.convertTo<io.airbyte.config.DestinationSyncMode>(),
+    jsonSchema = schema,
+    matchingKeys = matchingKeys,
+  )
+
+fun ApiDestinationCatalog.toModel(): DestinationCatalogModel =
+  DestinationCatalogModel(
+    operations = operations.map { it.toModel() },
+  )

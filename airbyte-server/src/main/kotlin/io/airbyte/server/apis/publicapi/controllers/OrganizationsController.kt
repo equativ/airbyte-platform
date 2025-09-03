@@ -4,7 +4,7 @@
 
 package io.airbyte.server.apis.publicapi.controllers
 
-import io.airbyte.commons.auth.AuthRoleConstants
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.entitlements.Entitlement
 import io.airbyte.commons.entitlements.LicenseEntitlementChecker
 import io.airbyte.commons.server.authorization.RoleResolver
@@ -43,7 +43,7 @@ open class OrganizationsController(
     organizationOAuthCredentialsRequest: OrganizationOAuthCredentialsRequest,
   ): Response {
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.ORGANIZATION_ID, organizationId)
       .requireRole(AuthRoleConstants.ORGANIZATION_ADMIN)
@@ -70,7 +70,7 @@ open class OrganizationsController(
       },
       ORGANIZATIONS_PATH,
       PUT,
-      currentUserService.currentUser.userId,
+      currentUserService.getCurrentUser().userId,
     )
     return Response
       .status(Response.Status.OK.statusCode)
@@ -79,7 +79,7 @@ open class OrganizationsController(
 
   @ExecuteOn(AirbyteTaskExecutors.PUBLIC_API)
   override fun publicListOrganizationsForUser(): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
     val organizationsResponse =
       trackingHelper.callWithTracker(
         {

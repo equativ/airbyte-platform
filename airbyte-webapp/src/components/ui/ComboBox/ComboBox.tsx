@@ -17,6 +17,7 @@ import { Text } from "../Text";
 
 export interface Option {
   value: string;
+  disabled?: boolean;
   label?: string;
   iconLeft?: React.ReactNode;
   iconRight?: React.ReactNode;
@@ -57,6 +58,7 @@ export interface ComboBoxProps extends BaseProps {
   "data-testid"?: string;
   placeholder?: string;
   className?: string;
+  icon?: ReactNode;
 }
 
 export interface MultiComboBoxProps extends BaseProps {
@@ -67,7 +69,7 @@ export interface MultiComboBoxProps extends BaseProps {
 }
 
 const ComboBoxOption = ({ option }: { option: Option }) => (
-  <ComboboxOption as="li" value={option.value}>
+  <ComboboxOption as="li" value={option.value} disabled={option.disabled}>
     {({ focus, selected }) => (
       <FlexContainer
         gap="sm"
@@ -76,7 +78,9 @@ const ComboBoxOption = ({ option }: { option: Option }) => (
       >
         {option.iconLeft}
         <FlexContainer alignItems="baseline">
-          <Text size="md">{getLabel(option)}</Text>
+          <Text size="md" color={option.disabled ? "grey300" : undefined}>
+            {getLabel(option)}
+          </Text>
           {option.description && (
             <Text size="sm" className={styles.description}>
               {option.description}
@@ -207,10 +211,10 @@ export const ComboBox = ({
   "data-testid": testId,
   placeholder,
   className,
+  icon,
 }: ComboBoxProps) => {
   // Stores the value that the user types in to filter the options
   const [query, setQuery] = useState("");
-
   const inputOptionSections = useMemo(() => normalizeOptionsAsSections(options), [options]);
 
   const currentInputValue = useMemo(() => {
@@ -261,6 +265,7 @@ export const ComboBox = ({
           spellCheck={false}
           value={currentInputValue}
           error={error}
+          icon={icon}
           adornment={
             adornment ?? (
               <ComboboxButton className={styles.caretButton} data-testid={testId ? `${testId}--button` : undefined}>

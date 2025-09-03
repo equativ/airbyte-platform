@@ -9,8 +9,10 @@ import { Heading } from "components/ui/Heading";
 import { ExternalLink } from "components/ui/Link";
 import { Text } from "components/ui/Text";
 
-import { useCurrentOrganizationInfo } from "core/api";
+import { useCurrentOrganizationId } from "area/organization/utils/useCurrentOrganizationId";
+import { useOrgInfo } from "core/api";
 import { links } from "core/utils/links";
+import { Intent, useGeneratedIntent } from "core/utils/rbac";
 import { useRedirectToCustomerPortal } from "packages/cloud/area/billing/utils/useRedirectToCustomerPortal";
 
 import styles from "./SubscribeCards.module.scss";
@@ -111,7 +113,9 @@ const TeamsCard: React.FC = () => {
 };
 
 export const SubscribeCards: React.FC = () => {
-  const { billing } = useCurrentOrganizationInfo();
+  const organizationId = useCurrentOrganizationId();
+  const canManageOrganizationBilling = useGeneratedIntent(Intent.ManageOrganizationBilling, { organizationId });
+  const { billing } = useOrgInfo(organizationId, canManageOrganizationBilling) || {};
   return (
     <Box className={styles.subscribe} p="xl">
       <FlexContainer direction="column" gap="xl">
@@ -123,11 +127,11 @@ export const SubscribeCards: React.FC = () => {
           <TeamsCard />
         </FlexContainer>
         <FlexItem>
-          <Text size="lg">
-            <ExternalLink href={links.pricingPage} opensInNewTab withIcon>
+          <ExternalLink href={links.pricingPage} opensInNewTab>
+            <Button variant="clear" size="sm" icon="share" iconPosition="right" iconSize="sm">
               <FormattedMessage id="settings.organization.billing.pricingFeatureComparison" />
-            </ExternalLink>
-          </Text>
+            </Button>
+          </ExternalLink>
         </FlexItem>
       </FlexContainer>
     </Box>

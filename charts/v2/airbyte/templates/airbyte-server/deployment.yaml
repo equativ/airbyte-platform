@@ -69,8 +69,6 @@ spec:
 
         {{- if (or (eq .Values.global.edition "community") (eq .Values.global.edition "enterprise")) }}
         {{- include "airbyte.auth.envs" . | nindent 8 }}
-        - name: AIRBYTE_API_AUTH_HEADER_VALUE
-          value: "Internal server"
         {{- end}}
 
         {{- include "airbyte.auth.jwt.envs" . | nindent 8 }}
@@ -93,6 +91,7 @@ spec:
         {{- include "airbyte.tracking.envs" . | nindent 8 }}
         {{- include "airbyte.worker.envs" . | nindent 8 }}
         {{- include "airbyte.workloads.resources.envs" . | nindent 8 }}
+        {{- include "airbyte.connectorBuilder.envs" . | nindent 8 }}
 
         {{- if .Values.global.datadog.enabled }}
         - name: DD_SERVICE 
@@ -110,6 +109,7 @@ spec:
         {{- include "airbyte.keycloak.admin.user.envs" . | nindent 8 }}
         {{- include "airbyte.keycloak.client.envs" . | nindent 8 }}
         {{- else if (eq .Values.global.edition "cloud") }}
+        {{- include "airbyte.aws.envs" . | nindent 8 }}
         {{- include "airbyte.connectorRollout.envs" . | nindent 8 }}
         {{- include "airbyte.featureFlags.envs" . | nindent 8 }}
         {{- include "airbyte.keycloak.admin.client.envs" . | nindent 8 }}
@@ -117,6 +117,7 @@ spec:
         {{- include "airbyte.keycloak.client.envs" . | nindent 8 }}
         {{- include "airbyte.orb.envs" . | nindent 8 -}}
         {{- include "airbyte.redis.envs" . | nindent 8 -}}
+        {{- include "airbyte.speakeasy.envs" . | nindent 8 }}
         {{- include "airbyte.stripe.envs" . | nindent 8 }}
         {{- include "airbyte.temporal.cloud.envs" . | nindent 8 }}
         {{- include "airbyte.temporal.cloud.billing.envs" . | nindent 8 }}
@@ -190,6 +191,9 @@ spec:
         - name: gcs-log-creds-volume
           mountPath: {{ include "airbyte.storage.gcs.credentialsJsonPath" . | dir }}
           readOnly: true
+         {{- else if eq (lower (include "airbyte.storage.type" .)) "local" }}
+        - name: airbyte-storage
+          mountPath: /storage
         {{- end }}
 
         {{- if .Values.server.extraVolumeMounts }}
@@ -213,13 +217,12 @@ spec:
           items:
             - key: {{ include "airbyte.storage.gcs.credentialsJson.secretKey" . }}
               path: "gcp.json"
+      {{- else if eq (lower (include "airbyte.storage.type" .)) "local" }}
+      - name: airbyte-storage
+        persistentVolumeClaim:
+          claimName: airbyte-storage-pvc
       {{- end }}
 
-      {{- if .Values.global.airbyteYml }}
-      - name: airbyte-yml-volume
-        secret:
-          secretName: {{ .Release.Name }}-airbyte-yml
-      {{- end }}
       {{- if .Values.server.extraVolumes }}
       {{ toYaml .Values.server.extraVolumes | nindent 6 }}
       {{- end }}

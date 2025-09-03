@@ -45,9 +45,9 @@ import io.airbyte.api.model.generated.PostprocessDiscoveredCatalogResult
 import io.airbyte.api.model.generated.WorkspaceIdRequestBody
 import io.airbyte.commons.annotation.AuditLogging
 import io.airbyte.commons.annotation.AuditLoggingProvider
-import io.airbyte.commons.auth.AuthRoleConstants
 import io.airbyte.commons.auth.generated.Intent
 import io.airbyte.commons.auth.permissions.RequiresIntent
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.server.handlers.ConnectionsHandler
 import io.airbyte.commons.server.handlers.JobHistoryHandler
 import io.airbyte.commons.server.handlers.MatchSearchHandler
@@ -179,7 +179,7 @@ open class ConnectionApiController(
   @Secured(AuthRoleConstants.WORKSPACE_READER, AuthRoleConstants.ORGANIZATION_READER)
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun listAllConnectionsForWorkspace(
-    @Body workspaceIdRequestBody: WorkspaceIdRequestBody?,
+    @Body workspaceIdRequestBody: WorkspaceIdRequestBody,
   ): ConnectionReadList? = execute { connectionsHandler.listAllConnectionsForWorkspace(workspaceIdRequestBody) }
 
   @Post(uri = "/list_by_actor_definition")

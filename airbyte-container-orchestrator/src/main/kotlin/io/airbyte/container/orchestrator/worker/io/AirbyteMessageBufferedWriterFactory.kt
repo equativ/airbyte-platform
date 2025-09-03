@@ -28,7 +28,7 @@ class AirbyteMessageBufferedWriterFactory(
   private val protocolVersion = replicationInput.destinationLauncherConfig.protocolVersion
 
   fun createWriter(bufferedWriter: BufferedWriter): AirbyteMessageBufferedWriter<*> {
-    val needMigration = protocolVersion.majorVersion != migratorFactory.mostRecentVersion.majorVersion
+    val needMigration = protocolVersion.getMajorVersion() != migratorFactory.mostRecentVersion.getMajorVersion()
     val additionalMessage =
       if (needMigration) {
         ", messages will be downgraded from protocol version ${migratorFactory.mostRecentVersion.serialize()}"
@@ -38,7 +38,7 @@ class AirbyteMessageBufferedWriterFactory(
     logger.info { "Writing messages to protocol version ${protocolVersion.serialize()}$additionalMessage" }
     return AirbyteMessageBufferedWriter(
       writer = bufferedWriter,
-      serDeProvider.getSerializer(protocolVersion).orElseThrow(),
+      serDeProvider.getSerializer(protocolVersion) ?: throw IllegalStateException("Serializer not found for version $protocolVersion"),
       migratorFactory.getAirbyteMessageMigrator(protocolVersion),
       Optional.ofNullable(configuredAirbyteCatalog),
     )

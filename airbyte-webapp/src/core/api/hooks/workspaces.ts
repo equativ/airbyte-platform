@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useLayoutEffect } from "react";
 
+import { useCurrentOrganizationId } from "area/organization/utils";
 import { useCurrentWorkspaceId } from "area/workspace/utils";
 import { useCurrentUser } from "core/services/auth";
 
@@ -46,7 +47,6 @@ type WorkspacesCount = { count: "zero" } | { count: "one"; workspace: WorkspaceR
 export const useCurrentWorkspace = () => {
   const workspaceId = useCurrentWorkspaceId();
 
-  // NOTE: Do we even want to throw this error?
   if (!workspaceId) {
     throw new Error("Called useCurrentWorkspace outside of a workspace");
   }
@@ -246,7 +246,13 @@ export const useListWorkspaceAccessUsers = (workspaceId: string) => {
   const requestOptions = useRequestOptions();
   const queryKey = workspaceKeys.listAccessUsers(workspaceId);
 
-  return useSuspenseQuery(queryKey, () => listAccessInfoByWorkspaceId({ workspaceId }, requestOptions));
+  return (
+    useSuspenseQuery(queryKey, () => listAccessInfoByWorkspaceId({ workspaceId }, requestOptions), {
+      enabled: Boolean(workspaceId),
+    }) ?? {
+      usersWithAccess: [],
+    }
+  );
 };
 
 /**
@@ -256,14 +262,19 @@ export const useListWorkspaceAccessUsers = (workspaceId: string) => {
 export const useIsForeignWorkspace = () => {
   const { userId } = useCurrentUser();
   const { permissions } = useListPermissions(userId);
-  const workspace = useCurrentWorkspace();
+  const workspace = useCurrentWorkspaceOrUndefined();
+  const organizationId = useCurrentOrganizationId();
 
-  if (!workspace) {
-    return false;
+  if (workspace) {
+    return !permissions.some(
+      (permission) =>
+        permission.workspaceId === workspace.workspaceId || permission.organizationId === workspace.organizationId
+    );
   }
 
-  return !permissions.some(
-    (permission) =>
-      permission.workspaceId === workspace.workspaceId || permission.organizationId === workspace.organizationId
-  );
+  if (organizationId) {
+    return !permissions.some((permission) => permission.organizationId === organizationId);
+  }
+
+  return false;
 };

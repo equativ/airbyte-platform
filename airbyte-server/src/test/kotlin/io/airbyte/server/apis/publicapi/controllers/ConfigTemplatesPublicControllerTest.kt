@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import io.airbyte.api.model.generated.OrganizationRead
 import io.airbyte.api.model.generated.OrganizationReadList
 import io.airbyte.commons.entitlements.LicenseEntitlementChecker
-import io.airbyte.commons.server.authorization.RoleResolver
 import io.airbyte.commons.server.handlers.OrganizationsHandler
 import io.airbyte.commons.server.support.CurrentUserService
 import io.airbyte.config.AuthenticatedUser
@@ -17,6 +16,9 @@ import io.airbyte.config.ConfigTemplateWithActorDetails
 import io.airbyte.data.services.ConfigTemplateService
 import io.airbyte.domain.models.ActorDefinitionId
 import io.airbyte.domain.models.OrganizationId
+import io.airbyte.featureflag.FeatureFlagClient
+import io.airbyte.featureflag.Organization
+import io.airbyte.featureflag.UseSonarServer
 import io.airbyte.protocol.models.v0.ConnectorSpecification
 import io.airbyte.publicApi.server.generated.models.ConfigTemplateCreateRequestBody
 import io.airbyte.publicApi.server.generated.models.ConfigTemplateUpdateRequestBody
@@ -24,7 +26,6 @@ import io.airbyte.server.apis.publicapi.apiTracking.TrackingHelper
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.mockkConstructor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -42,6 +43,10 @@ class ConfigTemplatesPublicControllerTest {
   private val currentUserService: CurrentUserService = mockk()
   private val trackingHelper: TrackingHelper = mockk()
   private val licenseEntitlementChecker: LicenseEntitlementChecker = mockk()
+  private val featureFlagClient =
+    mockk<FeatureFlagClient> {
+      every { boolVariation(UseSonarServer, Organization(organizationId)) } returns false
+    }
   private val organizationHandler: OrganizationsHandler = mockk()
   private val controller =
     ConfigTemplatesPublicController(
@@ -50,19 +55,19 @@ class ConfigTemplatesPublicControllerTest {
       trackingHelper,
       licenseEntitlementChecker,
       organizationHandler,
+      featureFlagClient,
     )
   private val organizationReadList =
     OrganizationReadList().organizations(listOf(OrganizationRead().organizationId(organizationId)))
 
   @BeforeEach
   fun setup() {
-    every { currentUserService.currentUser } returns AuthenticatedUser()
-    every { currentUserService.currentUser.userId } returns UUID.randomUUID()
+    every { currentUserService.getCurrentUser() } returns AuthenticatedUser()
+    every { currentUserService.getCurrentUser().userId } returns UUID.randomUUID()
     every { licenseEntitlementChecker.ensureEntitled(any(), any()) } returns Unit
     every { licenseEntitlementChecker.ensureEntitled(any(), any(), any()) } returns Unit
     every { organizationHandler.listOrganizationsByUser(any()) } returns organizationReadList
     every { licenseEntitlementChecker.checkEntitlements(any(), any()) } returns true
-    mockkConstructor(RoleResolver.Request::class)
   }
 
   @Test

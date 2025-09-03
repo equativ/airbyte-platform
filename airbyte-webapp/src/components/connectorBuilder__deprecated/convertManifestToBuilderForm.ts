@@ -169,6 +169,12 @@ export const convertToBuilderFormValuesSync = (resolvedManifest: ConnectorManife
     builderFormValues.global.urlBase = firstStream.retriever.creation_requester.url_base;
   } else if (dynamicStreams.length > 0) {
     const firstDynamicStream = dynamicStreams[0];
+    assertType<DeclarativeStream>(
+      firstDynamicStream.stream_template,
+      "DeclarativeStream",
+      "dynamic_stream",
+      firstDynamicStream.name
+    );
     assertType<SimpleRetriever>(
       firstDynamicStream.stream_template.retriever,
       "SimpleRetriever",
@@ -263,6 +269,12 @@ export const convertToBuilderFormValuesSync = (resolvedManifest: ConnectorManife
 
     // write any component mappings to the stream template
     const streamTemplateWithMappings = structuredClone(dynamicStream.stream_template);
+    assertType<DeclarativeStream>(
+      streamTemplateWithMappings,
+      "DeclarativeStream",
+      "dynamic_stream",
+      dynamicStream.name
+    );
 
     dynamicStream.components_resolver.components_mapping.forEach(({ field_path, value }) => {
       set(streamTemplateWithMappings, field_path, value);
@@ -728,10 +740,7 @@ function requesterToRequestBody(requester: HttpRequester): BuilderRequestBody {
         value: formattedQuery,
       };
     } catch {
-      return {
-        type: "graphql",
-        value: requester.request_body_json.query as string,
-      };
+      // could not parse the request body as graphql, so fall back to the json logic below
     }
   }
 

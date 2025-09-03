@@ -4,6 +4,8 @@
 
 package io.airbyte.test.utils
 
+import com.nimbusds.jwt.JWTClaimsSet
+import com.nimbusds.jwt.PlainJWT
 import dev.failsafe.RetryPolicy
 import dev.failsafe.event.ExecutionAttemptedEvent
 import dev.failsafe.event.ExecutionCompletedEvent
@@ -11,11 +13,14 @@ import io.airbyte.api.client.AirbyteApiClient
 import io.airbyte.api.client.model.generated.AirbyteCatalog
 import io.airbyte.api.client.model.generated.AirbyteStreamAndConfiguration
 import io.airbyte.api.client.model.generated.AirbyteStreamConfiguration
+import io.airbyte.api.client.model.generated.ConfiguredStreamMapper
 import io.airbyte.api.client.model.generated.DestinationSyncMode
 import io.airbyte.api.client.model.generated.SelectedFieldInfo
 import io.airbyte.api.client.model.generated.SyncMode
-import io.airbyte.commons.auth.AirbyteAuthConstants
+import io.airbyte.commons.DEFAULT_USER_ID
 import io.github.oshai.kotlinlogging.KotlinLogging
+import io.micronaut.security.token.jwt.signature.secret.SecretSignature
+import io.micronaut.security.token.jwt.signature.secret.SecretSignatureConfiguration
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -40,68 +45,82 @@ object AcceptanceTestUtils {
   const val IS_GKE: String = "IS_GKE"
 
   /**
-   * test-client is a valid internal service name according to the AirbyteAuthInternalTokenValidator.
-   * This header value can be used to set up Acceptance Test clients that can authorize as an instance
-   * admin. This is useful for testing Enterprise features without needing to set up a valid Keycloak
-   * token.
-   */
-  private const val X_AIRBYTE_AUTH_HEADER_TEST_CLIENT_VALUE: String = AirbyteAuthConstants.X_AIRBYTE_AUTH_HEADER_INTERNAL_PREFIX + " test-client"
-
-  /**
    * This is a flag that can be used to enable/disable enterprise-only features in acceptance tests.
    */
-  @JvmStatic
   fun isEnterprise(): Boolean = System.getenv().getOrDefault(IS_ENTERPRISE, "false") == "true"
 
-  @JvmStatic
-  @JvmOverloads
-  fun createAirbyteApiClient(
-    basePath: String,
-    headers: Map<String, String> = mapOf(),
-    applyHeaders: Boolean = System.getenv().containsKey(IS_GKE),
-  ): AirbyteApiClient {
-    // Set up the API client.
-    return AirbyteApiClient(
-      basePath = basePath,
+  fun getAirbyteApiUrl(): String {
+    val host =
+      System.getenv("AIRBYTE_SERVER_HOST").takeIf { !it.isNullOrBlank() }
+        ?: throw Exception("AIRBYTE_SERVER_HOST is required")
+    return "$host/api"
+  }
+
+  private fun JWTClaimsSet.toAuthHeader(): Map<String, String> {
+    val jwtSignatureKey = System.getenv("AB_JWT_SIGNATURE_SECRET")
+    if (jwtSignatureKey.isNullOrBlank()) {
+      val token = PlainJWT(this).serialize()
+      return mapOf("Authorization" to "Bearer $token")
+    }
+
+    val secretSignatureConfig = SecretSignatureConfiguration("airbyte-internal-api")
+    secretSignatureConfig.secret = jwtSignatureKey
+    val secretSignature = SecretSignature(secretSignatureConfig)
+    val token = secretSignature.sign(this).serialize()
+    return mapOf("Authorization" to "Bearer $token")
+  }
+
+  private fun getAdminAuthHeaders() =
+    JWTClaimsSet
+      .Builder()
+      .subject(DEFAULT_USER_ID.toString())
+      .build()
+      .toAuthHeader()
+
+  fun createAirbyteAdminApiClient(): AirbyteApiClient =
+    AirbyteApiClient(
+      basePath = getAirbyteApiUrl(),
       policy = createRetryPolicy(),
-      httpClient =
-        createOkHttpClient(
-          applyHeaders = applyHeaders,
-          headers = headers,
-        ),
+      httpClient = createOkHttpClient(getAdminAuthHeaders()),
+    )
+
+  fun createAirbyteUserApiClient(
+    email: String,
+    verified: Boolean = true,
+  ): AirbyteApiClient {
+    val headers =
+      JWTClaimsSet
+        .Builder()
+        .subject(email)
+        .claim("user_id", email)
+        .claim("user_email", email)
+        .claim("email_verified", verified)
+        .build()
+        .toAuthHeader()
+
+    return AirbyteApiClient(
+      basePath = getAirbyteApiUrl(),
+      policy = createRetryPolicy(),
+      httpClient = createOkHttpClient(headers),
     )
   }
 
-  @JvmStatic
-  @JvmOverloads
-  fun createOkHttpClient(
-    applyHeaders: Boolean = System.getenv().containsKey(IS_GKE),
-    headers: Map<String, String> = mapOf(),
-  ): OkHttpClient {
-    val okHttpClient: OkHttpClient =
-      OkHttpClient
-        .Builder()
-        .addInterceptor(
-          Interceptor { chain ->
-            val request = chain.request()
-            val builder: Request.Builder = request.newBuilder()
-            if (applyHeaders) {
-              headers.entries.stream().forEach { e: Map.Entry<String, String> -> builder.addHeader(e.key, e.value) }
-            }
-            if (isEnterprise()) {
-              builder.addHeader(AirbyteAuthConstants.X_AIRBYTE_AUTH_HEADER, X_AIRBYTE_AUTH_HEADER_TEST_CLIENT_VALUE)
-            }
-            chain.proceed(builder.build())
-          },
-        ).addInterceptor(LoggingInterceptor)
-        .connectTimeout(Duration.ofSeconds(DEFAULT_TIMEOUT))
-        .readTimeout(Duration.ofSeconds(DEFAULT_TIMEOUT))
-        .build()
-    return okHttpClient
-  }
+  fun createOkHttpClient(headers: Map<String, String> = getAdminAuthHeaders()) =
+    OkHttpClient
+      .Builder()
+      .addInterceptor(
+        Interceptor { chain ->
+          val request = chain.request()
+          val builder: Request.Builder = request.newBuilder()
+          headers.entries.stream().forEach { e: Map.Entry<String, String> -> builder.addHeader(e.key, e.value) }
+          chain.proceed(builder.build())
+        },
+      ).addInterceptor(LoggingInterceptor)
+      .connectTimeout(Duration.ofSeconds(DEFAULT_TIMEOUT))
+      .readTimeout(Duration.ofSeconds(DEFAULT_TIMEOUT))
+      .build()
 
-  @JvmStatic
-  fun createRetryPolicy(): RetryPolicy<Response> =
+  private fun createRetryPolicy(): RetryPolicy<Response> =
     RetryPolicy
       .builder<Response>()
       .handle(
@@ -120,7 +139,6 @@ object AcceptanceTestUtils {
       .withMaxRetries(MAX_TRIES)
       .build()
 
-  @JvmStatic
   fun modifyCatalog(
     originalCatalog: AirbyteCatalog?,
     // TODO replace Optional with nullable values and leverage ?.let { } ?: config.<other value>
@@ -135,6 +153,7 @@ object AcceptanceTestUtils {
     replacementGenerationId: Optional<Long> = Optional.empty(),
     replacementSyncId: Optional<Long> = Optional.empty(),
     streamFilter: Optional<Predicate<AirbyteStreamAndConfiguration>> = Optional.empty(),
+    mappers: List<ConfiguredStreamMapper>? = null,
   ): AirbyteCatalog {
     val updatedStreams: List<AirbyteStreamAndConfiguration> =
       originalCatalog
@@ -144,22 +163,23 @@ object AcceptanceTestUtils {
           val config = s.config
           val newConfig =
             AirbyteStreamConfiguration(
-              replacementSourceSyncMode.orElse(config!!.syncMode),
-              replacementDestinationSyncMode.orElse(config.destinationSyncMode),
-              replacementCursorFields.orElse(config.cursorField),
-              null,
-              replacementPrimaryKeys.orElse(config.primaryKey),
-              config.aliasName,
-              replacementSelected.orElse(config.selected),
-              config.suggested,
-              config.includeFiles,
-              replacementFieldSelectionEnabled.orElse(config.fieldSelectionEnabled),
-              replacementSelectedFields.orElse(config.selectedFields),
-              config.hashedFields,
-              config.mappers,
-              replacementMinimumGenerationId.orElse(config.minimumGenerationId),
-              replacementGenerationId.orElse(config.generationId),
-              replacementSyncId.orElse(config.syncId),
+              syncMode = replacementSourceSyncMode.orElse(config!!.syncMode),
+              destinationSyncMode = replacementDestinationSyncMode.orElse(config.destinationSyncMode),
+              cursorField = replacementCursorFields.orElse(config.cursorField),
+              namespace = null,
+              primaryKey = replacementPrimaryKeys.orElse(config.primaryKey),
+              aliasName = config.aliasName,
+              selected = replacementSelected.orElse(config.selected),
+              suggested = config.suggested,
+              destinationObjectName = config.destinationObjectName,
+              includeFiles = config.includeFiles,
+              fieldSelectionEnabled = replacementFieldSelectionEnabled.orElse(config.fieldSelectionEnabled),
+              selectedFields = replacementSelectedFields.orElse(config.selectedFields),
+              hashedFields = config.hashedFields,
+              mappers = mappers ?: config.mappers,
+              minimumGenerationId = replacementMinimumGenerationId.orElse(config.minimumGenerationId),
+              generationId = replacementGenerationId.orElse(config.generationId),
+              syncId = replacementSyncId.orElse(config.syncId),
             )
           AirbyteStreamAndConfiguration(s.stream, newConfig)
         }?.filter(streamFilter.orElse { _ -> true })
@@ -171,23 +191,33 @@ object AcceptanceTestUtils {
   private object LoggingInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
       val request: Request = chain.request()
-      val requestLogMessage =
-        buildString {
-          append("Request: ${request.method} ${request.url}")
-          request.body?.let { body ->
-            val buffer = Buffer()
-            body.writeTo(buffer)
-            append(" body: ${buffer.readUtf8()}")
+      // avoiding spamming ourselves with polling job status.
+      val isJobStatus = isJobStatusRequest(request)
+
+      if (!isJobStatus) {
+        val requestLogMessage =
+          buildString {
+            append("Request: ${request.method} ${request.url}")
+            request.body?.let { body ->
+              val buffer = Buffer()
+              body.writeTo(buffer)
+              append(" body: ${buffer.readUtf8()}")
+            }
           }
-        }
-      logger.info { requestLogMessage }
+        logger.info { requestLogMessage }
+      }
 
       val response: Response = chain.proceed(request)
-      // we don't log the response body because it can be very large which can heavily increase
-      // the test duration + it doesn't add a lot of information
-      logger.info { "Response: ${response.code} ${request.url} " }
+
+      if (!isJobStatus) {
+        // we don't log the response body because it can be very large which can heavily increase
+        // the test duration + it doesn't add a lot of information
+        logger.info { "Response: ${response.code} ${request.url} " }
+      }
 
       return response
     }
+
+    fun isJobStatusRequest(request: Request): Boolean = request.url.toString().contains("api/v1/jobs/get")
   }
 }

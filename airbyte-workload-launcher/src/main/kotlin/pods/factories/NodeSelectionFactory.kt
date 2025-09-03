@@ -9,6 +9,7 @@ import io.airbyte.featureflag.Attempt
 import io.airbyte.featureflag.Connection
 import io.airbyte.featureflag.Context
 import io.airbyte.featureflag.FeatureFlagClient
+import io.airbyte.featureflag.JobType
 import io.airbyte.featureflag.Multi
 import io.airbyte.featureflag.Workspace
 import io.airbyte.workload.launcher.pods.model.NodeSelection
@@ -25,9 +26,8 @@ data class NodeSelectionFactory(
   private val featureFlagClient: FeatureFlagClient,
   @Named("replicationPodTolerations") private val tolerations: List<Toleration>,
   @Named("spotToleration") private val spotToleration: Toleration,
-  @Named("infraFlagContexts") private val infraFlagContexts: List<Context>,
 ) {
-  internal fun createReplicationNodeSelection(
+  internal fun createNodeSelection(
     nodeSelectors: Map<String, String>,
     allLabels: Map<String, String>,
   ): NodeSelection {
@@ -58,10 +58,11 @@ data class NodeSelectionFactory(
     featureFlagClient.boolVariation(AllowSpotInstances, buildSpotInstanceFeatureFlagContext(allLabels))
 
   private fun buildSpotInstanceFeatureFlagContext(allLabels: Map<String, String>): Context {
-    val context = infraFlagContexts.toMutableList()
+    val context = mutableListOf<Context>()
     allLabels["connection_id"]?.let { connectionId -> context.add(Connection(connectionId)) }
     allLabels["workspace_id"]?.let { workspaceId -> context.add(Workspace(workspaceId)) }
     allLabels["attempt_id"]?.let { attemptNumber -> context.add(Attempt(attemptNumber)) }
+    allLabels["job_type"]?.let { jobType -> context.add(JobType(jobType)) }
 
     return Multi.orEmpty(context)
   }

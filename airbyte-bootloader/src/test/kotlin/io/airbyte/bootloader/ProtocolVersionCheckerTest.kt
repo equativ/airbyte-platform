@@ -47,8 +47,8 @@ internal class ProtocolVersionCheckerTest {
   @ValueSource(booleans = [true, false])
   fun testFirstInstallCheck(supportAutoUpgrade: Boolean) {
     val expectedRange = AirbyteProtocolVersionRange(V0_0_0, V1_0_0)
-    every { jobPersistence.version } returns Optional.empty()
-    every { jobPersistence.currentProtocolVersionRange } returns Optional.empty()
+    every { jobPersistence.getVersion() } returns Optional.empty()
+    every { jobPersistence.getCurrentProtocolVersionRange() } returns Optional.empty()
     val protocolVersionChecker =
       ProtocolVersionChecker(
         jobPersistence,
@@ -99,7 +99,7 @@ internal class ProtocolVersionCheckerTest {
         dest2 to (ActorType.DESTINATION to V0_0_0).toMapEntry(),
       )
     every {
-      actorDefinitionService.actorDefinitionToProtocolVersionMap
+      actorDefinitionService.getActorDefinitionToProtocolVersionMap()
     } returns initialActorDefinitions
 
     val protocolVersionChecker =
@@ -134,7 +134,7 @@ internal class ProtocolVersionCheckerTest {
         dest1 to (ActorType.DESTINATION to V1_0_0).toMapEntry(),
       )
     every {
-      actorDefinitionService.actorDefinitionToProtocolVersionMap
+      actorDefinitionService.getActorDefinitionToProtocolVersionMap()
     } returns initialActorDefinitions
 
     val protocolVersionChecker =
@@ -264,7 +264,7 @@ internal class ProtocolVersionCheckerTest {
         dest3 to (ActorType.DESTINATION to V2_0_0).toMapEntry(),
       )
     every {
-      actorDefinitionService.actorDefinitionToProtocolVersionMap
+      actorDefinitionService.getActorDefinitionToProtocolVersionMap()
     } returns initialActorDefinitions
 
     setNewSourceDefinitions(
@@ -325,7 +325,7 @@ internal class ProtocolVersionCheckerTest {
         dest2 to (ActorType.DESTINATION to V0_0_0).toMapEntry(),
       )
     every {
-      actorDefinitionService.actorDefinitionToProtocolVersionMap
+      actorDefinitionService.getActorDefinitionToProtocolVersionMap()
     } returns initialActorDefinitions
 
     setNewSourceDefinitions(
@@ -373,7 +373,7 @@ internal class ProtocolVersionCheckerTest {
         dest2 to (ActorType.DESTINATION to V0_0_0).toMapEntry(),
       )
     every {
-      actorDefinitionService.actorDefinitionToProtocolVersionMap
+      actorDefinitionService.getActorDefinitionToProtocolVersionMap()
     } returns initialActorDefinitions
 
     setNewSourceDefinitions(
@@ -406,9 +406,9 @@ internal class ProtocolVersionCheckerTest {
     min: Version,
     max: Version,
   ) {
-    every { jobPersistence.currentProtocolVersionRange } returns Optional.of(AirbyteProtocolVersionRange(min, max))
-    every { jobPersistence.airbyteProtocolVersionMin } returns Optional.of(min)
-    every { jobPersistence.airbyteProtocolVersionMax } returns Optional.of(max)
+    every { jobPersistence.getCurrentProtocolVersionRange() } returns Optional.of(AirbyteProtocolVersionRange(min, max))
+    every { jobPersistence.getAirbyteProtocolVersionMin() } returns Optional.of(min)
+    every { jobPersistence.getAirbyteProtocolVersionMax() } returns Optional.of(max)
   }
 
   private fun setNewDestinationDefinitions(defs: List<Map.Entry<UUID, Version>>) {
@@ -419,7 +419,7 @@ internal class ProtocolVersionCheckerTest {
             .withDestinationDefinitionId(e.key)
             .withSpec(ConnectorSpecification().withProtocolVersion(e.value.serialize()))
         }.toList()
-    every { definitionsProvider.destinationDefinitions } returns destDefinitions
+    every { definitionsProvider.getDestinationDefinitions() } returns destDefinitions
   }
 
   private fun setNewSourceDefinitions(defs: List<Map.Entry<UUID, Version>>) {
@@ -430,7 +430,7 @@ internal class ProtocolVersionCheckerTest {
             .withSourceDefinitionId(e.key)
             .withSpec(ConnectorSpecification().withProtocolVersion(e.value.serialize()))
         }.toList()
-    every { definitionsProvider.sourceDefinitions } returns sourceDefinitions
+    every { definitionsProvider.getSourceDefinitions() } returns sourceDefinitions
   }
 }
 

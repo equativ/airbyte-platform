@@ -4,11 +4,13 @@ import { FormLabel } from "components/forms/FormControl";
 import { Box } from "components/ui/Box";
 import { Table } from "components/ui/Table";
 
-import { useCurrentWorkspace, useGetDataplaneGroup, useListWorkspacesInOrganization } from "core/api";
+import { useCurrentOrganizationId } from "area/organization/utils/useCurrentOrganizationId";
+import { useListWorkspacesInOrganization, useGetDataplaneGroup } from "core/api";
 
 export const RegionsTable = () => {
-  const { organizationId } = useCurrentWorkspace();
-  const { workspaces } = useListWorkspacesInOrganization({ organizationId });
+  const organizationId = useCurrentOrganizationId();
+  const { data: workspacesData } = useListWorkspacesInOrganization({ organizationId });
+  const workspaces = workspacesData?.pages[0].workspaces ?? [];
   const { getDataplaneGroup } = useGetDataplaneGroup();
   const { formatMessage } = useIntl();
 

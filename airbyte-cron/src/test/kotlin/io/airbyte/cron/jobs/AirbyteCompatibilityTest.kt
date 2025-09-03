@@ -5,7 +5,7 @@
 package io.airbyte.cron.jobs
 
 import io.airbyte.commons.json.Jsons
-import io.airbyte.commons.resources.MoreResources
+import io.airbyte.commons.resources.Resources
 import io.airbyte.config.AirbyteCompatibleConnectorVersionsMatrix
 import io.airbyte.config.init.AirbyteCompatibleConnectorVersionsProvider
 import io.airbyte.config.init.AirbyteCompatibleConnectorVersionsProvider.Companion.convertToMap
@@ -25,6 +25,7 @@ import java.util.UUID
 @Property(name = "airbyte.version", value = "1.2.0")
 @Property(name = "airbyte.workspace.root", value = "./build/tmp/workspace")
 @Property(name = "airbyte.edition", value = "COMMUNITY")
+@Property(name = "micronaut.http.services.workload-api.url", value = "http://localhost")
 @Requires(env = ["internal"])
 class AirbyteCompatibilityTest(
   private val airbyteCompatibilityValidator: AirbyteCompatibleConnectorsValidator,
@@ -81,7 +82,7 @@ class AirbyteCompatibilityTest(
   fun platformCompatibilityProvider(): AirbyteCompatibleConnectorVersionsProvider {
     val matrix =
       Jsons.deserialize(
-        MoreResources.readResource("platform-compatibility.json"),
+        Resources.read("platform-compatibility.json"),
         AirbyteCompatibleConnectorVersionsMatrix::class.java,
       )
     val platformCompatibilityProvider: AirbyteCompatibleConnectorVersionsProvider = mockk()

@@ -9,16 +9,16 @@ import datadog.trace.api.Trace
 import dev.failsafe.Failsafe
 import dev.failsafe.RetryPolicy
 import dev.failsafe.function.CheckedSupplier
+import io.airbyte.api.client.ApiException
 import io.airbyte.metrics.MetricAttribute
 import io.airbyte.metrics.MetricClient
 import io.airbyte.metrics.OssMetricsRegistry
 import io.airbyte.metrics.lib.ApmTraceUtils
 import io.airbyte.metrics.lib.MetricTags
 import io.airbyte.workload.api.client.WorkloadApiClient
-import io.airbyte.workload.api.client.generated.infrastructure.ServerException
-import io.airbyte.workload.api.client.model.generated.WorkloadListRequest
-import io.airbyte.workload.api.client.model.generated.WorkloadListResponse
-import io.airbyte.workload.api.client.model.generated.WorkloadStatus
+import io.airbyte.workload.api.domain.WorkloadListRequest
+import io.airbyte.workload.api.domain.WorkloadListResponse
+import io.airbyte.workload.api.domain.WorkloadStatus
 import io.airbyte.workload.launcher.metrics.MeterFilterFactory.Companion.RESUME_CLAIMED_OPERATION_NAME
 import io.airbyte.workload.launcher.model.toLauncherInput
 import io.airbyte.workload.launcher.pipeline.LaunchPipeline
@@ -34,32 +34,26 @@ import reactor.kotlin.core.publisher.toFlux
 import java.net.SocketException
 import java.net.SocketTimeoutException
 import java.time.Duration
-import kotlin.time.Duration.Companion.seconds
-import kotlin.time.toJavaDuration
 
 private val logger = KotlinLogging.logger {}
 
 @Singleton
 class ClaimedProcessor(
-  private val apiClient: WorkloadApiClient,
+  private val workloadApiClient: WorkloadApiClient,
   private val pipe: LaunchPipeline,
   private val metricClient: MetricClient,
   private val claimProcessorTracker: ClaimProcessorTracker,
   @Value("\${airbyte.workload-launcher.parallelism.default-queue}") parallelism: Int,
-  @Named("claimedProcessorBackoffDuration") private val backoffDuration: Duration = 5.seconds.toJavaDuration(),
-  @Named("claimedProcessorBackoffMaxDelay") private val backoffMaxDelay: Duration = 60.seconds.toJavaDuration(),
+  @Named("claimedProcessorBackoffDuration") private val backoffDuration: Duration,
+  @Named("claimedProcessorBackoffMaxDelay") private val backoffMaxDelay: Duration,
 ) {
   private val scheduler = Schedulers.newParallel("process-claimed-scheduler", parallelism)
 
   @Trace(operationName = RESUME_CLAIMED_OPERATION_NAME)
   fun retrieveAndProcess(dataplaneId: String) {
-    addTagsToTrace(dataplaneId)
-    val workloadListRequest =
-      WorkloadListRequest(
-        listOf(dataplaneId),
-        listOf(WorkloadStatus.CLAIMED),
-      )
+    ApmTraceUtils.addTagsToTrace(mapOf(MetricTags.DATA_PLANE_ID_TAG to dataplaneId))
 
+    val workloadListRequest = WorkloadListRequest(listOf(dataplaneId), listOf(WorkloadStatus.CLAIMED))
     val workloadList = getWorkloadList(workloadListRequest)
     logger.info { "Re-hydrating ${workloadList.workloads.size} workload claim(s)..." }
     claimProcessorTracker.trackNumberOfClaimsToResume(workloadList.workloads.size)
@@ -93,25 +87,20 @@ class ClaimedProcessor(
       .subscribeOn(scheduler)
   }
 
-  private fun addTagsToTrace(dataplaneId: String) {
-    val commonTags = hashMapOf<String, Any>()
-    commonTags[MetricTags.DATA_PLANE_ID_TAG] = dataplaneId
-    ApmTraceUtils.addTagsToTrace(commonTags)
-  }
+  private fun getWorkloadList(req: WorkloadListRequest): WorkloadListResponse {
+    logger.info { "requesting workload list: $req" }
 
-  private fun getWorkloadList(req: WorkloadListRequest): WorkloadListResponse =
-    Failsafe
+    return Failsafe
       .with(
         RetryPolicy
           .builder<Any>()
           .withBackoff(backoffDuration, backoffMaxDelay)
-          .onRetry { _ -> logger.error { "Retrying to fetch workloads for dataplane(s): ${req.dataplane}" } }
+          .onRetry { ev -> logger.error(ev.lastException) { "Retrying to fetch workloads for dataplane(s): ${req.dataplane}" } }
           .withMaxAttempts(-1)
           .abortOn { exception ->
             when (exception) {
               // This makes us to retry only on 5XX errors
-              is ServerException -> exception.statusCode / 100 != 5
-
+              is ApiException -> exception.statusCode !in 500..599
               // We want to retry on most network errors
               is SocketException -> false
               is SocketTimeoutException -> false
@@ -119,6 +108,9 @@ class ClaimedProcessor(
             }
           }.build(),
       ).get(
-        CheckedSupplier { apiClient.workloadApi.workloadList(req) },
+        CheckedSupplier {
+          workloadApiClient.workloadList(req)
+        },
       )
+  }
 }

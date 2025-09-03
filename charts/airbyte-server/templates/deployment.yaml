@@ -63,16 +63,18 @@ spec:
         - name: JAVA_TOOL_OPTIONS
           value: "-Xdebug -agentlib:jdwp=transport=dt_socket,address=0.0.0.0:{{ .Values.debug.remoteDebugPort }},server=y,suspend=n"
         {{- end}}
+
         {{- if or (eq .Values.global.edition "pro") (eq .Values.global.edition "enterprise") }}
         - name: API_AUTHORIZATION_ENABLED
           value: "true"
         {{- else if and (eq .Values.global.edition "community") .Values.global.auth.enabled }}
         # Self-Managed Enterprise should always have API_AUTHORIZATION_ENABLED set to true, even
         # if global.auth.enabled is not set to true. This can be simplified in the future, once
-        # globa.auth.enabled is changed to always default to true across all editions of Airbyte.
+        # global.auth.enabled is changed to always default to true across all editions of Airbyte.
         - name: API_AUTHORIZATION_ENABLED
           value: "true"
         {{- end }}
+
         {{- if or (eq .Values.global.edition "community") (eq .Values.global.edition "pro") (eq .Values.global.edition "enterprise")  }}
         {{- include "airbyte.logging.envs" . | nindent 8 }}
         - name: AIRBYTE_API_HOST
@@ -227,10 +229,6 @@ spec:
             configMapKeyRef:
               name: {{ .Release.Name }}-airbyte-env
               key: CONNECTOR_BUILDER_SERVER_API_HOST
-        - name: AIRBYTE_API_AUTH_HEADER_NAME
-          value: "X-Airbyte-Auth"
-        - name: AIRBYTE_API_AUTH_HEADER_VALUE
-          value: "Internal server"
         - name: ENTERPRISE_SOURCE_STUBS_URL
           valueFrom:
             configMapKeyRef:
@@ -329,6 +327,12 @@ spec:
             secretKeyRef:
               name: {{ include "airbyte.secretStoreName" .Values.global.secretsManager.secretsManagerSecretName }}
               key: {{ include "airbyte.googleSecretManagerCredentialsSecretKey" .Values.global.secretsManager.googleSecretManager.credentialsSecretKey }}
+        {{- if .Values.global.secretsManager.googleSecretManager.region }}
+        - name: SECRET_STORE_GCP_REGION
+          value: {{ .Values.global.secretsManager.googleSecretManager.region }}
+        - name: CLOUDSDK_API_ENDPOINT_OVERRIDES_SECRETMANAGER
+          value: https://secretmanager.{{ .Values.global.secretsManager.googleSecretManager.region }}.rep.googleapis.com/
+        {{- end }}
         {{- end }}
 
         # Values for vault secrets
@@ -426,12 +430,6 @@ spec:
           mountPath: /secrets/gcs-log-creds
           readOnly: true
         {{- end }}
-        {{- if .Values.global.airbyteYml }}
-        - name: airbyte-yml-volume
-          mountPath: /app/configs/airbyte.yml
-          subPath: fileContents
-          readOnly: true
-        {{- end }}
       {{- end }}
 
         {{- if .Values.extraVolumeMounts }}
@@ -461,11 +459,6 @@ spec:
           secretName: {{ ternary (printf "%s-gcs-log-creds" ( .Release.Name )) .Values.global.storage.storageSecretName (not ((.Values.global.storage).storageSecretName)) }}
       {{- end }}
 
-      {{- if .Values.global.airbyteYml }}
-      - name: airbyte-yml-volume
-        secret:
-          secretName: {{ .Release.Name }}-airbyte-yml
-      {{- end }}
     {{- end }}
       {{- if .Values.extraVolumes }}
 {{ toYaml .Values.extraVolumes | nindent 6 }}

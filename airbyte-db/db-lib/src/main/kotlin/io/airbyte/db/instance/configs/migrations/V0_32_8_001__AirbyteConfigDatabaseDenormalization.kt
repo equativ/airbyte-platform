@@ -10,11 +10,8 @@
 package io.airbyte.db.instance.configs.migrations
 
 import com.google.common.annotations.VisibleForTesting
-import io.airbyte.commons.enums.Enums
+import io.airbyte.commons.enums.toEnum
 import io.airbyte.commons.json.Jsons
-import io.airbyte.config.AirbyteConfig
-import io.airbyte.config.ConfigSchema
-import io.airbyte.config.ConfigWithMetadata
 import io.airbyte.config.DestinationConnection
 import io.airbyte.config.DestinationOAuthParameter
 import io.airbyte.config.SourceConnection
@@ -23,6 +20,7 @@ import io.airbyte.config.StandardSync
 import io.airbyte.config.StandardSyncOperation
 import io.airbyte.config.StandardSyncState
 import io.airbyte.config.StandardWorkspace
+import io.airbyte.db.legacy.ConfigSchema
 import io.airbyte.protocol.models.v0.ConnectorSpecification
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.flywaydb.core.api.migration.BaseJavaMigration
@@ -36,6 +34,7 @@ import org.jooq.Schema
 import org.jooq.impl.DSL
 import org.jooq.impl.SQLDataType
 import org.jooq.impl.SchemaImpl
+import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
@@ -725,11 +724,7 @@ class V0_32_8_001__AirbyteConfigDatabaseDenormalization : BaseJavaMigration() {
             if (standardSyncOperation.operatorType == null) {
               null
             } else {
-              Enums
-                .toEnum(
-                  standardSyncOperation.operatorType.value(),
-                  OperatorType::class.java,
-                ).orElse(OperatorType.normalization)
+              standardSyncOperation.operatorType.value().toEnum<OperatorType>() ?: OperatorType.normalization
             },
           ).set(tombstone, standardSyncOperation.tombstone != null && standardSyncOperation.tombstone)
           .set(createdAt, OffsetDateTime.ofInstant(configWithMetadata.createdAt, ZoneOffset.UTC))
@@ -873,11 +868,7 @@ class V0_32_8_001__AirbyteConfigDatabaseDenormalization : BaseJavaMigration() {
             if (standardSync.namespaceDefinition == null) {
               null
             } else {
-              Enums
-                .toEnum(
-                  standardSync.namespaceDefinition.value(),
-                  NamespaceDefinitionType::class.java,
-                ).orElseThrow()
+              standardSync.namespaceDefinition.value().toEnum<NamespaceDefinitionType>()!!
             },
           ).set(namespaceFormat, standardSync.namespaceFormat)
           .set(prefix, standardSync.prefix)
@@ -890,11 +881,7 @@ class V0_32_8_001__AirbyteConfigDatabaseDenormalization : BaseJavaMigration() {
             if (standardSync.status == null) {
               null
             } else {
-              Enums
-                .toEnum(
-                  standardSync.status.value(),
-                  StatusType::class.java,
-                ).orElseThrow()
+              standardSync.status.value().toEnum<StatusType>()!!
             },
           ).set(schedule, JSONB.valueOf(Jsons.serialize(standardSync.schedule)))
           .set(manual, standardSync.manual)
@@ -1026,8 +1013,8 @@ class V0_32_8_001__AirbyteConfigDatabaseDenormalization : BaseJavaMigration() {
 
     @JvmStatic
     fun <T> listConfigsWithMetadata(
-      airbyteConfigType: AirbyteConfig,
-      clazz: Class<T>?,
+      airbyteConfigType: ConfigSchema,
+      clazz: Class<T>,
       ctx: DSLContext,
     ): List<ConfigWithMetadata<T>> {
       val configId = DSL.field("config_id", SQLDataType.VARCHAR(36).nullable(false))
@@ -1047,7 +1034,7 @@ class V0_32_8_001__AirbyteConfigDatabaseDenormalization : BaseJavaMigration() {
         ctx
           .select(DSL.asterisk())
           .from(DSL.table("airbyte_configs"))
-          .where(configType.eq(airbyteConfigType.name()))
+          .where(configType.eq(airbyteConfigType.name))
           .fetch()
 
       return results
@@ -1063,4 +1050,17 @@ class V0_32_8_001__AirbyteConfigDatabaseDenormalization : BaseJavaMigration() {
         }.collect(Collectors.toList())
     }
   }
+
+  /**
+   * Config with metadata.
+   *
+   * @param <T> config type
+   </T> */
+  data class ConfigWithMetadata<T>(
+    val configId: String,
+    val configType: String,
+    val createdAt: Instant,
+    val updatedAt: Instant,
+    val config: T,
+  )
 }

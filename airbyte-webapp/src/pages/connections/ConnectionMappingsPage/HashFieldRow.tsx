@@ -4,7 +4,6 @@ import { FormattedMessage } from "react-intl";
 
 import { hashingMapperConfiguration } from "components/connection/ConnectionForm/schemas/mapperSchema";
 import { FlexContainer } from "components/ui/Flex";
-import { Icon } from "components/ui/Icon";
 import { ListBox, ListBoxControlButtonProps } from "components/ui/ListBox";
 import { Text } from "components/ui/Text";
 
@@ -120,7 +119,6 @@ const SelectHashingMethodControlButton: React.FC<ListBoxControlButtonProps<Hashi
   return (
     <FlexContainer alignItems="center" gap="none">
       <Text color={isDisabled ? "grey300" : "darkBlue"}>{selectedOption.label}</Text>
-      <Icon type="caretDown" color="disabled" />
     </FlexContainer>
   );
 };
@@ -142,7 +140,7 @@ const SelectHashingMethod: React.FC<{ disabled: boolean }> = ({ disabled }) => {
       render={({ field }) => (
         <ListBox
           buttonClassName={styles.controlButton}
-          controlButton={SelectHashingMethodControlButton}
+          controlButtonContent={SelectHashingMethodControlButton}
           isDisabled={disabled}
           onSelect={(value) => {
             field.onChange(value);

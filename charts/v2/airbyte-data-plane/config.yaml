@@ -299,6 +299,12 @@ secretsManager:
         - GOOGLE_SECRET_MANAGER
       sensitive: true
 
+    - env: SECRET_STORE_GCP_REGION
+      key: googleSecretManager.region
+      discriminatorOpts: 
+        - GOOGLE_SECRET_MANAGER
+      defaultValue: ""
+
     - env: VAULT_ADDRESS
       key: vault.address
       defaultValueExp: (printf "http://airbyte-vault-svc.%s:8200" .Release.Namespace)
@@ -413,63 +419,6 @@ storage:
         - minio
       defaultValue: true
 
-temporal:
-  keyBasePath: temporal
-  config:
-    - env: TEMPORAL_HOST
-      key: host
-      valueExp: ternary (include "airbyte-data-plane.temporal.cloud.host" .) (.Values.temporal.host) (eq (include "airbyte-data-plane.temporal.cloud.enabled" .) "true")
-
-    - env: DYNAMIC_CONFIG_FILE_PATH
-      key: configFilePath
-      defaultValue: config/dynamicconfig/development.yaml
-
-    - env: PROMETHEUS_ENDPOINT
-      key: prometheus.endpoint
-      defaultValue: 0.0.0.0:9090
-
-temporal.cloud:
-  keyBasePath: temporal.cloud
-  secretNamePath: temporal.secretName
-  config:
-    - env: TEMPORAL_CLOUD_ENABLED
-      key: enabled
-      defaultValue: false
-
-    - env: TEMPORAL_CLOUD_CLIENT_CERT
-      key: clientCert
-      sensitive: true
-
-    - env: TEMPORAL_CLOUD_CLIENT_KEY
-      key: clientKey
-      sensitive: true
-
-    - env: TEMPORAL_CLOUD_NAMESPACE
-      key: namespace
-
-    - env: TEMPORAL_CLOUD_HOST
-      key: host
-
-temporal.sdk:
-  config:
-    - env: TEMPORAL_SDK_RPC_TIMEOUT
-      key: rpc.timeout
-      defaultValue: 120s
-
-    - env: TEMPORAL_SDK_RPC_LONG_POLL_TIMEOUT
-      key: rpc.longPollTimeout
-      defaultValue: 140s
-
-    - env: TEMPORAL_SDK_RPC_QUERY_TIMEOUT
-      key: rpc.queryTimeout
-      defaultValue: 20s
-
-temporal.worker:
-  config:
-    - env: TEMPORAL_WORKER_PORTS
-      key: ports
-      valueExp: join "," (seq 9000 9040) 
-
 tracking:
   keyBasePath: tracking
   config:
@@ -576,22 +525,6 @@ workloadApiServer:
     - env: WORKLOAD_API_HOST
       key: host
       defaultValueExp: (include "airbyte-data-plane.common.airbyteUrl" .)
-
-    # DEPRECATED: ?
-    - env: WORKLOAD_API_BEARER_TOKEN
-      key: bearerToken
-      defaultValue: token
-      sensitive: true
-
-    # DEPRECATED: ?
-    - env: WORKLOAD_API_BEARER_TOKEN_SECRET_NAME
-      key: bearerTokenSecretName
-      defaultValueExp: (include "airbyte-data-plane.workloadApiServer.secretName" .)
-
-    # DEPRECATED: ?
-    - env: WORKLOAD_API_BEARER_TOKEN_SECRET_KEY
-      key: bearerTokenSecretKey
-      defaultValue: WORKLOAD_API_BEARER_TOKEN
 
 workloadLauncher:
   config:

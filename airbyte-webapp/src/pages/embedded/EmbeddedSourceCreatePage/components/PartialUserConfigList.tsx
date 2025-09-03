@@ -8,14 +8,14 @@ interface ConfigListProps {
 }
 
 export const PartialUserConfigList: React.FC<ConfigListProps> = ({ workspaceId, onSelectConfig }) => {
-  const { partialUserConfigs } = useListPartialUserConfigs(workspaceId);
+  const { data: partialUserConfigs } = useListPartialUserConfigs(workspaceId);
 
   const items = partialUserConfigs
-    .sort((a, b) => a.configTemplateName.localeCompare(b.configTemplateName))
+    .sort((a, b) => a.summarized_source_template.name.localeCompare(b.summarized_source_template.name))
     .map((config) => ({
-      id: config.partialUserConfigId,
-      name: config.configTemplateName,
-      icon: config.configTemplateIcon,
+      id: config.id,
+      name: config.summarized_source_template.name,
+      icon: config.summarized_source_template.icon ?? "",
       configured: true,
     }));
   return <SelectableList items={items} onSelect={onSelectConfig} />;

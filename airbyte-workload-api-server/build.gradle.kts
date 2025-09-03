@@ -22,7 +22,7 @@ dependencies {
   implementation(libs.bundles.micronaut.kotlin)
   implementation(libs.micronaut.http)
   implementation(libs.jakarta.transaction.api)
-  implementation(libs.micronaut.jaxrs.server)
+  implementation(libs.bundles.micronaut.jaxrs)
   implementation(libs.jakarta.ws.rs.api)
   implementation(libs.micronaut.security)
   implementation(libs.micronaut.security.jwt)
@@ -35,12 +35,22 @@ dependencies {
 
   implementation(project(":oss:airbyte-api:server-api"))
   implementation(project(":oss:airbyte-commons"))
+  implementation(project(":oss:airbyte-commons-auth"))
+  implementation(project(":oss:airbyte-commons-server"))
+  implementation(project(":oss:airbyte-data"))
   implementation(project(":oss:airbyte-commons-micronaut"))
   implementation(project(":oss:airbyte-commons-storage"))
   implementation(project(":oss:airbyte-commons-workload"))
   implementation(project(":oss:airbyte-config:config-models"))
+  implementation(project(":oss:airbyte-config:config-secrets"))
+  implementation(project(":oss:airbyte-config:config-persistence"))
+  implementation(project(":oss:airbyte-persistence:job-persistence"))
   implementation(project(":oss:airbyte-featureflag"))
   implementation(project(":oss:airbyte-metrics:metrics-lib"))
+  implementation(project(":oss:airbyte-api:workload-api"))
+  implementation(project(":oss:airbyte-db:jooq"))
+  implementation(project(":oss:airbyte-db:db-lib"))
+  implementation(project(":oss:airbyte-data"))
 
   compileOnly(libs.v3.swagger.annotations)
   compileOnly(libs.micronaut.openapi.annotations)
@@ -75,7 +85,6 @@ airbyte {
         "MICRONAUT_ENVIRONMENTS" to "control-plane",
         "SERVICE_NAME" to project.name,
         "TRACKING_STRATEGY" to "logging",
-        "WORKLOAD_API_BEARER_TOKEN" to "ItsASecret",
       ),
     )
   }

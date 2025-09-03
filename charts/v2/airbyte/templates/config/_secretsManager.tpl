@@ -376,6 +376,24 @@ Renders the secretsManager.googleSecretManager.credentailsSecretName environment
 {{- end }}
 
 {{/*
+Renders the global.secretsManager.googleSecretManager.region value
+*/}}
+{{- define "airbyte.secretsManager.googleSecretManager.region" }}
+    {{- .Values.global.secretsManager.googleSecretManager.region | default "" }}
+{{- end }}
+
+{{/*
+Renders the secretsManager.googleSecretManager.region environment variable
+*/}}
+{{- define "airbyte.secretsManager.googleSecretManager.region.env" }}
+- name: SECRET_STORE_GCP_REGION
+  valueFrom:
+    configMapKeyRef:
+      name: {{ .Release.Name }}-airbyte-env
+      key: SECRET_STORE_GCP_REGION
+{{- end }}
+
+{{/*
 Renders the global.secretsManager.vault.address value
 */}}
 {{- define "airbyte.secretsManager.vault.address" }}
@@ -437,6 +455,42 @@ Renders the secretsManager.vault.authToken environment variable
 {{- end }}
 
 {{/*
+Renders the global.secretsManager.vault._authTokenRefName value
+*/}}
+{{- define "airbyte.secretsManager.vault._authTokenRefName" }}
+    {{- (include "airbyte.secretsManager.secretName" .) }}
+{{- end }}
+
+{{/*
+Renders the secretsManager.vault._authTokenRefName environment variable
+*/}}
+{{- define "airbyte.secretsManager.vault._authTokenRefName.env" }}
+- name: VAULT_AUTH_TOKEN_REF_NAME
+  valueFrom:
+    configMapKeyRef:
+      name: {{ .Release.Name }}-airbyte-env
+      key: VAULT_AUTH_TOKEN_REF_NAME
+{{- end }}
+
+{{/*
+Renders the global.secretsManager.vault.authTokenSecretKey value
+*/}}
+{{- define "airbyte.secretsManager.vault.authTokenSecretKey" }}
+    {{- .Values.global.secretsManager.vault.authTokenSecretKey | default (include "airbyte.secretsManager.vault.authToken.secretKey" .) }}
+{{- end }}
+
+{{/*
+Renders the secretsManager.vault.authTokenSecretKey environment variable
+*/}}
+{{- define "airbyte.secretsManager.vault.authTokenSecretKey.env" }}
+- name: VAULT_AUTH_TOKEN_REF_KEY
+  valueFrom:
+    configMapKeyRef:
+      name: {{ .Release.Name }}-airbyte-env
+      key: VAULT_AUTH_TOKEN_REF_KEY
+{{- end }}
+
+{{/*
 Renders the set of all secretsManager environment variables
 */}}
 {{- define "airbyte.secretsManager.envs" }}
@@ -467,6 +521,7 @@ Renders the set of all secretsManager environment variables
 {{- include "airbyte.secretsManager.googleSecretManager.credentials.env" . }}
 {{- include "airbyte.secretsManager.googleSecretManager.credentialsSecretKey.env" . }}
 {{- include "airbyte.secretsManager.googleSecretManager.credentailsSecretName.env" . }}
+{{- include "airbyte.secretsManager.googleSecretManager.region.env" . }}
 {{- end }}
 
 {{- if eq $opt "TESTING_CONFIG_DB_TABLE" }}
@@ -476,6 +531,8 @@ Renders the set of all secretsManager environment variables
 {{- include "airbyte.secretsManager.vault.address.env" . }}
 {{- include "airbyte.secretsManager.vault.prefix.env" . }}
 {{- include "airbyte.secretsManager.vault.authToken.env" . }}
+{{- include "airbyte.secretsManager.vault._authTokenRefName.env" . }}
+{{- include "airbyte.secretsManager.vault.authTokenSecretKey.env" . }}
 {{- end }}
 
 {{- end }}
@@ -506,6 +563,7 @@ AB_AZURE_KEY_CLIENT_SECRET_REF_KEY: {{ .Values.global.secretsManager.azureKeyVau
 SECRET_STORE_GCP_PROJECT_ID: {{ include "airbyte.secretsManager.googleSecretManager.projectId" . | quote }}
 SECRET_STORE_GCP_SECRET_KEY: {{ (include "airbyte.secretsManager.googleSecretManager.credentials.secretKey" .) | quote }}
 SECRET_STORE_GCP_SECRET_NAME: {{ (include "airbyte.secretsManager.secretName" .) | quote }}
+SECRET_STORE_GCP_REGION: {{ include "airbyte.secretsManager.googleSecretManager.region" . | quote }}
 {{- end }}
 
 {{- if eq $opt "TESTING_CONFIG_DB_TABLE" }}
@@ -514,6 +572,8 @@ SECRET_STORE_GCP_SECRET_NAME: {{ (include "airbyte.secretsManager.secretName" .)
 {{- if eq $opt "VAULT" }}
 VAULT_ADDRESS: {{ include "airbyte.secretsManager.vault.address" . | quote }}
 VAULT_PREFIX: {{ include "airbyte.secretsManager.vault.prefix" . | quote }}
+VAULT_AUTH_TOKEN_REF_NAME: {{ (include "airbyte.secretsManager.secretName" .) | quote }}
+VAULT_AUTH_TOKEN_REF_KEY: {{ include "airbyte.secretsManager.vault.authTokenSecretKey" . | quote }}
 {{- end }}
 
 {{- end }}

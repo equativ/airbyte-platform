@@ -8,8 +8,6 @@ global:
   # -- Edition; "community" or "enterprise"
   edition: "community"
 
-  airbyteYml: ""
-
   enterprise:
     # -- Secret name where an Airbyte license key is stored
     secretName: "airbyte-config-secrets"
@@ -2242,4 +2240,4 @@ featureflag-server:
 testWebapp:
   image:
     repository: airbyte/airbyte-base-java-image
-    tag: 3.3.5
+    tag: 3.3.7

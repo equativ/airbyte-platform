@@ -20,6 +20,7 @@ dependencies {
   implementation(libs.java.jwt)
   implementation(libs.kotlin.logging)
   implementation(libs.okhttp)
+  implementation(libs.retrofit)
   implementation(libs.sentry.java)
 
   implementation(project(":oss:airbyte-api:server-api"))
@@ -33,7 +34,10 @@ dependencies {
   implementation(project(":oss:airbyte-commons-temporal"))
   implementation(project(":oss:airbyte-config:config-models"))
   implementation(project(":oss:airbyte-config:config-persistence"))
+  implementation(project(":oss:airbyte-config:config-secrets"))
   implementation(project(":oss:airbyte-config:init"))
+  implementation(project(":oss:airbyte-domain:models"))
+  implementation(project(":oss:airbyte-domain:services"))
   implementation(project(":oss:airbyte-json-validation"))
   implementation(project(":oss:airbyte-data"))
   implementation(project(":oss:airbyte-db:db-lib"))
@@ -49,6 +53,7 @@ dependencies {
   testImplementation(libs.bundles.junit)
   testImplementation(libs.mockk)
   testImplementation(libs.bundles.micronaut.test)
+  testImplementation(libs.retrofit.mock)
 }
 
 airbyte {

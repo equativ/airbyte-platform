@@ -5,7 +5,6 @@
 package io.airbyte.config.init
 
 import com.google.common.annotations.VisibleForTesting
-import io.airbyte.commons.string.Strings
 import io.airbyte.commons.version.Version
 import io.airbyte.config.ActorDefinitionBreakingChange
 import io.airbyte.config.ActorDefinitionVersion
@@ -15,7 +14,7 @@ import io.airbyte.config.StandardDestinationDefinition
 import io.airbyte.config.StandardSourceDefinition
 import io.airbyte.config.init.BreakingChangeNotificationHelper.BreakingChangeNotificationData
 import io.airbyte.config.persistence.BreakingChangesHelper
-import io.airbyte.data.exceptions.ConfigNotFoundException
+import io.airbyte.data.ConfigNotFoundException
 import io.airbyte.data.services.ActorDefinitionService
 import io.airbyte.data.services.DestinationService
 import io.airbyte.data.services.SourceService
@@ -23,14 +22,16 @@ import io.airbyte.featureflag.ANONYMOUS
 import io.airbyte.featureflag.FeatureFlagClient
 import io.airbyte.featureflag.NotifyBreakingChangesOnSupportStateUpdate
 import io.airbyte.featureflag.Workspace
+import io.github.oshai.kotlinlogging.KotlinLogging
 import jakarta.inject.Singleton
-import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.time.LocalDate
 import java.util.Optional
 import java.util.UUID
 import java.util.stream.Stream
 import kotlin.jvm.optionals.getOrDefault
+
+private val log = KotlinLogging.logger {}
 
 private const val AUTO_UPGRADE = "auto_upgrade"
 
@@ -48,7 +49,6 @@ class SupportStateUpdater(
   private val featureFlagClient: FeatureFlagClient,
 ) {
   companion object {
-    private val log = LoggerFactory.getLogger(SupportStateUpdater::class.java)
   }
 
   data class SupportStateUpdate(
@@ -100,9 +100,9 @@ class SupportStateUpdater(
    */
   @VisibleForTesting
   fun getSupportStateUpdate(
-    currentDefaultVersion: Version?,
+    currentDefaultVersion: Version,
     referenceDate: LocalDate?,
-    breakingChangesForDefinition: List<ActorDefinitionBreakingChange?>,
+    breakingChangesForDefinition: List<ActorDefinitionBreakingChange>,
     actorDefinitionVersions: List<ActorDefinitionVersion>,
   ): SupportStateUpdate {
     if (breakingChangesForDefinition.isEmpty()) {
@@ -196,19 +196,19 @@ class SupportStateUpdater(
         "Supported versions for {} {}: {}",
         sourceDefinition.sourceDefinitionId,
         sourceDefinition.name,
-        Strings.join(supportStateUpdate.supportedVersionIds, ","),
+        supportStateUpdate.supportedVersionIds.joinToString(","),
       )
       log.info(
         "Deprecated versions for {} {}: {}",
         sourceDefinition.sourceDefinitionId,
         sourceDefinition.name,
-        Strings.join(supportStateUpdate.deprecatedVersionIds, ","),
+        supportStateUpdate.deprecatedVersionIds.joinToString(","),
       )
       log.info(
         "Unsupported versions for {} {}: {}",
         sourceDefinition.sourceDefinitionId,
         sourceDefinition.name,
-        Strings.join(supportStateUpdate.unsupportedVersionIds, ","),
+        supportStateUpdate.unsupportedVersionIds.joinToString(","),
       )
       if (shouldNotifyBreakingChanges() && supportStateUpdate.deprecatedVersionIds.isNotEmpty()) {
         val latestBreakingChange =

@@ -18,7 +18,7 @@ import io.airbyte.api.model.generated.WorkspaceIdRequestBody
 import io.airbyte.api.model.generated.WorkspaceUserAccessInfoReadList
 import io.airbyte.commons.annotation.AuditLogging
 import io.airbyte.commons.annotation.AuditLoggingProvider
-import io.airbyte.commons.auth.AuthRoleConstants
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.server.handlers.UserHandler
 import io.airbyte.commons.server.scheduling.AirbyteTaskExecutors
 import io.airbyte.server.apis.execute
@@ -61,7 +61,7 @@ open class UserApiController(
   @Secured(AuthRoleConstants.ADMIN, AuthRoleConstants.SELF)
   @AuditLogging(AuditLoggingProvider.ONLY_ACTOR)
   override fun deleteUser(
-    @Body userIdRequestBody: UserIdRequestBody?,
+    @Body userIdRequestBody: UserIdRequestBody,
   ) {
     execute<Any?> {
       userHandler.deleteUser(userIdRequestBody)
@@ -104,6 +104,6 @@ open class UserApiController(
   @Secured(AuthRoleConstants.AUTHENTICATED_USER)
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun getOrCreateUserByAuthId(
-    @Body userAuthIdRequestBody: UserAuthIdRequestBody?,
+    @Body userAuthIdRequestBody: UserAuthIdRequestBody,
   ): UserGetOrCreateByAuthIdResponse? = execute { userHandler.getOrCreateUserByAuthId(userAuthIdRequestBody) }
 }

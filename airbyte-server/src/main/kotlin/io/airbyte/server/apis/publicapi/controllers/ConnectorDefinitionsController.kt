@@ -4,7 +4,7 @@
 
 package io.airbyte.server.apis.publicapi.controllers
 
-import io.airbyte.commons.auth.AuthRoleConstants
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.server.authorization.RoleResolver
 import io.airbyte.commons.server.support.AuthenticationId
 import io.airbyte.commons.server.support.CurrentUserService
@@ -33,14 +33,14 @@ class ConnectorDefinitionsController(
     type: ConnectorType,
     workspaceId: UUID?,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     if (workspaceId == null) {
       throw IllegalArgumentException("Workspace ID must be provided.")
     }
 
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.WORKSPACE_ID, workspaceId)
       .requireRole(AuthRoleConstants.WORKSPACE_READER)

@@ -54,15 +54,13 @@ class BillingTrackingHelper(
 
   fun trackGracePeriodEnded(
     organizationId: UUID,
-    paymentProviderId: String,
+    paymentProviderId: String?,
   ) {
     trackingClient.track(
       organizationId,
       ScopeType.ORGANIZATION,
       ACTION_GRACE_PERIOD_ENDED,
-      mapOf(
-        METADATA_PAYMENT_PROVIDER_ID to paymentProviderId,
-      ),
+      paymentProviderId?.let { mapOf(METADATA_PAYMENT_PROVIDER_ID to it) } ?: emptyMap(),
     )
   }
 

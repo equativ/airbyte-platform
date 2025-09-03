@@ -27,24 +27,23 @@ import io.airbyte.workers.models.SidecarInput
 import io.airbyte.workers.pod.FileConstants
 import io.airbyte.workers.workload.WorkloadOutputWriter
 import io.airbyte.workload.api.client.WorkloadApiClient
-import io.airbyte.workload.api.client.model.generated.WorkloadFailureRequest
-import io.airbyte.workload.api.client.model.generated.WorkloadSuccessRequest
+import io.airbyte.workload.api.domain.WorkloadFailureRequest
+import io.airbyte.workload.api.domain.WorkloadSuccessRequest
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.github.oshai.kotlinlogging.withLoggingContext
-import io.micronaut.context.annotation.Context
 import io.micronaut.context.annotation.Value
 import jakarta.inject.Named
+import jakarta.inject.Singleton
 import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.util.Optional
-import javax.annotation.PostConstruct
 import kotlin.system.exitProcess
 
 private val logger = KotlinLogging.logger {}
 
-@Context
+@Singleton
 class ConnectorWatcher(
   @Named("output") val outputPath: Path,
   @Named("configDir") val configDir: String,
@@ -60,7 +59,6 @@ class ConnectorWatcher(
   private val heartbeatMonitor: HeartbeatMonitor,
   private val metricClient: MetricClient,
 ) {
-  @PostConstruct
   fun run() {
     val sidecarInput = readSidecarInput()
     withLoggingContext(logContextFactory.create(sidecarInput.logPath)) {
@@ -173,7 +171,7 @@ class ConnectorWatcher(
 
   private fun markWorkloadSuccess(workloadId: String) {
     logger.info { "Marking workload $workloadId as successful" }
-    workloadApiClient.workloadApi.workloadSuccess(WorkloadSuccessRequest(workloadId))
+    workloadApiClient.workloadSuccess(WorkloadSuccessRequest(workloadId))
   }
 
   fun handleException(
@@ -334,6 +332,6 @@ class ConnectorWatcher(
       } else {
         WorkloadFailureRequest(workloadId)
       }
-    workloadApiClient.workloadApi.workloadFailure(request)
+    workloadApiClient.workloadFailure(request)
   }
 }

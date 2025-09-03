@@ -1,8 +1,7 @@
 import classNames from "classnames";
-import cloneDeep from "lodash/cloneDeep";
 import isEqual from "lodash/isEqual";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useFormContext, useWatch } from "react-hook-form";
+import { useFormContext } from "react-hook-form";
 import { FormattedMessage, useIntl } from "react-intl";
 
 import { FormControl } from "components/forms";
@@ -23,6 +22,7 @@ import {
   CustomRetrieverType,
   DeclarativeComponentSchemaStreamsItem,
   DeclarativeStream,
+  DeclarativeStreamSchemaLoader,
   DeclarativeStreamType,
   DynamicDeclarativeStream,
   InlineSchemaLoaderType,
@@ -38,21 +38,21 @@ import {
 } from "services/connectorBuilder/ConnectorBuilderStateService";
 
 import { BuilderConfigView } from "./BuilderConfigView";
+import { ParentStreamSelector } from "./overrides";
 import styles from "./StreamConfigView.module.scss";
-import { SchemaConflictIndicator } from "../SchemaConflictIndicator";
 import {
-  StreamId,
-  getStreamFieldPath,
   DEFAULT_SYNC_STREAM,
   DEFAULT_ASYNC_STREAM,
   DEFAULT_CUSTOM_STREAM,
   DEFAULT_SCHEMA_LOADER_SCHEMA,
-  BuilderStreamTab,
-} from "../types";
+} from "../constants";
+import { SchemaConflictIndicator } from "../SchemaConflictIndicator";
+import { StreamId, BuilderStreamTab } from "../types";
 import { useAutoImportSchema } from "../useAutoImportSchema";
 import { useBuilderErrors } from "../useBuilderErrors";
 import { useBuilderWatch } from "../useBuilderWatch";
-import { formatJson } from "../utils";
+import { useUpdateMetadata } from "../useUpdateMetadata";
+import { formatJson, getStreamFieldPath } from "../utils";
 
 interface StreamConfigViewProps {
   streamId: StreamId;
@@ -80,9 +80,6 @@ export const StreamConfigView: React.FC<StreamConfigViewProps> = React.memo(({ s
     | CustomRetrieverType
     | undefined;
 
-  const metadata = useWatch({ name: "manifest.metadata" });
-  const [prevName, setPrevName] = useState(streamName);
-
   const retrievalType: RetrievalType | null = useMemo(() => {
     if (streamType === StateDelegatingStreamType.StateDelegatingStream) {
       return null;
@@ -104,7 +101,7 @@ export const StreamConfigView: React.FC<StreamConfigViewProps> = React.memo(({ s
           return;
         }
         const streams: DeclarativeComponentSchemaStreamsItem[] = getValues("manifest.streams");
-        const updatedStreams = streams.filter((_, index) => index !== streamId.index);
+        const updatedStreams = updateStreamsAndRefsAfterDelete(streams, streamId.index);
         const streamToSelect = streamId.index >= updatedStreams.length ? updatedStreams.length - 1 : streamId.index;
         const viewToSelect: BuilderView =
           updatedStreams.length === 0 ? { type: "global" } : { type: "stream", index: streamToSelect };
@@ -120,43 +117,11 @@ export const StreamConfigView: React.FC<StreamConfigViewProps> = React.memo(({ s
     });
   }, [analyticsService, closeConfirmationModal, streamName, getValues, openConfirmationModal, setValue, streamId]);
 
-  // Copy over stream metadata when renaming
-  useEffect(() => {
-    if (!streamName || streamId.type !== "stream") {
-      return;
-    }
-    if (metadata && prevName && streamName !== prevName) {
-      const newMetadata = cloneDeep(metadata);
-      if (metadata.autoImportSchema && metadata.autoImportSchema[prevName] !== undefined) {
-        delete newMetadata.autoImportSchema[prevName];
-        newMetadata.autoImportSchema[streamName] = metadata.autoImportSchema[prevName];
-      }
-      if (metadata.testedStreams && metadata.testedStreams[prevName] !== undefined) {
-        delete newMetadata.testedStreams[prevName];
-        newMetadata.testedStreams[streamName] = metadata.testedStreams[prevName];
-      }
-      setValue("manifest.metadata", newMetadata);
-    }
-    setPrevName(streamName);
-  }, [streamName, prevName, metadata, setValue, streamId.type]);
+  useUpdateMetadata(streamId);
 
-  return (
-    <BuilderConfigView className={styles.relative}>
-      {streamId.type === "stream" && (
-        <FlexContainer justifyContent="space-between" className={styles.relative} alignItems="center">
-          <SchemaFormControl
-            path={getStreamFieldPath(streamId, "name")}
-            titleOverride={null}
-            className={styles.streamNameInput}
-            placeholder={formatMessage({ id: "connectorBuilder.streamName.placeholder" })}
-          />
-
-          <Button variant="danger" onClick={handleDelete}>
-            <FormattedMessage id="connectorBuilder.deleteStreamModal.title" />
-          </Button>
-        </FlexContainer>
-      )}
-      {streamId.type === "generated_stream" && (
+  const generatedStreamMessage = useMemo(
+    () =>
+      streamId.type === "generated_stream" ? (
         <Message
           type="info"
           text={
@@ -181,11 +146,30 @@ export const StreamConfigView: React.FC<StreamConfigViewProps> = React.memo(({ s
             />
           }
         />
+      ) : null,
+    [getValues, setValue, streamId]
+  );
+
+  return (
+    <BuilderConfigView className={styles.relative}>
+      {streamId.type === "stream" && (
+        <FlexContainer justifyContent="flex-end" className={classNames(styles.titleBar)} alignItems="center">
+          <SchemaFormControl
+            path={getStreamFieldPath(streamId, "name")}
+            titleOverride={null}
+            className={styles.streamNameInput}
+            placeholder={formatMessage({ id: "connectorBuilder.streamName.placeholder" })}
+          />
+
+          <Button type="button" variant="danger" onClick={handleDelete}>
+            <FormattedMessage id="connectorBuilder.deleteStreamModal.title" />
+          </Button>
+        </FlexContainer>
       )}
       {retrievalType === "sync" ? (
-        <SynchronousStream streamId={streamId} scrollToTop={scrollToTop} />
+        <SynchronousStream streamId={streamId} scrollToTop={scrollToTop} message={generatedStreamMessage} />
       ) : retrievalType === "async" ? (
-        <AsynchronousStream streamId={streamId} scrollToTop={scrollToTop} />
+        <AsynchronousStream streamId={streamId} scrollToTop={scrollToTop} message={generatedStreamMessage} />
       ) : null}
     </BuilderConfigView>
   );
@@ -196,8 +180,9 @@ StreamConfigView.displayName = "StreamConfigView";
 interface SynchronousStreamProps {
   streamId: StreamId;
   scrollToTop: () => void;
+  message: React.ReactNode | null;
 }
-const SynchronousStream: React.FC<SynchronousStreamProps> = ({ streamId, scrollToTop }) => {
+const SynchronousStream: React.FC<SynchronousStreamProps> = ({ streamId, scrollToTop, message }) => {
   const { formatMessage } = useIntl();
   const permission = useConnectorBuilderPermission();
   const streamTab = useBuilderWatch("streamTab");
@@ -218,34 +203,37 @@ const SynchronousStream: React.FC<SynchronousStreamProps> = ({ streamId, scrollT
 
   return (
     <>
-      <FlexContainer className={styles.sticky} justifyContent="space-between" alignItems="center">
-        <FlexContainer>
-          <StreamTab
-            data-testid="tag-tab-stream-configuration"
-            streamId={streamId}
-            builderStreamTab="requester"
-            label={formatMessage({ id: "connectorBuilder.streamConfiguration" })}
-            isSelected={streamTab === "requester"}
-            onSelect={() => {
-              setValue("streamTab", "requester");
-              scrollToTop();
-            }}
-          />
-          <SchemaTab
-            streamId={streamId}
-            isSelected={streamTab === "schema"}
-            onSelect={() => {
-              setValue("streamTab", "schema");
-              scrollToTop();
-            }}
+      <FlexContainer className={styles.sticky} direction="column">
+        {message}
+        <FlexContainer justifyContent="space-between" alignItems="center">
+          <FlexContainer>
+            <StreamTab
+              data-testid="tag-tab-stream-configuration"
+              streamId={streamId}
+              builderStreamTab="requester"
+              label={formatMessage({ id: "connectorBuilder.streamConfiguration" })}
+              isSelected={streamTab === "requester"}
+              onSelect={() => {
+                setValue("streamTab", "requester");
+                scrollToTop();
+              }}
+            />
+            <SchemaTab
+              streamId={streamId}
+              isSelected={streamTab === "schema"}
+              onSelect={() => {
+                setValue("streamTab", "schema");
+                scrollToTop();
+              }}
+            />
+          </FlexContainer>
+          <RetrievalTypeSelector
+            streamFieldPath={streamFieldPath}
+            streamName={name ?? ""}
+            selectedValue="sync"
+            disabled={streamId.type === "generated_stream"}
           />
         </FlexContainer>
-        <RetrievalTypeSelector
-          streamFieldPath={streamFieldPath}
-          streamName={name ?? ""}
-          selectedValue="sync"
-          disabled={streamId.type === "generated_stream"}
-        />
       </FlexContainer>
       <fieldset disabled={permission === "readOnly"} className={styles.fieldset}>
         <FlexContainer
@@ -290,7 +278,17 @@ const SynchronousStream: React.FC<SynchronousStreamProps> = ({ streamId, scrollT
             />
           </StreamCard>
           <StreamCard>
-            <SchemaFormControl path={streamFieldPath("retriever.partition_router")} />
+            <SchemaFormControl
+              path={streamFieldPath("retriever.partition_router")}
+              overrideByPath={{
+                [streamFieldPath("retriever.partition_router.*.parent_stream_configs.*.stream")]: (path) => (
+                  <ParentStreamSelector path={path} currentStreamName={name} />
+                ),
+                [streamFieldPath("retriever.partition_router.parent_stream_configs.*.stream")]: (path) => (
+                  <ParentStreamSelector path={path} currentStreamName={name} />
+                ),
+              }}
+            />
           </StreamCard>
           <StreamCard>
             <SchemaFormControl path={streamFieldPath("retriever.requester.error_handler")} />
@@ -321,8 +319,9 @@ const SynchronousStream: React.FC<SynchronousStreamProps> = ({ streamId, scrollT
 interface AsynchronousStreamProps {
   streamId: StreamId;
   scrollToTop: () => void;
+  message: React.ReactNode | null;
 }
-const AsynchronousStream: React.FC<AsynchronousStreamProps> = ({ streamId, scrollToTop }) => {
+const AsynchronousStream: React.FC<AsynchronousStreamProps> = ({ streamId, scrollToTop, message }) => {
   const { formatMessage } = useIntl();
   const permission = useConnectorBuilderPermission();
   const streamTab = useBuilderWatch("streamTab");
@@ -349,56 +348,59 @@ const AsynchronousStream: React.FC<AsynchronousStreamProps> = ({ streamId, scrol
 
   return (
     <>
-      <FlexContainer className={styles.sticky} justifyContent="space-between" alignItems="center">
-        <FlexContainer>
-          <StreamTab
-            data-testid="tag-tab-async-stream-creation"
-            streamId={streamId}
-            builderStreamTab="requester"
-            label={formatMessage({ id: "connectorBuilder.asyncStream.creation" })}
-            isSelected={streamTab === "requester"}
-            onSelect={() => {
-              setValue("streamTab", "requester");
-              scrollToTop();
-            }}
-          />
-          <StreamTab
-            data-testid="tag-tab-async-stream-polling"
-            streamId={streamId}
-            builderStreamTab="polling"
-            label={formatMessage({ id: "connectorBuilder.asyncStream.polling" })}
-            isSelected={streamTab === "polling"}
-            onSelect={() => {
-              setValue("streamTab", "polling");
-              scrollToTop();
-            }}
-          />
-          <StreamTab
-            data-testid="tag-tab-async-stream-download"
-            streamId={streamId}
-            builderStreamTab="download"
-            label={formatMessage({ id: "connectorBuilder.asyncStream.download" })}
-            isSelected={streamTab === "download"}
-            onSelect={() => {
-              setValue("streamTab", "download");
-              scrollToTop();
-            }}
-          />
-          <SchemaTab
-            streamId={streamId}
-            isSelected={streamTab === "schema"}
-            onSelect={() => {
-              setValue("streamTab", "schema");
-              scrollToTop();
-            }}
+      <FlexContainer className={styles.sticky} direction="column">
+        {message}
+        <FlexContainer justifyContent="space-between" alignItems="center">
+          <FlexContainer>
+            <StreamTab
+              data-testid="tag-tab-async-stream-creation"
+              streamId={streamId}
+              builderStreamTab="requester"
+              label={formatMessage({ id: "connectorBuilder.asyncStream.creation" })}
+              isSelected={streamTab === "requester"}
+              onSelect={() => {
+                setValue("streamTab", "requester");
+                scrollToTop();
+              }}
+            />
+            <StreamTab
+              data-testid="tag-tab-async-stream-polling"
+              streamId={streamId}
+              builderStreamTab="polling"
+              label={formatMessage({ id: "connectorBuilder.asyncStream.polling" })}
+              isSelected={streamTab === "polling"}
+              onSelect={() => {
+                setValue("streamTab", "polling");
+                scrollToTop();
+              }}
+            />
+            <StreamTab
+              data-testid="tag-tab-async-stream-download"
+              streamId={streamId}
+              builderStreamTab="download"
+              label={formatMessage({ id: "connectorBuilder.asyncStream.download" })}
+              isSelected={streamTab === "download"}
+              onSelect={() => {
+                setValue("streamTab", "download");
+                scrollToTop();
+              }}
+            />
+            <SchemaTab
+              streamId={streamId}
+              isSelected={streamTab === "schema"}
+              onSelect={() => {
+                setValue("streamTab", "schema");
+                scrollToTop();
+              }}
+            />
+          </FlexContainer>
+          <RetrievalTypeSelector
+            streamFieldPath={streamFieldPath}
+            streamName={name ?? ""}
+            selectedValue="async"
+            disabled={streamId.type === "generated_stream"}
           />
         </FlexContainer>
-        <RetrievalTypeSelector
-          streamFieldPath={streamFieldPath}
-          streamName={name ?? ""}
-          selectedValue="async"
-          disabled={streamId.type === "generated_stream"}
-        />
       </FlexContainer>
       <fieldset disabled={permission === "readOnly"} className={styles.fieldset}>
         <FlexContainer
@@ -413,6 +415,8 @@ const AsynchronousStream: React.FC<AsynchronousStreamProps> = ({ streamId, scrol
           )}
           <StreamCard>
             <SchemaFormControl path={streamFieldPath("retriever.creation_requester.url")} isRequired />
+            <SchemaFormControl path={streamFieldPath("retriever.creation_requester.url_base")} />
+            <SchemaFormControl path={streamFieldPath("retriever.creation_requester.path")} />
             <SchemaFormControl path={streamFieldPath("retriever.creation_requester.http_method")} />
             <SchemaFormControl path={streamFieldPath("retriever.decoder")} />
           </StreamCard>
@@ -434,14 +438,21 @@ const AsynchronousStream: React.FC<AsynchronousStreamProps> = ({ streamId, scrol
             />
           </StreamCard>
           <StreamCard>
-            <SchemaFormControl path={streamFieldPath("retriever.partition_router")} />
+            <SchemaFormControl
+              path={streamFieldPath("retriever.partition_router")}
+              overrideByPath={{
+                [streamFieldPath("retriever.partition_router.*.parent_stream_configs.*.stream")]: (path) => (
+                  <ParentStreamSelector path={path} currentStreamName={name} />
+                ),
+                [streamFieldPath("retriever.partition_router.parent_stream_configs.*.stream")]: (path) => (
+                  <ParentStreamSelector path={path} currentStreamName={name} />
+                ),
+              }}
+            />
           </StreamCard>
           <StreamCard>
             <SchemaFormControl path={streamFieldPath("retriever.creation_requester.error_handler")} />
           </StreamCard>
-          {/* {streamId.type === "stream" && (
-              <ParentStreamsSection streamFieldPath={creationRequesterPath} currentStreamIndex={streamId.index} />
-            )} */}
           <Card>
             <CollapsedControls streamId={streamId}>
               <SchemaFormRemainingFields path={streamFieldPath("retriever.creation_requester")} />
@@ -456,6 +467,8 @@ const AsynchronousStream: React.FC<AsynchronousStreamProps> = ({ streamId, scrol
         >
           <StreamCard>
             <SchemaFormControl path={streamFieldPath("retriever.polling_requester.url")} isRequired />
+            <SchemaFormControl path={streamFieldPath("retriever.polling_requester.url_base")} />
+            <SchemaFormControl path={streamFieldPath("retriever.polling_requester.path")} />
             <SchemaFormControl path={streamFieldPath("retriever.polling_requester.http_method")} />
           </StreamCard>
           <StreamCard>
@@ -491,6 +504,8 @@ const AsynchronousStream: React.FC<AsynchronousStreamProps> = ({ streamId, scrol
         >
           <StreamCard>
             <SchemaFormControl path={streamFieldPath("retriever.download_requester.url")} isRequired />
+            <SchemaFormControl path={streamFieldPath("retriever.download_requester.url_base")} />
+            <SchemaFormControl path={streamFieldPath("retriever.download_requester.path")} />
             <SchemaFormControl path={streamFieldPath("retriever.download_requester.http_method")} />
             <SchemaFormControl path={streamFieldPath("retriever.download_decoder")} />
             <SchemaFormControl path={streamFieldPath("retriever.record_selector")} nonAdvancedFields={["extractor"]} />
@@ -658,9 +673,7 @@ const StreamTab = ({
   "data-testid": string;
 }) => {
   const { hasErrors } = useBuilderErrors();
-  const showErrorIndicator = useMemo(() => {
-    return hasErrors([streamId], builderStreamTab);
-  }, [hasErrors, streamId, builderStreamTab]);
+  const showErrorIndicator = hasErrors([streamId], builderStreamTab);
 
   return (
     <button
@@ -699,7 +712,7 @@ const SchemaTab = ({
       label={formatMessage({ id: "connectorBuilder.streamSchema" })}
       isSelected={isSelected}
       onSelect={() => onSelect()}
-      showSchemaConflictIndicator={schemaDifferences && !autoImportSchema}
+      showSchemaConflictIndicator={streamId.type !== "generated_stream" && schemaDifferences && !autoImportSchema}
       schemaErrors={incompatibleSchemaErrors}
     />
   );
@@ -715,11 +728,15 @@ const SchemaEditor = ({
   const { formatMessage } = useIntl();
   const { setValue } = useFormContext();
   const { streamRead } = useConnectorBuilderTestRead();
-  const streamName = useBuilderWatch(streamFieldPath("name")) as string | undefined;
+  // Get stream name from getStreamFieldPath instead of streamFieldPath, because streamFieldPath
+  // returns stream template paths, but we want the name of the dynamic stream since that is what
+  // autoImportSchema is tied to.
+  const streamName = useBuilderWatch(getStreamFieldPath(streamId, "name")) as string | undefined;
   const schemaLoaderPath = streamFieldPath("schema_loader");
   const autoImportSchemaPath = `manifest.metadata.autoImportSchema.${streamName}`;
-  const autoImportSchema = useWatch({ name: autoImportSchemaPath });
+  const autoImportSchema = useBuilderWatch(autoImportSchemaPath);
   const inferredSchema = streamRead.data?.inferred_schema ?? DEFAULT_SCHEMA_LOADER_SCHEMA;
+  const schemaLoader = useBuilderWatch(schemaLoaderPath) as DeclarativeStreamSchemaLoader | undefined;
 
   if (!streamName) {
     // Use SchemaFormControl with override so that the schema_loader is not rendered elsewhere
@@ -727,7 +744,7 @@ const SchemaEditor = ({
       <SchemaFormControl
         path={schemaLoaderPath}
         overrideByPath={{
-          [schemaLoaderPath]: (
+          [schemaLoaderPath]: () => (
             <Message type="warning" text={formatMessage({ id: "connectorBuilder.streamSchema.noStreamName" })} />
           ),
         }}
@@ -758,11 +775,14 @@ const SchemaEditor = ({
       <SchemaFormControl
         path={schemaLoaderPath}
         overrideByPath={
-          streamId.type !== "generated_stream" && autoImportSchema
+          streamId.type !== "generated_stream" &&
+          autoImportSchema &&
+          !Array.isArray(schemaLoader) &&
+          schemaLoader?.type === InlineSchemaLoaderType.InlineSchemaLoader
             ? {
-                [schemaLoaderPath]: (
+                [schemaLoaderPath]: () => (
                   <div className={styles.autoSchemaContainer}>
-                    <Pre>{formatJson(inferredSchema, true)}</Pre>
+                    <Pre>{formatJson(schemaLoader.schema, true)}</Pre>
                   </div>
                 ),
               }
@@ -786,7 +806,9 @@ const NON_ADVANCED_AUTH_FIELDS = [
   "client_id",
   "client_secret",
   "refresh_token",
-  "token_refresh_endpoint",
+  "access_token_value",
+  "scopes",
+  "grant_type",
   "secret_key",
   "algorithm",
   "jwt_headers",
@@ -836,6 +858,8 @@ const CollapsedControls: React.FC<React.PropsWithChildren<CollapsedControlsProps
 
       const target = containerRef.current.querySelector(selector);
       setHasChildError(!!target);
+    } else if (errorPaths.length === 0) {
+      setHasChildError(false);
     }
   }, [errorPaths]);
 
@@ -846,4 +870,52 @@ const CollapsedControls: React.FC<React.PropsWithChildren<CollapsedControlsProps
       </Collapsible>
     </div>
   );
+};
+
+/**
+ * Removes the stream at the given index from the streams array, and updates $refs accordingly:
+ * - If the $ref points to the deleted stream, it is replaced with undefined
+ * - If the $ref points to a stream after the deleted stream, the $ref is updated to point to one stream index lower,
+ *   as that will now hold the stream that was previously pointed to.
+ */
+const updateStreamsAndRefsAfterDelete = (
+  streams: DeclarativeComponentSchemaStreamsItem[],
+  deletedStreamIndex: number
+) => {
+  function updateRefs<T>(obj: T): T | undefined {
+    if (!obj || typeof obj !== "object") {
+      return obj;
+    }
+
+    if (Array.isArray(obj)) {
+      return obj.map(updateRefs) as T;
+    }
+
+    if ("$ref" in obj && typeof obj.$ref === "string") {
+      // check if $ref points to a stream index and capture the index and the suffix
+      const match = obj.$ref.match(/#\/streams\/(\d+)(?:\/(.*)|$)/);
+      if (match) {
+        const streamIndex = Number(match[1]);
+        if (streamIndex === deletedStreamIndex) {
+          return undefined;
+        }
+        if (streamIndex > deletedStreamIndex) {
+          const newRef = match[2] ? `#/streams/${streamIndex - 1}/${match[2]}` : `#/streams/${streamIndex - 1}`;
+          return {
+            ...obj,
+            $ref: newRef,
+          };
+        }
+      }
+      return obj;
+    }
+
+    const result = {} as Record<string, unknown>;
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = updateRefs(value);
+    }
+    return result as T;
+  }
+
+  return streams.filter((_, index) => index !== deletedStreamIndex).map(updateRefs);
 };

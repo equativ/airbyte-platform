@@ -1,9 +1,11 @@
 import classNames from "classnames";
 import debounce from "lodash/debounce";
-import React, { useMemo, useState } from "react";
+import isEqual from "lodash/isEqual";
+import React, { useMemo, useRef, useState } from "react";
 import { useFormContext } from "react-hook-form";
 import { FormattedMessage } from "react-intl";
 
+import { useRefsHandler } from "components/forms/SchemaForm/RefsHandler";
 import { FlexItem } from "components/ui/Flex";
 import { ExternalLink } from "components/ui/Link";
 import { ButtonTab, Tabs } from "components/ui/Tabs";
@@ -11,6 +13,7 @@ import { InfoTooltip } from "components/ui/Tooltip";
 
 import { useCustomComponentsEnabled } from "core/api";
 import { ConnectorManifest } from "core/api/types/ConnectorManifest";
+import { useConnectorBuilderResolve } from "core/services/connectorBuilder/ConnectorBuilderResolveContext";
 import { links } from "core/utils/links";
 import { useConnectorBuilderFormState } from "services/connectorBuilder/ConnectorBuilderStateService";
 
@@ -33,13 +36,43 @@ export const YamlManifestEditor: React.FC = () => {
   const {
     setYamlEditorIsMounted,
     setYamlIsValid,
-    updateJsonManifest,
     undoRedo: { clearHistory },
+    setYamlIsDirty,
   } = useConnectorBuilderFormState();
-  const { setValue } = useFormContext();
+  const { resolveManifest } = useConnectorBuilderResolve();
+  const { setValue, getValues } = useFormContext();
+  const { resetFormAndRefState } = useRefsHandler();
   const yamlManifestValue = useBuilderWatch("yaml");
-  // debounce the setJsonManifest calls so that it doesnt result in a network call for every keystroke
-  const debouncedUpdateJsonManifest = useMemo(() => debounce(updateJsonManifest, 200), [updateJsonManifest]);
+
+  // Add a simple counter reference to track the latest call
+  const lastCallIdRef = useRef(0);
+
+  const debouncedResolveAndUpdateManifest: (newManifest: ConnectorManifest) => void = useMemo(
+    () =>
+      debounce(async (newManifest: ConnectorManifest) => {
+        // Increment counter to track this call
+        const thisCallId = ++lastCallIdRef.current;
+
+        resolveManifest(newManifest).then((resolvedManifest) => {
+          // Only update state if this is still the latest call
+          // This prevents yamlIsDirty from being set back to false when subsequent YAML changes are made
+          // while previous resolve calls are still in progress.
+          if (thisCallId === lastCallIdRef.current) {
+            // shouldNormalize is set to true in the above resolveManifest call, which can result in $refs
+            // pointing to the refTargetPath in the result.
+            // To ensure that the linking behavior works as expected, we must update the refMappings to account
+            // for these $refs, and then manually resolve them when updating the manifest form state.
+            const newBuilderState = {
+              ...getValues(),
+              manifest: resolvedManifest.manifest,
+            };
+            resetFormAndRefState(newBuilderState);
+            setYamlIsDirty(false);
+          }
+        });
+      }, 500),
+    [getValues, resetFormAndRefState, resolveManifest, setYamlIsDirty]
+  );
 
   const areCustomComponentsEnabled = useCustomComponentsEnabled();
   const customComponentsCodeValue = useBuilderWatch("customComponentsCode");
@@ -49,6 +82,7 @@ export const YamlManifestEditor: React.FC = () => {
   const showCustomComponentsTab = areCustomComponentsEnabled || customComponentsCodeValue;
 
   const [selectedTab, setSelectedTab] = useState(TAB_MANIFEST);
+  const lastLoadedManifest = useRef<ConnectorManifest | null>(null);
 
   return (
     <div className={styles.container}>
@@ -99,7 +133,14 @@ export const YamlManifestEditor: React.FC = () => {
             }}
             onSuccessfulLoad={(json: unknown) => {
               setYamlIsValid(true);
-              debouncedUpdateJsonManifest(json as ConnectorManifest);
+              const newManifest = json as ConnectorManifest;
+              if (!lastLoadedManifest.current) {
+                lastLoadedManifest.current = newManifest;
+              } else if (!isEqual(lastLoadedManifest.current, newManifest)) {
+                setYamlIsDirty(true);
+                lastLoadedManifest.current = newManifest;
+                debouncedResolveAndUpdateManifest(newManifest);
+              }
             }}
             onYamlException={(_) => setYamlIsValid(false)}
             onMount={(_) => {

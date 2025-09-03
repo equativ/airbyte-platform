@@ -66,11 +66,6 @@ spec:
           value: "-Xdebug -agentlib:jdwp=transport=dt_socket,address=0.0.0.0:{{ .Values.workloadLauncher.debug.remoteDebugPort }},server=y,suspend=n"
         {{- end}}
 
-        {{- if (or (eq .Values.global.edition "community") (eq .Values.global.edition "enterprise")) }}
-        - name: AIRBYTE_API_AUTH_HEADER_VALUE
-          value: "Internal worker"
-        {{- end }}
-
         {{- include "airbyte.cluster.envs" . | nindent 8 }}
         {{- include "airbyte.common.envs" . | nindent 8 }}
         {{- include "airbyte.database.envs" . | nindent 8 }}
@@ -78,7 +73,6 @@ spec:
         {{- include "airbyte.jobs.envs" . | nindent 8 }}
         {{- include "airbyte.jobs.errors.envs" . | nindent 8 }}
         {{- include "airbyte.jobs.scheduling.envs" . | nindent 8 }}
-        {{- include "airbyte.keycloak.client.envs" . | nindent 8 }}
         {{- include "airbyte.logging.envs" . | nindent 8 }}
         {{- include "airbyte.metrics.envs" . | nindent 8 }}
         {{- include "airbyte.micronaut.envs" . | nindent 8 }}
@@ -174,16 +168,19 @@ spec:
         securityContext: {{- toYaml .Values.workloadLauncher.containerSecurityContext | nindent 10 }}
         {{- end }}
         volumeMounts:
-          {{- if eq (include "airbyte.storage.type" .) "gcs" }}
-          - name: gcs-log-creds-volume
-            mountPath: {{ include "airbyte.storage.gcs.credentialsJsonPath" . | dir }}
-            readOnly: true
-          {{- end }}
-          {{- if eq (include "airbyte.cluster.type" .) "data-plane" }}
-          - name: dataplane-creds-volume
-            mountPath: {{ include "airbyte.workloads.containerOrchestrator.dataPlane.secretMountPath" . | dir }}
-            readOnly: true
-          {{- end }}
+        {{- if eq (include "airbyte.storage.type" .) "gcs" }}
+        - name: gcs-log-creds-volume
+          mountPath: {{ include "airbyte.storage.gcs.credentialsJsonPath" . | dir }}
+          readOnly: true
+        {{- else if eq (lower (include "airbyte.storage.type" .)) "local" }}
+        - name: airbyte-storage
+          mountPath: /storage
+        {{- end }}
+        {{- if eq (include "airbyte.cluster.type" .) "data-plane" }}
+        - name: dataplane-creds-volume
+          mountPath: {{ include "airbyte.workloads.containerOrchestrator.dataPlane.secretMountPath" . | dir }}
+          readOnly: true
+        {{- end }}
         {{- if .Values.workloadLauncher.extraVolumeMounts }}
 {{- toYaml .Values.workloadLauncher.extraVolumeMounts | nindent 8 }}
         {{- end }}
@@ -205,6 +202,10 @@ spec:
           items:
             - key: {{ include "airbyte.storage.gcs.credentialsJson.secretKey" . }}
               path: "gcp.json"
+      {{- else if eq (lower (include "airbyte.storage.type" .)) "local" }}
+      - name: airbyte-storage
+        persistentVolumeClaim:
+          claimName: airbyte-storage-pvc
       {{- end }}
       {{- if eq (include "airbyte.cluster.type" .) "data-plane" }}
       - name: dataplane-creds-volume

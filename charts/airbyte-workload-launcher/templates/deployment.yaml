@@ -281,15 +281,6 @@ spec:
             configMapKeyRef:
               name: {{ .Release.Name }}-airbyte-env
               key: KUBERNETES_CLIENT_MAX_IDLE_CONNECTIONS
-        - name: WORKLOAD_API_BEARER_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: {{ index .Values "workloadApi" "bearerTokenSecretName" | default (printf "%s-airbyte-secrets" .Release.Name ) }}
-              key: {{ index .Values "workloadApi" "bearerTokenSecretKey" | default "WORKLOAD_API_BEARER_TOKEN" }}
-        - name: WORKLOAD_API_BEARER_TOKEN_SECRET_NAME
-          value: {{ index .Values "workloadApi" "bearerTokenSecretName" | default (printf "%s-airbyte-secrets" .Release.Name ) }}
-        - name: WORKLOAD_API_BEARER_TOKEN_SECRET_KEY
-          value: {{ index .Values "workloadApi" "bearerTokenSecretKey" | default "WORKLOAD_API_BEARER_TOKEN" }}
         - name: INTERNAL_API_HOST
           valueFrom:
             configMapKeyRef:
@@ -373,19 +364,6 @@ spec:
             configMapKeyRef:
               name: {{ .Release.Name }}-airbyte-env
               key: FILE_TRANSFER_EPHEMERAL_STORAGE_REQUEST
-        {{- if or (eq .Values.global.edition "pro") (eq .Values.global.edition "enterprise") }}
-        - name: AIRBYTE_API_AUTH_HEADER_NAME
-          value: "X-Airbyte-Auth"
-        - name: AIRBYTE_API_AUTH_HEADER_VALUE
-          value: "Internal worker"
-        {{- else if and (or (eq .Values.global.edition "community") (eq .Values.global.edition "pro") (eq .Values.global.edition "enterprise")) .Values.global.auth.enabled }}
-        # Self-Managed Enterprise and Community w/ auth enabled use the same auth header, just
-        # splitting into two separate blocks for readability.
-        - name: AIRBYTE_API_AUTH_HEADER_NAME
-          value: "X-Airbyte-Auth"
-        - name: AIRBYTE_API_AUTH_HEADER_VALUE
-          value: "Internal worker"
-        {{- end }}
 
         # SECRETS MANAGER
         - name: SECRET_PERSISTENCE
@@ -478,6 +456,12 @@ spec:
           value: {{ include "airbyte.secretStoreName" .Values.global.secretsManager.secretsManagerSecretName }}
         - name: SECRET_STORE_GCP_SECRET_KEY
           value: {{ include "airbyte.googleSecretManagerCredentialsSecretKey" .Values.global.secretsManager.googleSecretManager.credentialsSecretKey }}
+        {{- if .Values.global.secretsManager.googleSecretManager.region }}
+        - name: SECRET_STORE_GCP_REGION
+          value: {{ .Values.global.secretsManager.googleSecretManager.region }}
+        - name: CLOUDSDK_API_ENDPOINT_OVERRIDES_SECRETMANAGER
+          value: https://secretmanager.{{ .Values.global.secretsManager.googleSecretManager.region }}.rep.googleapis.com/
+        {{- end }}
         {{- end }}
 
         # Values for vault secrets

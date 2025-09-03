@@ -177,6 +177,10 @@ enum class OssMetricsRegistry(
     metricName = "connector_registry_definition_processed",
     metricDescription = "increments when a connector registry definition is processed by the ApplyDefinitionsHelper",
   ),
+  ERROR_REPORTING_EVENT_COUNT(
+    metricName = "error_reporting_event_count",
+    metricDescription = "whenever when we report an error event",
+  ),
   EST_NUM_METRICS_EMITTED_BY_REPORTER(
     metricName = "est_num_metrics_emitted_by_reporter",
     metricDescription = "estimated metrics emitted by the reporter in the last interval. this is estimated since the count is not precise.",
@@ -338,6 +342,10 @@ enum class OssMetricsRegistry(
   STATE_BUFFERING(
     metricName = "state_buffering",
     metricDescription = "number of state messages being buffered before a flush",
+  ),
+  STATE_CHECKSUM_COUNT_ERROR(
+    metricName = "state_checksum_error",
+    metricDescription = "number of state checksum errors for a given connection",
   ),
   STATE_COMMIT_ATTEMPT(
     metricName = "state_commit_attempt",
@@ -587,6 +595,10 @@ enum class OssMetricsRegistry(
     metricName = "delete_secret_default_store",
     metricDescription = "A secret was created in the default configured secret store.",
   ),
+  DELETE_SECRET(
+    metricName = "delete_secret",
+    metricDescription = "A secret was deleted from a secrets manager.",
+  ),
   CATALOG_SIZE_VALIDATION_ERROR(
     metricName = "catalog_size_validation_error",
     metricDescription = "The catalog provided by the user was larger than our limit and rejected.",
@@ -770,6 +782,14 @@ enum class OssMetricsRegistry(
   PRODUCER_TO_POD_STARTED_LATENCY_MS(
     metricName = "producer_to_pod_started_latency_ms",
     metricDescription = "the time it takes to produce a message until it is fully processed",
+  ),
+  CUSTOMER_IO_EMAIL_NOTIFICATION_SEND(
+    metricName = "customerio_email_notification_send",
+    metricDescription = "a customer io email notification was sent",
+  ),
+  DATA_OBS_OUTLIER_CHECK(
+    metricName = "data_obs_outlier_check",
+    metricDescription = "outcome of the outlier check",
   ),
   ;
 

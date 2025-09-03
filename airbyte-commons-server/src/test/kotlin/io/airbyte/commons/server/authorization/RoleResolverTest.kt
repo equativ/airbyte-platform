@@ -5,7 +5,7 @@
 package io.airbyte.commons.server.authorization
 
 import io.airbyte.api.problems.throwable.generated.ForbiddenProblem
-import io.airbyte.commons.auth.AuthRoleConstants
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.server.handlers.PermissionHandler
 import io.airbyte.commons.server.support.AuthenticationHeaderResolver
 import io.airbyte.commons.server.support.AuthenticationId
@@ -13,8 +13,10 @@ import io.airbyte.commons.server.support.CurrentUserService
 import io.airbyte.config.AuthenticatedUser
 import io.airbyte.config.Permission
 import io.airbyte.config.persistence.UserPersistence
+import io.airbyte.data.auth.TokenType
 import io.airbyte.persistence.job.WorkspaceHelper
 import io.micronaut.http.HttpRequest
+import io.micronaut.security.utils.SecurityService
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -31,6 +33,7 @@ class RoleResolverTest {
   lateinit var workspaceHelper: WorkspaceHelper
   lateinit var userPersistence: UserPersistence
   lateinit var currentUserService: CurrentUserService
+  lateinit var securityService: SecurityService
   lateinit var permissionHandler: PermissionHandler
   lateinit var roleResolver: RoleResolver
 
@@ -40,15 +43,16 @@ class RoleResolverTest {
     userPersistence = mockk()
     currentUserService = mockk()
     permissionHandler = mockk()
+    securityService = mockk()
     val authenticationHeaderResolver = AuthenticationHeaderResolver(workspaceHelper, permissionHandler, userPersistence)
-    roleResolver = RoleResolver(authenticationHeaderResolver, currentUserService, permissionHandler)
+    roleResolver = RoleResolver(authenticationHeaderResolver, currentUserService, securityService, permissionHandler)
   }
 
   @Test
   fun testWithCurrentUser() {
-    every { currentUserService.currentUser } returns AuthenticatedUser().withAuthUserId("auth-user-1")
-    val req = roleResolver.Request().withCurrentUser()
-    assertEquals("auth-user-1", req.authUserId)
+    every { currentUserService.getCurrentUser() } returns AuthenticatedUser().withAuthUserId("auth-user-1")
+    val req = roleResolver.newRequest().withCurrentUser()
+    assertEquals(RoleResolver.Subject("auth-user-1", TokenType.USER), req.subject)
   }
 
   @Test
@@ -56,8 +60,8 @@ class RoleResolverTest {
     val uid = UUID.randomUUID()
     val req =
       roleResolver
-        .Request()
-        .withAuthUserId("auth-user-1")
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
         .withRef(AuthenticationId.AIRBYTE_USER_ID, uid)
 
     every { permissionHandler.getPermissionsByAuthUserId("auth-user-1") } returns emptyList()
@@ -73,8 +77,8 @@ class RoleResolverTest {
     val uid = UUID.randomUUID()
     val req =
       roleResolver
-        .Request()
-        .withAuthUserId("auth-user-1")
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
         .withRef(AuthenticationId.AIRBYTE_USER_ID, uid)
 
     every { permissionHandler.getPermissionsByAuthUserId("auth-user-1") } returns emptyList()
@@ -89,33 +93,33 @@ class RoleResolverTest {
   fun testWithHttpRequest() {
     val httpReq = HttpRequest.GET<Any>("/")
     httpReq.headers.add(AuthenticationId.CONNECTION_ID.httpHeader, "conn-id-1")
-    val roleReq = roleResolver.Request().withHttpRequest(httpReq)
+    val roleReq = roleResolver.newRequest().withRefsFromHttpRequest(httpReq)
     assertEquals(mapOf(AuthenticationId.CONNECTION_ID.httpHeader to "conn-id-1"), roleReq.props)
   }
 
   @Test
   fun testWithRef() {
-    val roleReq = roleResolver.Request().withRef(AuthenticationId.CONNECTION_ID, "conn-id-1")
+    val roleReq = roleResolver.newRequest().withRef(AuthenticationId.CONNECTION_ID, "conn-id-1")
     assertEquals(mapOf(AuthenticationId.CONNECTION_ID.httpHeader to "conn-id-1"), roleReq.props)
   }
 
   @Test
   fun testWithWorkspaces() {
     val workspaces = listOf(UUID.randomUUID(), UUID.randomUUID())
-    val req = roleResolver.Request().withWorkspaces(workspaces)
+    val req = roleResolver.newRequest().withWorkspaces(workspaces)
     assertEquals(mapOf(AuthenticationId.WORKSPACE_IDS.httpHeader to """["${workspaces[0]}","${workspaces[1]}"]"""), req.props)
   }
 
   @Test
   fun noUserSpecified() {
-    assertEquals(emptySet<String>(), roleResolver.Request().roles())
-    assertEquals(emptySet<String>(), roleResolver.Request().withAuthUserId("  ").roles())
+    assertEquals(emptySet<String>(), roleResolver.newRequest().roles())
+    assertEquals(emptySet<String>(), roleResolver.newRequest().withSubject("  ", TokenType.USER).roles())
   }
 
   @Test
   fun exceptionsAreDropped() {
     every { permissionHandler.getPermissionsByAuthUserId("auth-user-1") } throws Exception("foo")
-    assertEquals(emptySet<String>(), roleResolver.Request().withAuthUserId("auth-user-1").roles())
+    assertEquals(emptySet<String>(), roleResolver.newRequest().withSubject("auth-user-1", TokenType.USER).roles())
     verify(exactly = 1) { permissionHandler.getPermissionsByAuthUserId("auth-user-1") }
   }
 
@@ -147,8 +151,8 @@ class RoleResolverTest {
     // user is requesting access to a workspace
     val req =
       roleResolver
-        .Request()
-        .withAuthUserId("auth-user-1")
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
         .withRef(AuthenticationId.WORKSPACE_ID, UUID.randomUUID())
 
     assertEquals(baseRoles, req.roles())
@@ -163,8 +167,8 @@ class RoleResolverTest {
     // user is requesting access to an org
     val req =
       roleResolver
-        .Request()
-        .withAuthUserId("auth-user-1")
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
         .withRef(AuthenticationId.ORGANIZATION_ID, UUID.randomUUID())
 
     assertEquals(baseRoles, req.roles())
@@ -179,8 +183,8 @@ class RoleResolverTest {
     // user is requesting access to workspace 1
     val req =
       roleResolver
-        .Request()
-        .withAuthUserId("auth-user-1")
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
         .withRef(AuthenticationId.WORKSPACE_ID, workspace1)
 
     // user is workspace admin on workspace 2, but not workspace 1
@@ -202,8 +206,8 @@ class RoleResolverTest {
     // user is requesting access to workspace 1
     val req =
       roleResolver
-        .Request()
-        .withAuthUserId("auth-user-1")
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
         .withRef(AuthenticationId.WORKSPACE_ID, workspace1)
 
     // user is workspace admin on workspace 1
@@ -227,8 +231,8 @@ class RoleResolverTest {
     // user is requesting access to multiple workspaces, but only has access to one.
     val req =
       roleResolver
-        .Request()
-        .withAuthUserId("auth-user-1")
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
         .withWorkspaces(listOf(workspace1, workspace2))
 
     // user is workspace admin on workspace 1
@@ -252,8 +256,8 @@ class RoleResolverTest {
     // user is requesting access to one org, but has access to multiple.
     val req =
       roleResolver
-        .Request()
-        .withAuthUserId("auth-user-1")
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
         .withRef(AuthenticationId.ORGANIZATION_ID, org1)
 
     every { permissionHandler.getPermissionsByAuthUserId("auth-user-1") } returns
@@ -285,8 +289,8 @@ class RoleResolverTest {
     // user is requesting access to multiple workspaces.
     val req =
       roleResolver
-        .Request()
-        .withAuthUserId("auth-user-1")
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
         .withWorkspaces(listOf(workspace1, workspace2))
 
     // user is workspace admin on workspace 1,
@@ -315,8 +319,8 @@ class RoleResolverTest {
     // user is requesting access to source1
     val req =
       roleResolver
-        .Request()
-        .withAuthUserId("auth-user-1")
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
         .withRef(AuthenticationId.SOURCE_ID, source1)
 
     // source1 is owned by workspace1
@@ -344,8 +348,8 @@ class RoleResolverTest {
     // user is requesting access to source1
     val req =
       roleResolver
-        .Request()
-        .withAuthUserId("auth-user-1")
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
         .withRef(AuthenticationId.SOURCE_ID, source1)
 
     // source1 is owned by workspace2
@@ -365,14 +369,81 @@ class RoleResolverTest {
 
   @Test
   fun requireRole() {
-    val req = roleResolver.Request().withAuthUserId("auth-user-1")
+    every { permissionHandler.getPermissionsByAuthUserId("auth-user-1") } returns emptyList()
+
+    val req = roleResolver.newRequest().withSubject("auth-user-1", TokenType.USER)
     assertThrows<ForbiddenProblem> {
       req.requireRole("FOO")
     }
 
-    every { permissionHandler.getPermissionsByAuthUserId("auth-user-1") } returns emptyList()
-
     req.requireRole("AUTHENTICATED_USER")
+  }
+
+  @Test
+  fun organizationAdminWithWorkspaceAccess() {
+    val workspace1 = UUID.randomUUID()
+    val org1 = UUID.randomUUID()
+    val org2 = UUID.randomUUID()
+
+    // user is requesting access to workspace1
+    val req =
+      roleResolver
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
+        .withRef(AuthenticationId.WORKSPACE_ID, workspace1)
+
+    // user has both ORGANIZATION_MEMBER and ORGANIZATION_ADMIN permissions
+    every { permissionHandler.getPermissionsByAuthUserId("auth-user-1") } returns
+      listOf(
+        Permission()
+          .withPermissionType(Permission.PermissionType.ORGANIZATION_MEMBER)
+          .withOrganizationId(org1),
+        Permission()
+          .withPermissionType(Permission.PermissionType.ORGANIZATION_ADMIN)
+          .withOrganizationId(org2),
+      )
+
+    // workspace 1 belongs to org 2
+    every { workspaceHelper.getOrganizationForWorkspace(workspace1) } returns org2
+
+    // The user should get ORGANIZATION_ADMIN permission to the workspace
+    val expect =
+      """
+      AUTHENTICATED_USER WORKSPACE_READER WORKSPACE_RUNNER WORKSPACE_EDITOR 
+      ORGANIZATION_ADMIN ORGANIZATION_EDITOR WORKSPACE_ADMIN 
+      ORGANIZATION_READER ORGANIZATION_RUNNER ORGANIZATION_MEMBER
+    """.toRoleSet()
+    assertEquals(expect, req.roles())
+    verify(exactly = 1) { permissionHandler.getPermissionsByAuthUserId("auth-user-1") }
+  }
+
+  @Test
+  fun workspaceAdminPermissionOnSpecificWorkspace() {
+    val workspace1 = UUID.randomUUID()
+    val workspace2 = UUID.randomUUID()
+
+    // user is requesting access to workspace1
+    val req =
+      roleResolver
+        .newRequest()
+        .withSubject("auth-user-1", TokenType.USER)
+        .withRef(AuthenticationId.WORKSPACE_ID, workspace1)
+
+    // user has workspace admin permission on workspace1 and workspace reader on workspace2
+    every { permissionHandler.getPermissionsByAuthUserId("auth-user-1") } returns
+      listOf(
+        Permission()
+          .withPermissionType(Permission.PermissionType.WORKSPACE_ADMIN)
+          .withWorkspaceId(workspace1),
+        Permission()
+          .withPermissionType(Permission.PermissionType.WORKSPACE_READER)
+          .withWorkspaceId(workspace2),
+      )
+
+    // The user should get WORKSPACE_ADMIN permission for the requested workspace
+    val expect = "AUTHENTICATED_USER WORKSPACE_READER WORKSPACE_RUNNER WORKSPACE_EDITOR WORKSPACE_ADMIN".toRoleSet()
+    assertEquals(expect, req.roles())
+    verify(exactly = 1) { permissionHandler.getPermissionsByAuthUserId("auth-user-1") }
   }
 }
 

@@ -8,7 +8,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import io.airbyte.api.problems.model.generated.ProblemValueData
 import io.airbyte.api.problems.throwable.generated.UnknownValueProblem
 import io.airbyte.api.problems.throwable.generated.UnprocessableEntityProblem
-import io.airbyte.commons.auth.AuthRoleConstants
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.server.authorization.RoleResolver
 import io.airbyte.commons.server.scheduling.AirbyteTaskExecutors
 import io.airbyte.commons.server.support.AuthenticationId
@@ -49,10 +49,10 @@ open class SourcesController(
   private val currentUserService: CurrentUserService,
   private val roleResolver: RoleResolver,
 ) : PublicSourcesApi {
-  @Secured(AuthRoleConstants.WORKSPACE_EDITOR)
+  @Secured(AuthRoleConstants.WORKSPACE_EDITOR, AuthRoleConstants.EMBEDDED_END_USER)
   @ExecuteOn(AirbyteTaskExecutors.PUBLIC_API)
   override fun publicCreateSource(sourceCreateRequest: SourceCreateRequest?): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     val sourceDefinitionId: UUID =
       sourceCreateRequest?.definitionId
@@ -108,10 +108,10 @@ open class SourcesController(
 
   @ExecuteOn(AirbyteTaskExecutors.PUBLIC_API)
   override fun publicDeleteSource(sourceId: String): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.SOURCE_ID, sourceId)
       .requireRole(AuthRoleConstants.WORKSPACE_EDITOR)
@@ -144,10 +144,10 @@ open class SourcesController(
     sourceId: String,
     includeSecretCoordinates: Boolean?,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.SOURCE_ID, sourceId)
       .requireRole(AuthRoleConstants.WORKSPACE_READER)
@@ -187,13 +187,13 @@ open class SourcesController(
     limit: Int,
     offset: Int,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     // If workspace IDs were given, then verify the user has access to those workspaces.
     // If none were given, then the SourceService determine the workspaces for the current user.
     if (!workspaceIds.isNullOrEmpty()) {
       roleResolver
-        .Request()
+        .newRequest()
         .withCurrentUser()
         .withWorkspaces(workspaceIds)
         .requireRole(AuthRoleConstants.WORKSPACE_READER)
@@ -228,10 +228,10 @@ open class SourcesController(
     sourceId: String,
     sourcePatchRequest: SourcePatchRequest?,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.SOURCE_ID, sourceId)
       .requireRole(AuthRoleConstants.WORKSPACE_EDITOR)
@@ -270,10 +270,10 @@ open class SourcesController(
     sourceId: String,
     sourcePutRequest: SourcePutRequest?,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.SOURCE_ID, sourceId)
       .requireRole(AuthRoleConstants.WORKSPACE_EDITOR)

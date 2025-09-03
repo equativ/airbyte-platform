@@ -113,7 +113,8 @@ export interface DatepickerControlProps<T extends FormValues>
 
 export interface SelectControlProps<T extends FormValues>
   extends ControlBaseProps<T>,
-    Omit<ListBoxProps<string>, "onSelect" | "selectedValue"> {
+    Omit<ListBoxProps<string>, "onSelect" | "selectedValue">,
+    Partial<Pick<ListBoxProps<string>, "onSelect">> {
   fieldType: "dropdown";
   options: Array<Option<string>>;
 }
@@ -145,7 +146,7 @@ export const FormControl = <T extends FormValues>({
   // only retrieve new form state if form state of current field has changed
   const { errors, touchedFields } = useFormState<T>({ name: props.name });
   const error = !!get(errors, props.name) && (onlyShowErrorIfTouched ? !!get(touchedFields, props.name) : true);
-  const [controlId] = useState(`input-control-${uniqueId()}`);
+  const [controlId] = useState(props.id ?? `input-control-${uniqueId()}`);
 
   // Properties to pass to the underlying control
   const controlProps = {
@@ -316,7 +317,7 @@ export const FormControlErrorMessage = <TFormValues extends FormValues>({
         // "validate" type means the error came from the react-hook-form validate() method.
         (error.type === NON_I18N_ERROR_TYPE || error.type === "validate"
           ? error.message
-          : formatMessage({ id: error.message }))}
+          : formatMessage({ id: error.message ?? "form.empty.error" }))}
       {message && message}
     </Text>
   );

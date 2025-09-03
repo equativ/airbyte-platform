@@ -4,13 +4,13 @@
 
 package io.airbyte.container.orchestrator.worker
 
-import io.airbyte.container.orchestrator.worker.exception.WorkloadHeartbeatException
+import io.airbyte.api.client.ApiException
+import io.airbyte.container.orchestrator.worker.io.AirbyteSource
 import io.airbyte.container.orchestrator.worker.io.DestinationTimeoutMonitor
 import io.airbyte.container.orchestrator.worker.io.HeartbeatMonitor
 import io.airbyte.container.orchestrator.worker.io.HeartbeatTimeoutException
 import io.airbyte.workload.api.client.WorkloadApiClient
-import io.airbyte.workload.api.client.generated.infrastructure.ClientException
-import io.airbyte.workload.api.client.model.generated.WorkloadHeartbeatRequest
+import io.airbyte.workload.api.domain.WorkloadHeartbeatRequest
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Value
 import io.micronaut.http.HttpStatus
@@ -28,8 +28,10 @@ class WorkloadHeartbeatSender(
   private val replicationWorkerState: ReplicationWorkerState,
   private val destinationTimeoutMonitor: DestinationTimeoutMonitor,
   private val sourceTimeoutMonitor: HeartbeatMonitor,
-  private val heartbeatInterval: Duration,
-  private val heartbeatTimeoutDuration: Duration,
+  private val source: AirbyteSource,
+  @Named("workloadHeartbeatInterval") private val heartbeatInterval: Duration,
+  @Named("workloadHeartbeatTimeout") private val heartbeatTimeoutDuration: Duration,
+  @Named("hardExitCallable") private val hardExitCallable: () -> Unit,
   @Named("workloadId") private val workloadId: String,
   @Value("\${airbyte.job-id}") private val jobId: Long,
   @Named("attemptId") private val attempt: Int,
@@ -42,7 +44,7 @@ class WorkloadHeartbeatSender(
    * @param workloadId the workload identifier.
    */
   suspend fun sendHeartbeat() {
-    logger.info { "Starting workload heartbeat" }
+    logger.info { "Starting workload heartbeat (interval=${heartbeatInterval.seconds}s; timeout=${heartbeatTimeoutDuration.seconds}s)" }
     var lastSuccessfulHeartbeat = Instant.now()
 
     while (true) {
@@ -51,78 +53,85 @@ class WorkloadHeartbeatSender(
       try {
         when {
           destinationTimeoutMonitor.hasTimedOut() -> {
-            logger.warn { "Destination has timed out; skipping heartbeat." }
-            if (checkIfExpiredAndMarkSyncStateAsFailed(
-                lastSuccessfulHeartbeat,
-                heartbeatTimeoutDuration,
-                DestinationTimeoutMonitor.TimeoutException(
-                  destinationTimeoutMonitor.timeoutThresholdSec.toMillis(),
-                  destinationTimeoutMonitor.timeSinceLastAction.get(),
-                ),
+            val e =
+              DestinationTimeoutMonitor.TimeoutException(
+                destinationTimeoutMonitor.timeoutThresholdSec.toMillis(),
+                destinationTimeoutMonitor.timeSinceLastAction.get(),
               )
-            ) {
-              break
-            }
+            logger.warn(e) { "Destination has timed out; failing the workload." }
+            failWorkload(e)
+            break
           }
 
-          !sourceTimeoutMonitor.isBeating.orElse(true) -> {
-            logger.warn { "Source heartbeat missing; skipping heartbeat." }
-            if (checkIfExpiredAndMarkSyncStateAsFailed(
-                lastSuccessfulHeartbeat,
-                heartbeatTimeoutDuration,
-                HeartbeatTimeoutException(
-                  sourceTimeoutMonitor.heartbeatFreshnessThreshold.toMillis(),
-                  sourceTimeoutMonitor.timeSinceLastBeat.orElse(Duration.ZERO).toMillis(),
-                ),
+          /*
+           * Only fail the job if the source heartbeat has timed out for a source that has not already finished.  This is
+           * to allow destinations that take a long time (e.g. typing and deduping) to finish even after the source has
+           * exited normally.
+           */
+          (sourceTimeoutMonitor.hasTimedOut() && !source.isFinished) -> {
+            val e =
+              HeartbeatTimeoutException(
+                sourceTimeoutMonitor.heartbeatFreshnessThreshold.toMillis(),
+                sourceTimeoutMonitor.timeSinceLastBeat.orElse(Duration.ZERO).toMillis(),
               )
-            ) {
-              break
-            }
+            logger.warn(e) { "Source has timed out; failing the workload." }
+            failWorkload(e)
+            break
           }
 
           else -> {
-            logger.debug { "Sending workload heartbeat" }
-            workloadApiClient.workloadApi.workloadHeartbeat(WorkloadHeartbeatRequest(workloadId))
+            logger.debug { "Sending workload heartbeat." }
+            workloadApiClient.workloadHeartbeat(WorkloadHeartbeatRequest(workloadId))
             lastSuccessfulHeartbeat = now
           }
         }
       } catch (e: Exception) {
         when {
-          e is ClientException && e.statusCode == HttpStatus.GONE.code -> {
-            logger.warn(e) { "Workload in terminal state; cancelling sync." }
-            replicationWorkerState.markCancelled()
+          // If the workload-api returns HttpStatus.GONE, this means that the workload has reached a terminal state. Most likely,
+          // it has been canceled by the user or failed from the workload-api. Could be timeout from the workload monitor or workload
+          // has been superseded by another workload.
+          // In this case, the workload has already been failed, we should exit ASAP.
+          e is ApiException && e.statusCode == HttpStatus.GONE.code -> {
+            logger.warn(e) { "Workload in terminal state; exiting." }
+            exitAsap()
             break
           }
 
-          checkIfExpiredAndMarkSyncStateAsFailed(
-            lastSuccessfulHeartbeat,
-            heartbeatTimeoutDuration,
-            WorkloadHeartbeatException("Workload Heartbeat Error", e),
-          ) -> break
-          else -> logger.warn(e) { "Error sending heartbeat; retrying." }
+          // For the other errors, if we fail to hearbeat successfully within the heartbeatTimeoutDuration, we assume we cannot
+          // reach the control-plane and exit. This is to allow the control-plane to reschedule the workload on a different
+          // data-plane while limiting the risk of duplicate in the event of a network partition for example.
+          hasExpired(lastSuccessfulHeartbeat, heartbeatTimeoutDuration) -> {
+            logger.error(e) { "No successful heartbeat in the last ${heartbeatTimeoutDuration.seconds}s; exiting." }
+            exitAsap()
+            break
+          }
+
+          else -> logger.warn(e) { "Error sending heartbeat" }
         }
       }
       delay(heartbeatInterval.toMillis())
     }
+    logger.info { "Exiting the workload heartbeat task." }
+  }
+
+  private fun hasExpired(
+    lastSuccessfulHeartbeat: Instant,
+    timeoutDuration: Duration,
+  ): Boolean = Duration.between(lastSuccessfulHeartbeat, Instant.now()) > timeoutDuration
+
+  /**
+   * Fail the current workload.
+   */
+  private fun failWorkload(throwable: Throwable) {
+    replicationWorkerState.trackFailure(throwable, jobId, attempt)
+    replicationWorkerState.markFailed()
+    replicationWorkerState.abort()
   }
 
   /**
-   * Checks if the time since the last successful heartbeat exceeds the allowed timeout.
-   * If so, marks the replication as failed, aborts it, tracks the failure, and returns true.
-   * Otherwise, returns false.
+   * Hard exit, should be called in cases where we have been signaled to shut down from the outside.
    */
-  private fun checkIfExpiredAndMarkSyncStateAsFailed(
-    lastSuccessfulHeartbeat: Instant,
-    heartbeatTimeoutDuration: Duration,
-    exception: Throwable,
-  ): Boolean =
-    if (Duration.between(lastSuccessfulHeartbeat, Instant.now()) > heartbeatTimeoutDuration) {
-      logger.warn(exception) { "Heartbeat timeout exceeded. Shutting down heartbeat." }
-      replicationWorkerState.trackFailure(exception, jobId, attempt)
-      replicationWorkerState.markFailed()
-      replicationWorkerState.abort()
-      true
-    } else {
-      false
-    }
+  private fun exitAsap() {
+    hardExitCallable()
+  }
 }

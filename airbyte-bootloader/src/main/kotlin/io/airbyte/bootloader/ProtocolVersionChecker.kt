@@ -59,7 +59,7 @@ class ProtocolVersionChecker(
    */
   fun validate(supportAutoUpgrade: Boolean): AirbyteProtocolVersionRange? {
     val currentAirbyteVersion = currentAirbyteVersion
-    val currentRange = jobPersistence.currentProtocolVersionRange
+    val currentRange = jobPersistence.getCurrentProtocolVersionRange()
     val targetRange = targetProtocolVersionRange
 
     // Checking if there is a pre-existing version of airbyte.
@@ -126,10 +126,10 @@ class ProtocolVersionChecker(
 
   @get:Throws(IOException::class)
   protected val currentAirbyteVersion: Optional<AirbyteVersion>
-    get() = jobPersistence.version.map { version: String? -> AirbyteVersion(version) }
+    get() = jobPersistence.getVersion().map { version: String -> AirbyteVersion(version) }
 
   fun getConflictingActorDefinitions(targetRange: AirbyteProtocolVersionRange): Map<ActorType, MutableSet<UUID>> {
-    val actorDefIdToProtocolVersion = actorDefinitionService.actorDefinitionToProtocolVersionMap
+    val actorDefIdToProtocolVersion = actorDefinitionService.getActorDefinitionToProtocolVersionMap()
     val conflicts: Map<ActorType, MutableSet<UUID>> =
       actorDefIdToProtocolVersion
         .filter { !targetRange.isSupported(it.value.value) } // Keep unsupported protocol versions
@@ -165,21 +165,24 @@ class ProtocolVersionChecker(
   private fun getActorVersions(actorType: ActorType): Sequence<Map.Entry<UUID, Version>> =
     when (actorType) {
       ActorType.SOURCE ->
-        definitionsProvider.sourceDefinitions
+        definitionsProvider
+          .getSourceDefinitions()
           .asSequence()
           .map { def ->
             def.sourceDefinitionId to AirbyteProtocolVersion.getWithDefault(def.spec.protocolVersion)
           }
 
       ActorType.DESTINATION ->
-        definitionsProvider.destinationDefinitions
+        definitionsProvider
+          .getDestinationDefinitions()
           .asSequence()
           .map { def ->
             def.destinationDefinitionId to AirbyteProtocolVersion.getWithDefault(def.spec.protocolVersion)
           }
 
       else ->
-        definitionsProvider.destinationDefinitions
+        definitionsProvider
+          .getDestinationDefinitions()
           .asSequence()
           .map { def ->
             def.destinationDefinitionId to AirbyteProtocolVersion.getWithDefault(def.spec.protocolVersion)

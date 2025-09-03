@@ -20,7 +20,7 @@ import io.airbyte.config.ConfigScopeType
 import io.airbyte.config.DestinationConnection
 import io.airbyte.config.Job
 import io.airbyte.config.JobConfig
-import io.airbyte.config.JobStatus.TERMINAL_STATUSES
+import io.airbyte.config.JobStatus.Companion.TERMINAL_STATUSES
 import io.airbyte.config.JobSyncConfig
 import io.airbyte.config.JobTypeResourceLimit
 import io.airbyte.config.ResourceRequirements
@@ -35,9 +35,8 @@ import io.airbyte.config.SyncResourceRequirements
 import io.airbyte.config.helpers.ResourceRequirementsUtils
 import io.airbyte.config.persistence.ActorDefinitionVersionHelper
 import io.airbyte.config.persistence.ConfigInjector
-import io.airbyte.config.secrets.ConfigWithSecretReferences
 import io.airbyte.config.secrets.InlinedConfigWithSecretRefs
-import io.airbyte.config.secrets.toConfigWithRefs
+import io.airbyte.config.secrets.toInlined
 import io.airbyte.data.repositories.ActorDefinitionRepository
 import io.airbyte.data.repositories.ActorRepository
 import io.airbyte.data.services.AttemptService
@@ -70,7 +69,6 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.http.server.exceptions.NotFoundException
 import jakarta.inject.Singleton
 import java.util.UUID
-import kotlin.jvm.optionals.getOrNull
 
 val log = KotlinLogging.logger { }
 
@@ -227,7 +225,7 @@ class JobInputService(
     currentJob: Job,
     currentAttempt: Attempt,
   ): JobConfigData {
-    val isDeprecatedFileTransfer = isDeprecatedFileTransfer(currentAttempt.syncConfig.map { it.sourceConfiguration }.getOrNull())
+    val isDeprecatedFileTransfer = isDeprecatedFileTransfer(currentAttempt.syncConfig?.sourceConfiguration)
     return when (currentJob.config.configType) {
       JobConfig.ConfigType.SYNC -> {
         val includeFiles =
@@ -534,8 +532,8 @@ class JobInputService(
       oAuthConfigSupplier.injectDestinationOAuthParameters(
         destinationDefinition.destinationDefinitionId,
         destination!!.destinationId,
-        destination!!.workspaceId,
-        destination!!.configuration,
+        destination.workspaceId,
+        destination.configuration,
       )
 
     return buildJobCheckConnectionConfig(
@@ -572,17 +570,16 @@ class JobInputService(
   ): CheckConnectionInput {
     val injectedConfig: JsonNode = configInjector.injectConfig(configuration, definitionId)
 
-    val inlinedConfigWithSecretRefs = InlinedConfigWithSecretRefs(injectedConfig)
-
-    val configWithSecrets: ConfigWithSecretReferences =
+    val inlinedConfigWithSecrets: InlinedConfigWithSecretRefs =
       if (actorId == null) {
-        inlinedConfigWithSecretRefs.toConfigWithRefs()
+        InlinedConfigWithSecretRefs(injectedConfig)
       } else {
-        secretReferenceService.getConfigWithSecretReferences(
-          ActorId(actorId),
-          injectedConfig,
-          WorkspaceId(workspaceId),
-        )
+        secretReferenceService
+          .getConfigWithSecretReferences(
+            ActorId(actorId),
+            injectedConfig,
+            WorkspaceId(workspaceId),
+          ).toInlined()
       }
 
     val jobId = jobId ?: UUID.randomUUID().toString()
@@ -608,7 +605,7 @@ class JobInputService(
         StandardCheckConnectionInput()
           .withActorType(actorType)
           .withActorId(actorId)
-          .withConnectionConfiguration(configWithSecrets.config)
+          .withConnectionConfiguration(inlinedConfigWithSecrets.value)
           .withResourceRequirements(resourceRequirements)
           .withActorContext(actorContext)
           .withNetworkSecurityTokens(getNetworkSecurityTokens(workspaceId)),
@@ -655,17 +652,16 @@ class JobInputService(
   ): DiscoverCommandInput.DiscoverCatalogInput {
     val injectedConfig: JsonNode = configInjector.injectConfig(configuration, definitionId)
 
-    val inlinedConfigWithSecretRefs = InlinedConfigWithSecretRefs(injectedConfig)
-
-    val configWithSecrets: ConfigWithSecretReferences =
+    val inlinedConfigWithSecrets: InlinedConfigWithSecretRefs =
       if (actorId == null) {
-        inlinedConfigWithSecretRefs.toConfigWithRefs()
+        InlinedConfigWithSecretRefs(injectedConfig)
       } else {
-        secretReferenceService.getConfigWithSecretReferences(
-          ActorId(actorId),
-          injectedConfig,
-          WorkspaceId(workspaceId),
-        )
+        secretReferenceService
+          .getConfigWithSecretReferences(
+            ActorId(actorId),
+            injectedConfig,
+            WorkspaceId(workspaceId),
+          ).toInlined()
       }
 
     val configReplacer = ConfigReplacer()
@@ -688,7 +684,7 @@ class JobInputService(
         StandardDiscoverCatalogInput()
           .withSourceId(actorId.toString())
           .withConnectorVersion(dockerTag)
-          .withConnectionConfiguration(configWithSecrets.config)
+          .withConnectionConfiguration(inlinedConfigWithSecrets.value)
           .withConfigHash(hashedConfiguration)
           .withManual(isManual)
           .withResourceRequirements(resourceRequirements)

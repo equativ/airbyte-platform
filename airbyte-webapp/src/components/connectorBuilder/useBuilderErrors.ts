@@ -1,13 +1,13 @@
 import isObject from "lodash/isObject";
 import { useCallback } from "react";
-import { FieldErrors, useFormContext, useFormState } from "react-hook-form";
+import { FieldErrors, FieldValues, UseFormGetValues, useFormContext, useFormState } from "react-hook-form";
 
 import { assertNever } from "core/utils/asserts";
 import { BuilderView } from "services/connectorBuilder/ConnectorBuilderStateService";
 
 import { BuilderState, BuilderStreamTab } from "./types";
 import { useBuilderWatch } from "./useBuilderWatch";
-import { useFocusField } from "./useFocusField";
+import { getViewFromPath, useFocusField } from "./useFocusField";
 
 const EMPTY_ERROR_REPORT: ErrorReport = {
   global: [],
@@ -58,21 +58,23 @@ function doesViewHaveErrors(errorReport: ErrorReport, view: BuilderView): boolea
 }
 
 function getFirstErrorViewFromReport(errorReport: ErrorReport): BuilderView | undefined {
-  const reportEntries = Object.entries(errorReport);
-  for (const [_viewType, entries] of reportEntries) {
-    const viewType = _viewType as BuilderView["type"];
-    if (viewType === "global" || viewType === "inputs" || viewType === "components") {
-      if (entries.length > 0) {
-        return { type: viewType };
-      }
-    } else if (viewType === "generated_stream") {
-      if (entries.length > 0) {
-        return { type: viewType, dynamicStreamName: entries[0].dynamicStreamName, index: entries[0].index };
-      }
-    } else if (entries.length > 0) {
-      return { type: viewType, index: entries[0].index };
-    }
+  if (errorReport.global.length > 0) {
+    return { type: "global" };
   }
+  if (errorReport.inputs.length > 0) {
+    return { type: "inputs" };
+  }
+  if (errorReport.components.length > 0) {
+    return { type: "components" };
+  }
+  if (Object.keys(errorReport.stream).length > 0) {
+    return { type: "stream", index: Number(Object.keys(errorReport.stream)[0]) };
+  }
+  if (Object.keys(errorReport.dynamic_stream).length > 0) {
+    return { type: "dynamic_stream", index: Number(Object.keys(errorReport.dynamic_stream)[0]) };
+  }
+  // explicitly don't handle generated_stream case because we don't show generated stream errors
+
   return undefined;
 }
 
@@ -86,14 +88,14 @@ export const useBuilderErrors = () => {
   const { trigger } = useFormContext<BuilderState>();
   const { errors } = useFormState<BuilderState>();
   const view = useBuilderWatch("view");
-  const { setValue, getValues } = useFormContext();
+  const { setValue, getValues, getFieldState } = useFormContext();
   const focusField = useFocusField();
 
   // Returns true if the react hook form has errors, and false otherwise.
   // If limitToViews is provided, the error check is limited to only those views.
   const hasErrors = useCallback(
     (limitToViews?: BuilderView[], limitToStreamTab?: BuilderStreamTab): boolean => {
-      const builderViewToErrorPaths = getBuilderViewToErrorPaths(errors);
+      const builderViewToErrorPaths = getBuilderViewToErrorPaths(errors, getValues);
       const viewFilteredViewToErrorPaths = limitToViews
         ? limitErrorReportByView(builderViewToErrorPaths, limitToViews)
         : builderViewToErrorPaths;
@@ -121,12 +123,15 @@ export const useBuilderErrors = () => {
 
       return false;
     },
-    [errors]
+    [errors, getValues]
   );
 
   const getErrorPathAndView = useCallback(
-    (limitToViews?: BuilderView[]): { view: BuilderView; errorPath: string } | undefined => {
-      const builderViewToErrorPaths = getBuilderViewToErrorPaths(errors);
+    (
+      builderStateErrors: FieldErrors<BuilderState>,
+      limitToViews?: BuilderView[]
+    ): { view: BuilderView; errorPath: string } | undefined => {
+      const builderViewToErrorPaths = getBuilderViewToErrorPaths(builderStateErrors, getValues);
 
       // if already on a view with an error, scroll to the first erroring field
       if (
@@ -156,7 +161,7 @@ export const useBuilderErrors = () => {
 
       return undefined;
     },
-    [view, errors]
+    [view, getValues]
   );
 
   const highlightErrorField = useCallback(
@@ -177,7 +182,24 @@ export const useBuilderErrors = () => {
           return;
         }
 
-        const errorPathAndView = getErrorPathAndView(limitToViews);
+        // Errors must be explicitly retrieved here because after triggering validation,
+        // the `errors` returned by `useFormState` are stale, and aren't accurate until
+        // the next render.
+        const { error } = getFieldState("manifest");
+        if (!error) {
+          callback?.();
+          return;
+        }
+
+        // Must nest the error object under a "manifest" key in order
+        // to produce the correct full error paths
+        const builderStateErrors: FieldErrors<BuilderState> = {
+          manifest: {
+            ...error,
+          },
+        };
+
+        const errorPathAndView = getErrorPathAndView(builderStateErrors, limitToViews);
         if (errorPathAndView) {
           highlightErrorField(errorPathAndView.errorPath);
           return;
@@ -186,14 +208,14 @@ export const useBuilderErrors = () => {
         callback?.();
       });
     },
-    [trigger, getErrorPathAndView, highlightErrorField]
+    [trigger, getFieldState, getErrorPathAndView, highlightErrorField]
   );
 
   const getErrorPaths = useCallback(
     (view: BuilderView) => {
-      return getErrorPathsForView(getBuilderViewToErrorPaths(errors), view);
+      return getErrorPathsForView(getBuilderViewToErrorPaths(errors, getValues), view);
     },
-    [errors]
+    [errors, getValues]
   );
 
   return { hasErrors, validateAndTouch, getErrorPaths };
@@ -221,7 +243,10 @@ interface ErrorReport {
   unknown: string[];
 }
 
-const getBuilderViewToErrorPaths = (errors: FieldErrors<BuilderState>): ErrorReport => {
+const getBuilderViewToErrorPaths = (
+  errors: FieldErrors<BuilderState>,
+  getValues: UseFormGetValues<FieldValues>
+): ErrorReport => {
   const result: ErrorReport = structuredClone(EMPTY_ERROR_REPORT);
 
   const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -237,17 +262,7 @@ const getBuilderViewToErrorPaths = (errors: FieldErrors<BuilderState>): ErrorRep
       const value = obj[key];
 
       if (isError(value)) {
-        // "global" or stream number if under formValues, or "inputs" if under testingValues
-        const view: BuilderView | { type: "unknown" } =
-          currentPath[0] === "testingValues"
-            ? { type: "inputs" }
-            : currentPath[0] === "manifest"
-            ? currentPath[1] === "streams"
-              ? { type: "stream", index: Number(currentPath[2]) }
-              : currentPath[1] === "dynamic_streams"
-              ? { type: "dynamic_stream", index: Number(currentPath[2]) }
-              : { type: "unknown" }
-            : { type: "unknown" };
+        const view = getViewFromPath(currentPath.join("."), getValues);
         const fullPath = [...currentPath, key].join(".");
         if (typeof view === "object" && "index" in view) {
           if (!result[view.type][view.index]) {

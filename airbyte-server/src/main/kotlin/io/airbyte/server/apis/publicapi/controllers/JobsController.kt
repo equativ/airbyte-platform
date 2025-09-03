@@ -6,7 +6,7 @@ package io.airbyte.server.apis.publicapi.controllers
 
 import io.airbyte.api.problems.model.generated.ProblemMessageData
 import io.airbyte.api.problems.throwable.generated.UnprocessableEntityProblem
-import io.airbyte.commons.auth.AuthRoleConstants
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.server.authorization.RoleResolver
 import io.airbyte.commons.server.scheduling.AirbyteTaskExecutors
 import io.airbyte.commons.server.support.AuthenticationId
@@ -55,10 +55,10 @@ open class JobsController(
   override fun publicCancelJob(
     @PathParam("jobId") jobId: Long,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.JOB_ID, jobId.toString())
       .requireRole(AuthRoleConstants.WORKSPACE_RUNNER)
@@ -88,11 +88,11 @@ open class JobsController(
 
   @ExecuteOn(AirbyteTaskExecutors.PUBLIC_API)
   override fun publicCreateJob(jobCreateRequest: JobCreateRequest): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     // Only Editor and above should be able to run a Clear.
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.CONNECTION_ID, jobCreateRequest.connectionId)
       .requireRole(
@@ -203,10 +203,10 @@ open class JobsController(
   override fun getJob(
     @PathParam("jobId") jobId: Long,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.JOB_ID, jobId.toString())
       .requireRole(AuthRoleConstants.WORKSPACE_READER)
@@ -248,16 +248,16 @@ open class JobsController(
     updatedAtEnd: OffsetDateTime?,
     orderBy: String?,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
     if (connectionId != null) {
       roleResolver
-        .Request()
+        .newRequest()
         .withCurrentUser()
         .withRef(AuthenticationId.CONNECTION_ID, connectionId)
         .requireRole(AuthRoleConstants.WORKSPACE_READER)
     } else if (!workspaceIds.isNullOrEmpty()) {
       roleResolver
-        .Request()
+        .newRequest()
         .withCurrentUser()
         .withWorkspaces(workspaceIds)
         .requireRole(AuthRoleConstants.WORKSPACE_READER)

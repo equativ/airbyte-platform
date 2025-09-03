@@ -6,7 +6,7 @@ import { useCallback } from "react";
 import {
   DEFAULT_JSON_MANIFEST_VALUES,
   DEFAULT_JSON_MANIFEST_VALUES_WITH_STREAM,
-} from "components/connectorBuilder/types";
+} from "components/connectorBuilder/constants";
 
 import { useCurrentWorkspaceId } from "area/workspace/utils";
 import { HttpError } from "core/api";
@@ -121,6 +121,37 @@ export const useBuilderResolvedManifestSuspense = (manifest?: ConnectorManifest,
   });
 };
 
+export const useResolveManifest = () => {
+  const workspaceId = useCurrentWorkspaceId();
+  const requestOptions = useRequestOptions();
+
+  const mutation = useMutation(
+    ({ manifestToResolve, projectId }: { manifestToResolve: DeclarativeComponentSchema; projectId?: string }) => {
+      return resolveManifest(
+        {
+          manifest: {
+            ...manifestToResolve,
+            // normalize the manifest in the CDK to produce properly linked fields and parent stream references
+            __should_normalize: true,
+            __should_migrate: true,
+          },
+          workspace_id: workspaceId,
+          project_id: projectId,
+          form_generated_manifest: false,
+        },
+        requestOptions
+      );
+    }
+  );
+
+  return {
+    resolveManifest: mutation.mutateAsync, // Returns a promise that resolves with the result or rejects with error
+    isResolving: mutation.isLoading,
+    resolveError: mutation.error as HttpError<KnownExceptionInfo> | null,
+    resetResolveState: mutation.reset,
+  };
+};
+
 export const explicitlyCastedAssistV1Process = <T>(
   controller: string,
   params: AssistV1ProcessRequestBody,
@@ -138,7 +169,8 @@ export const useAssistApiProxyQuery = <T>(
   controller: string,
   enabled: boolean,
   params: AssistV1ProcessRequestBody,
-  ignoreCacheKeys: string[]
+  ignoreCacheKeys: string[],
+  transformResult?: (data: T) => T
 ) => {
   const requestOptions = useRequestOptions();
   requestOptions.signal = AbortSignal.timeout(5 * 60 * 1000); // 5 minutes
@@ -148,7 +180,10 @@ export const useAssistApiProxyQuery = <T>(
 
   return useQuery<T, HttpError<KnownExceptionInfo>>(
     debouncedQueryKey,
-    () => explicitlyCastedAssistV1Process<T>(controller, params, requestOptions),
+    async () => {
+      const result = await explicitlyCastedAssistV1Process<T>(controller, params, requestOptions);
+      return transformResult ? transformResult(result) : result;
+    },
     {
       enabled,
       keepPreviousData: true,

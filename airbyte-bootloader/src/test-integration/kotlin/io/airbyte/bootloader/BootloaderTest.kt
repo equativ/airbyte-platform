@@ -4,7 +4,8 @@
 
 package io.airbyte.bootloader
 
-import io.airbyte.commons.resources.MoreResources
+import io.airbyte.commons.DEFAULT_ORGANIZATION_ID
+import io.airbyte.commons.resources.Resources
 import io.airbyte.commons.version.AirbyteProtocolVersionRange
 import io.airbyte.commons.version.AirbyteVersion
 import io.airbyte.commons.version.Version
@@ -37,6 +38,7 @@ import io.airbyte.data.services.impls.jooq.ConnectionServiceJooqImpl
 import io.airbyte.data.services.impls.jooq.DestinationServiceJooqImpl
 import io.airbyte.data.services.impls.jooq.SourceServiceJooqImpl
 import io.airbyte.data.services.impls.jooq.WorkspaceServiceJooqImpl
+import io.airbyte.data.services.shared.ActorServicePaginationHelper
 import io.airbyte.db.factory.DSLContextFactory
 import io.airbyte.db.factory.DataSourceFactory
 import io.airbyte.db.factory.DatabaseCheckFactory
@@ -44,10 +46,10 @@ import io.airbyte.db.factory.FlywayFactory
 import io.airbyte.db.instance.DatabaseConstants
 import io.airbyte.db.instance.configs.ConfigsDatabaseMigrator
 import io.airbyte.db.instance.configs.ConfigsDatabaseTestProvider
-import io.airbyte.db.instance.configs.migrations.V1_6_0_016__AddDestinationCatalogToConnection
+import io.airbyte.db.instance.configs.migrations.V1_6_0_024__CreateOrchestrationTaskTable
 import io.airbyte.db.instance.jobs.JobsDatabaseMigrator
 import io.airbyte.db.instance.jobs.JobsDatabaseTestProvider
-import io.airbyte.db.instance.jobs.migrations.V1_1_0_002__AddJobsCoveringIndex
+import io.airbyte.db.instance.jobs.migrations.V1_1_0_004__AddRejectedRecordStats
 import io.airbyte.featureflag.FeatureFlagClient
 import io.airbyte.featureflag.TestClient
 import io.airbyte.metrics.MetricClient
@@ -142,6 +144,7 @@ internal class BootloaderTest {
         every { listScopedConfigurationsWithOrigins(any(), any(), any(), any(), any()) } returns emptyList()
       }
     val connectionTimelineService: ConnectionTimelineEventService = mockk()
+    val actorPaginationServiceHelper: ActorServicePaginationHelper = mockk()
     val actorDefinitionVersionUpdater =
       ActorDefinitionVersionUpdater(
         featureFlagClient,
@@ -157,6 +160,7 @@ internal class BootloaderTest {
         connectionService,
         actorDefinitionVersionUpdater,
         metricClient,
+        actorPaginationServiceHelper,
       )
     val sourceService =
       SourceServiceJooqImpl(
@@ -166,6 +170,7 @@ internal class BootloaderTest {
         connectionService,
         actorDefinitionVersionUpdater,
         metricClient,
+        actorPaginationServiceHelper,
       )
     val workspaceService =
       WorkspaceServiceJooqImpl(
@@ -181,7 +186,7 @@ internal class BootloaderTest {
       DatabaseCheckFactory.createConfigsDatabaseInitializer(
         configsDslContext,
         configsDatabaseInitializationTimeoutMs,
-        MoreResources.readResource(DatabaseConstants.CONFIGS_INITIAL_SCHEMA_PATH),
+        Resources.read(DatabaseConstants.CONFIGS_INITIAL_SCHEMA_PATH),
       )
     val configsDatabaseMigrator = ConfigsDatabaseMigrator(configDatabase, configsFlyway)
     val definitionsProvider: DefinitionsProvider = LocalDefinitionsProvider()
@@ -190,7 +195,7 @@ internal class BootloaderTest {
       DatabaseCheckFactory.createJobsDatabaseInitializer(
         jobsDslContext,
         jobsDatabaseInitializationTimeoutMs,
-        MoreResources.readResource(DatabaseConstants.JOBS_INITIAL_SCHEMA_PATH),
+        Resources.read(DatabaseConstants.JOBS_INITIAL_SCHEMA_PATH),
       )
     val jobsDatabaseMigrator = JobsDatabaseMigrator(jobDatabase, jobsFlyway)
     val jobsPersistence = DefaultJobPersistence(jobDatabase)
@@ -288,16 +293,16 @@ internal class BootloaderTest {
     Assertions.assertEquals(workspaces.size, 1)
     Assertions.assertEquals(workspaces[0].dataplaneGroupId, dataplaneGroupService.getDefaultDataplaneGroupForAirbyteEdition(airbyteEdition).id)
 
-    Assertions.assertEquals(VERSION_0330_ALPHA, jobsPersistence.version.get())
-    Assertions.assertEquals(Version(PROTOCOL_VERSION_001), jobsPersistence.airbyteProtocolVersionMin.get())
-    Assertions.assertEquals(Version(PROTOCOL_VERSION_124), jobsPersistence.airbyteProtocolVersionMax.get())
+    Assertions.assertEquals(VERSION_0330_ALPHA, jobsPersistence.getVersion().get())
+    Assertions.assertEquals(Version(PROTOCOL_VERSION_001), jobsPersistence.getAirbyteProtocolVersionMin().get())
+    Assertions.assertEquals(Version(PROTOCOL_VERSION_124), jobsPersistence.getAirbyteProtocolVersionMax().get())
 
-    Assertions.assertNotEquals(Optional.empty<Any>(), jobsPersistence.deployment)
+    Assertions.assertNotEquals(Optional.empty<Any>(), jobsPersistence.getDeployment())
 
     if (airbyteEdition != AirbyteEdition.CLOUD) {
       Assertions.assertEquals(
         DEFAULT_REALM,
-        organizationPersistence.getSsoConfigForOrganization(OrganizationPersistence.DEFAULT_ORGANIZATION_ID).get().keycloakRealm,
+        organizationPersistence.getSsoConfigForOrganization(DEFAULT_ORGANIZATION_ID).get().keycloakRealm,
       )
     }
   }
@@ -328,6 +333,7 @@ internal class BootloaderTest {
     val actorDefinitionService = ActorDefinitionServiceJooqImpl(configDatabase)
     val scopedConfigurationService: ScopedConfigurationService = mockk()
     val connectionTimelineService: ConnectionTimelineEventService = mockk()
+    val actorServicePaginationHelper: ActorServicePaginationHelper = mockk()
     val actorDefinitionVersionUpdater =
       ActorDefinitionVersionUpdater(
         featureFlagClient,
@@ -344,6 +350,7 @@ internal class BootloaderTest {
         connectionService,
         actorDefinitionVersionUpdater,
         metricClient,
+        actorServicePaginationHelper,
       )
     val destinationService =
       DestinationServiceJooqImpl(
@@ -352,6 +359,7 @@ internal class BootloaderTest {
         connectionService,
         actorDefinitionVersionUpdater,
         metricClient,
+        actorServicePaginationHelper,
       )
     val workspaceService =
       WorkspaceServiceJooqImpl(
@@ -367,7 +375,7 @@ internal class BootloaderTest {
       DatabaseCheckFactory.createConfigsDatabaseInitializer(
         configsDslContext,
         configsDatabaseInitializationTimeoutMs,
-        MoreResources.readResource(DatabaseConstants.CONFIGS_INITIAL_SCHEMA_PATH),
+        Resources.read(DatabaseConstants.CONFIGS_INITIAL_SCHEMA_PATH),
       )
     val configsDatabaseMigrator = ConfigsDatabaseMigrator(configDatabase, configsFlyway)
     val definitionsProvider: DefinitionsProvider = LocalDefinitionsProvider()
@@ -376,7 +384,7 @@ internal class BootloaderTest {
       DatabaseCheckFactory.createJobsDatabaseInitializer(
         jobsDslContext,
         jobsDatabaseInitializationTimeoutMs,
-        MoreResources.readResource(DatabaseConstants.JOBS_INITIAL_SCHEMA_PATH),
+        Resources.read(DatabaseConstants.JOBS_INITIAL_SCHEMA_PATH),
       )
     val jobsDatabaseMigrator = JobsDatabaseMigrator(jobDatabase, jobsFlyway)
     val jobsPersistence = DefaultJobPersistence(jobDatabase)
@@ -647,6 +655,7 @@ internal class BootloaderTest {
     val secretsRepositoryReader: SecretsRepositoryReader = mockk()
     val secretsRepositoryWriter: SecretsRepositoryWriter = mockk()
     val secretPersistenceConfigService: SecretPersistenceConfigService = mockk()
+    val actorServicePaginationHelper: ActorServicePaginationHelper = mockk()
     val workspaceService =
       WorkspaceServiceJooqImpl(
         configDatabase,
@@ -664,6 +673,7 @@ internal class BootloaderTest {
         connectionService,
         actorDefinitionVersionUpdater,
         metricClient,
+        actorServicePaginationHelper,
       )
     val destinationService =
       DestinationServiceJooqImpl(
@@ -672,13 +682,14 @@ internal class BootloaderTest {
         connectionService,
         actorDefinitionVersionUpdater,
         metricClient,
+        actorServicePaginationHelper,
       )
     val configsDatabaseInitializationTimeoutMs = TimeUnit.SECONDS.toMillis(60L)
     val configDatabaseInitializer =
       DatabaseCheckFactory.createConfigsDatabaseInitializer(
         configsDslContext,
         configsDatabaseInitializationTimeoutMs,
-        MoreResources.readResource(DatabaseConstants.CONFIGS_INITIAL_SCHEMA_PATH),
+        Resources.read(DatabaseConstants.CONFIGS_INITIAL_SCHEMA_PATH),
       )
     val configsDatabaseMigrator = ConfigsDatabaseMigrator(configDatabase, configsFlyway)
     val definitionsProvider: DefinitionsProvider = LocalDefinitionsProvider()
@@ -687,7 +698,7 @@ internal class BootloaderTest {
       DatabaseCheckFactory.createJobsDatabaseInitializer(
         jobsDslContext,
         jobsDatabaseInitializationTimeoutMs,
-        MoreResources.readResource(DatabaseConstants.JOBS_INITIAL_SCHEMA_PATH),
+        Resources.read(DatabaseConstants.JOBS_INITIAL_SCHEMA_PATH),
       )
     val jobsDatabaseMigrator = JobsDatabaseMigrator(jobDatabase, jobsFlyway)
     val jobsPersistence = DefaultJobPersistence(jobDatabase)
@@ -710,6 +721,7 @@ internal class BootloaderTest {
     val dataplaneInitializer: DataplaneInitializer = mockk(relaxUnitFun = true)
     val authKubeSecretInitializer: AuthKubernetesSecretInitializer = mockk(relaxed = true)
     val secretStorageInitializer: SecretStorageInitializer = mockk(relaxUnitFun = true)
+
     val bootloader =
       Bootloader(
         autoUpgradeConnectors = false,
@@ -736,7 +748,7 @@ internal class BootloaderTest {
     if (airbyteEdition != AirbyteEdition.CLOUD) {
       Assertions.assertEquals(
         DEFAULT_REALM,
-        organizationPersistence.getSsoConfigForOrganization(OrganizationPersistence.DEFAULT_ORGANIZATION_ID).get().keycloakRealm,
+        organizationPersistence.getSsoConfigForOrganization(DEFAULT_ORGANIZATION_ID).get().keycloakRealm,
       )
     }
   }
@@ -777,8 +789,8 @@ internal class BootloaderTest {
 
     // ⚠️ This line should change with every new migration to show that you meant to make a new
     // migration to the prod database
-    private val CURRENT_CONFIGS_MIGRATION = V1_6_0_016__AddDestinationCatalogToConnection::class.java
-    private val CURRENT_JOBS_MIGRATION = V1_1_0_002__AddJobsCoveringIndex::class.java
+    private val CURRENT_CONFIGS_MIGRATION = V1_6_0_024__CreateOrchestrationTaskTable::class.java
+    private val CURRENT_JOBS_MIGRATION = V1_1_0_004__AddRejectedRecordStats::class.java
 
     private fun getMigrationVersion(cls: Class<*>): String =
       cls.simpleName

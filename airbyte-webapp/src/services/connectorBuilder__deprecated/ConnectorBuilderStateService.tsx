@@ -21,7 +21,6 @@ import {
   DEFAULT_JSON_MANIFEST_VALUES,
   GeneratedBuilderStream,
   GeneratedDeclarativeStream,
-  isStreamDynamicStream,
   StreamId,
 } from "components/connectorBuilder__deprecated/types";
 import { useAutoImportSchema } from "components/connectorBuilder__deprecated/useAutoImportSchema";
@@ -30,7 +29,7 @@ import { useUpdateLockedInputs } from "components/connectorBuilder__deprecated/u
 import { getStreamHash, useStreamTestMetadata } from "components/connectorBuilder__deprecated/useStreamTestMetadata";
 import { UndoRedo, useUndoRedo } from "components/connectorBuilder__deprecated/useUndoRedo";
 import { useUpdateTestingValuesOnChange } from "components/connectorBuilder__deprecated/useUpdateTestingValuesOnChange";
-import { formatJson, streamNameOrDefault } from "components/connectorBuilder__deprecated/utils";
+import { formatJson, getStreamName, streamNameOrDefault } from "components/connectorBuilder__deprecated/utils";
 import { useNoUiValueModal } from "components/connectorBuilder__deprecated/YamlEditor/NoUiValueModal";
 
 import { useCurrentWorkspaceId } from "area/workspace/utils";
@@ -47,7 +46,6 @@ import {
   useBuilderResolvedManifest,
   useBuilderProjectFullResolveManifest,
   useBuilderResolvedManifestSuspense,
-  useCurrentWorkspace,
   usePublishBuilderProject,
   useReleaseNewBuilderProjectVersion,
   useUpdateBuilderProject,
@@ -72,7 +70,7 @@ import { Action, Namespace, useAnalyticsService } from "core/services/analytics"
 import { FeatureItem, useFeature } from "core/services/features";
 import { Blocker, useBlocker } from "core/services/navigation";
 import { removeEmptyProperties } from "core/utils/form";
-import { useIntent } from "core/utils/rbac";
+import { Intent, useGeneratedIntent } from "core/utils/rbac";
 import { useConfirmationModalService } from "hooks/services/ConfirmationModal";
 import { useExperiment } from "hooks/services/Experiment";
 import { useNotificationService } from "hooks/services/Notification";
@@ -205,8 +203,7 @@ export const ConnectorBuilderMainRHFContext = React.createContext<UseFormReturn<
 
 export const ConnectorBuilderFormStateProvider: React.FC<React.PropsWithChildren<unknown>> = ({ children }) => {
   const restrictAdminInForeignWorkspace = useFeature(FeatureItem.RestrictAdminInForeignWorkspace);
-  const { workspaceId } = useCurrentWorkspace();
-  const canUpdateConnector = useIntent("UpdateCustomConnector", { workspaceId });
+  const canUpdateConnector = useGeneratedIntent(Intent.CreateOrEditConnectorBuilder);
   const isForeignWorkspace = useIsForeignWorkspace();
 
   let permission: ConnectorBuilderPermission = "readOnly";
@@ -345,7 +342,7 @@ export const InternalConnectorBuilderFormStateProvider: React.FC<
   }
 
   const streamNames = useMemo(
-    () => resolvedManifest.streams?.map((stream) => stream?.name ?? "") ?? [],
+    () => resolvedManifest.streams?.map((stream, index) => getStreamName(stream, index)) ?? [],
     [resolvedManifest]
   );
 
@@ -728,7 +725,7 @@ function setInitialStreamHashes(persistedManifest: ConnectorManifest, resolvedMa
     throw new Error("Persisted manifest streams length doesn't match resolved streams length");
   }
   resolvedManifest.streams.forEach((resolvedStream, i) => {
-    const streamName = streamNameOrDefault(resolvedStream.name, i);
+    const streamName = getStreamName(resolvedStream, i);
     // @ts-expect-error TODO: connector builder team to fix this https://github.com/airbytehq/airbyte-internal-issues/issues/12252
     if (persistedManifest.metadata?.testedStreams?.[streamName]) {
       return;
@@ -850,9 +847,10 @@ export const ConnectorBuilderTestReadProvider: React.FC<React.PropsWithChildren<
     }
   }, [setValue, view]);
 
-  const streamIsDynamic = isStreamDynamicStream(testStreamId);
+  let streamName: string;
   let testStream: DeclarativeComponentSchemaStreamsItem | undefined;
-  if (streamIsDynamic) {
+  if (testStreamId.type === "dynamic_stream") {
+    streamName = resolvedManifest.dynamic_streams?.[testStreamId.index]?.name ?? "";
     const dynamicStream = resolvedManifest.dynamic_streams?.[testStreamId.index];
     if (dynamicStream?.components_resolver.type === "HttpComponentsResolver") {
       testStream = {
@@ -864,8 +862,10 @@ export const ConnectorBuilderTestReadProvider: React.FC<React.PropsWithChildren<
       };
     }
   } else if (testStreamId.type === "generated_stream") {
+    streamName = generatedStreams?.[testStreamId.dynamicStreamName]?.[testStreamId.index]?.name ?? "";
     testStream = generatedStreams?.[testStreamId.dynamicStreamName]?.[testStreamId.index].declarativeStream;
   } else {
+    streamName = getStreamName(resolvedManifest.streams?.[testStreamId.index], testStreamId.index);
     testStream = resolvedManifest.streams?.[testStreamId.index];
   }
 
@@ -874,7 +874,6 @@ export const ConnectorBuilderTestReadProvider: React.FC<React.PropsWithChildren<
     streams: [testStream],
     dynamic_streams: [],
   };
-  const streamName = testStream?.name ?? "";
 
   const DEFAULT_PAGE_LIMIT = 5;
   const DEFAULT_SLICE_LIMIT = 5;

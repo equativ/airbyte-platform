@@ -187,6 +187,8 @@ func EnvVarMap(vars []corev1.EnvVar) map[string]corev1.EnvVar {
 }
 
 type ExpectedEnvVar interface {
+	Name(name string) ExpectedEnvVar
+	GetName() string
 	RefName(name string) ExpectedEnvVar
 	GetRefName() string
 	RefKey(key string) ExpectedEnvVar
@@ -195,12 +197,27 @@ type ExpectedEnvVar interface {
 }
 
 type ExpectedVarFromConfigMap struct {
+	// environment variable name
+	name string
+	// value to expect in the configMap
+	value string
 	// value to expect for `valueFrom.configMapKeyRef.name`
 	refName string
 	// value to expect for `valueFrom.configMapKeyRef.key`
 	refKey string
-	// value to expect in the configMap
-	value string
+}
+
+func (e ExpectedVarFromConfigMap) Name(n string) ExpectedEnvVar {
+	e.name = n
+	return e
+}
+
+func (e ExpectedVarFromConfigMap) GetName() string {
+	if e.name != "" {
+		return e.name
+	}
+
+	return e.refKey
 }
 
 func (e ExpectedVarFromConfigMap) RefName(n string) ExpectedEnvVar {
@@ -218,7 +235,11 @@ func (e ExpectedVarFromConfigMap) RefKey(k string) ExpectedEnvVar {
 }
 
 func (e ExpectedVarFromConfigMap) GetRefKey() string {
-	return e.refKey
+	if e.refKey != "" {
+		return e.refKey
+	}
+
+	return e.name
 }
 
 func (e ExpectedVarFromConfigMap) Value(v string) ExpectedEnvVar {
@@ -231,12 +252,27 @@ func ExpectedConfigMapVar() *ExpectedVarFromConfigMap {
 }
 
 type ExpectedVarFromSecret struct {
+	// environment variable name
+	name string
+	// value to expect in the secret
+	value string
 	// value to expect for `valueFrom.secretKeyRef.name`
 	refName string
 	// value to expect for `valueFrom.secretKeyRef.key`
 	refKey string
-	// value to expect in the secret
-	value string
+}
+
+func (e ExpectedVarFromSecret) Name(n string) ExpectedEnvVar {
+	e.name = n
+	return e
+}
+
+func (e ExpectedVarFromSecret) GetName() string {
+	if e.name != "" {
+		return e.name
+	}
+
+	return e.refKey
 }
 
 func (e ExpectedVarFromSecret) RefName(n string) ExpectedEnvVar {
@@ -254,7 +290,10 @@ func (e ExpectedVarFromSecret) RefKey(k string) ExpectedEnvVar {
 }
 
 func (e ExpectedVarFromSecret) GetRefKey() string {
-	return e.refKey
+	if e.refKey != "" {
+		return e.refKey
+	}
+	return e.name
 }
 
 func (e ExpectedVarFromSecret) Value(v string) ExpectedEnvVar {
@@ -271,23 +310,23 @@ func VerifyEnvVar(t *testing.T, chartYaml string, expected ExpectedEnvVar, actua
 	case ExpectedVarFromConfigMap:
 		assert.NotNil(t, actual.ValueFrom, "env var '%s' has no 'valueFrom' set", expected.GetRefKey())
 		assert.NotNil(t, actual.ValueFrom.ConfigMapKeyRef, "env var '%s' has no 'configMapRefKey' set", expected.GetRefKey())
-		assert.Equal(t, expected.refName, actual.ValueFrom.ConfigMapKeyRef.Name)
-		assert.Equal(t, expected.refKey, actual.ValueFrom.ConfigMapKeyRef.Key)
+		assert.Equal(t, expected.GetRefName(), actual.ValueFrom.ConfigMapKeyRef.Name, "env var '%s' configMapRef name should '%s'", expected.GetName(), expected.GetRefName())
+		assert.Equal(t, expected.GetRefKey(), actual.ValueFrom.ConfigMapKeyRef.Key)
 
-		configMap := GetConfigMap(chartYaml, expected.refName)
+		configMap := GetConfigMap(chartYaml, expected.GetRefName())
 		if configMap != nil {
-			assert.Equal(t, expected.value, configMap.Data[expected.refKey])
+			assert.Equal(t, expected.value, configMap.Data[expected.GetRefKey()], "expected configMap value for '%s'", expected.GetRefKey())
 		}
 
 	case ExpectedVarFromSecret:
 		assert.NotNil(t, actual.ValueFrom, "env var '%s' has no 'valueFrom' set", expected.GetRefKey())
 		assert.NotNil(t, actual.ValueFrom.SecretKeyRef, "env var '%s' has no 'secretRefKey' set", expected.GetRefKey())
-		assert.Equal(t, expected.refName, actual.ValueFrom.SecretKeyRef.Name)
-		assert.Equal(t, expected.refKey, actual.ValueFrom.SecretKeyRef.Key)
+		assert.Equal(t, expected.GetRefName(), actual.ValueFrom.SecretKeyRef.Name, "env var '%s' secretRef name should be '%s'", expected.GetName(), expected.GetRefName())
+		assert.Equal(t, expected.GetRefKey(), actual.ValueFrom.SecretKeyRef.Key)
 
-		secret := GetSecret(chartYaml, expected.refName)
+		secret := GetSecret(chartYaml, expected.GetRefName())
 		if secret != nil {
-			assert.Equal(t, expected.value, secret.StringData[expected.refKey])
+			assert.Equal(t, expected.value, secret.StringData[expected.GetRefKey()], "expected secret value for '%s'", expected.GetRefKey())
 		}
 	}
 }

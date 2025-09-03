@@ -15,6 +15,7 @@ import { DefaultErrorBoundary } from "core/errors";
 import { useAnalyticsIdentifyUser, useAnalyticsRegisterValues } from "core/services/analytics";
 import { useAuthService } from "core/services/auth";
 import { FeatureItem, useFeature } from "core/services/features";
+import { Intent, useGeneratedIntent } from "core/utils/rbac";
 import { useIntent } from "core/utils/rbac/intent";
 import { useEnterpriseLicenseCheck } from "core/utils/useEnterpriseLicenseCheck";
 import { storeUtmFromQuery } from "core/utils/utmStorage";
@@ -28,6 +29,7 @@ import { LoginPage } from "pages/login/LoginPage";
 import MainView from "views/layout/MainView";
 
 import { EmbeddedSourceCreatePage } from "./embedded/EmbeddedSourceCreatePage/EmbeddedSourcePage";
+import { OnboardingPage } from "./OnboardingPage/OnboardingPage";
 import { OrganizationRoutes } from "./organization/OrganizationRoutes";
 import { RoutePaths, DestinationPaths, SourcePaths, SettingsRoutePaths } from "./routePaths";
 import { AccountPage } from "./SettingsPage/pages/AccountPage";
@@ -85,13 +87,13 @@ const WorkspacesRoutes: React.FC = () => {
   const workspace = useCurrentWorkspace();
   useAddAnalyticsContextForWorkspace(workspace);
 
-  const { organizationId, workspaceId } = workspace;
+  const { organizationId } = workspace;
   const multiWorkspaceUI = useFeature(FeatureItem.MultiWorkspaceUI);
   const { applicationSupport } = useAuthService();
   const licenseSettings = useFeature(FeatureItem.EnterpriseLicenseChecking);
   const isAccessManagementEnabled = useFeature(FeatureItem.RBAC);
   const displayOrganizationUsers = useFeature(FeatureItem.DisplayOrganizationUsers);
-  const canViewWorkspaceSettings = useIntent("ViewWorkspaceSettings", { workspaceId });
+  const canViewWorkspaceSettings = useGeneratedIntent(Intent.ViewWorkspaceSettings);
   const canViewOrganizationSettings = useIntent("ViewOrganizationSettings", { organizationId });
 
   return (
@@ -117,6 +119,7 @@ const WorkspacesRoutes: React.FC = () => {
           </Route>
         </Route>
         <Route path={`${RoutePaths.Connections}/*`} element={<ConnectionsRoutes />} />
+        <Route path="onboarding" element={<OnboardingPage />} />
         <Route path={`${RoutePaths.Settings}/*`} element={<SettingsPage />}>
           <Route path={SettingsRoutePaths.Account} element={<AccountPage />} />
           {applicationSupport !== "none" && (

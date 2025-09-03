@@ -63,6 +63,7 @@ spec:
           value: "-Xdebug -agentlib:jdwp=transport=dt_socket,address=0.0.0.0:{{ .Values.connectorBuilderServer.debug.remoteDebugPort }},server=y,suspend=n"
         {{- end}}
 
+        {{- include "airbyte.auth.jwt.envs" . | nindent 8 }}
         {{- include "airbyte.common.envs" . | nindent 8 }}
         {{- include "airbyte.connectorBuilder.envs" . | nindent 8 }}
         {{- include "airbyte.logging.envs" . | nindent 8 }}
@@ -71,7 +72,7 @@ spec:
         {{- include "airbyte.tracking.envs" . | nindent 8 }}
 
         {{- if .Values.global.datadog.enabled }}
-        - name: DD_SERVICE 
+        - name: DD_SERVICE
           value: {{ include "airbyte.componentNameWithAirbytePrefix" . }}
         {{- include "airbyte.datadog.envs" . | nindent 8 }}
         {{- include "airbyte.otel.envs" . | nindent 8 }}
@@ -79,6 +80,8 @@ spec:
 
         {{- if (eq .Values.global.edition "enterprise") }}
         {{- include "airbyte.enterprise.envs" . | nindent 8 }}
+        {{- include "airbyte.auth.identityProvider.envs" . | nindent 8 }}
+        {{- include "airbyte.keycloak.envs" . | nindent 8 }}
         {{- end }}
 
         {{- if (eq .Values.global.edition "cloud")  }}
@@ -139,7 +142,7 @@ spec:
           containerPort: 8080
           protocol: TCP
         {{- if .Values.connectorBuilderServer.debug.enabled }}
-        - name: debug 
+        - name: debug
           containerPort: {{ .Values.connectorBuilderServer.debug.remoteDebugPort }}
           protocol: TCP
         {{- end}}

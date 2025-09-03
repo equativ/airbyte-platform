@@ -5,6 +5,7 @@ import { ReactMarkdown } from "react-markdown/lib/react-markdown";
 
 import { LabelInfo } from "components/Label";
 import { Badge } from "components/ui/Badge";
+import { FlexContainer } from "components/ui/Flex";
 import { Tooltip } from "components/ui/Tooltip";
 
 import { ArrayOfObjectsControl } from "./ArrayOfObjectsControl";
@@ -15,7 +16,7 @@ import { OverrideByPath, BaseControlProps } from "./types";
 import { FormControl } from "../../FormControl";
 import { LinkComponentsToggle } from "../LinkComponentsToggle";
 import { useSchemaForm } from "../SchemaForm";
-import { AirbyteJsonSchema, displayName, nestPath, resolveTopLevelRef } from "../utils";
+import { AirbyteJsonSchema, displayName, resolveTopLevelRef } from "../utils";
 
 interface SchemaFormControlProps {
   /**
@@ -74,13 +75,11 @@ export const SchemaFormControl = ({
     getSchemaAtPath,
     registerRenderedPath,
     onlyShowErrorIfTouched,
-    nestedUnderPath,
     verifyArrayItems,
     isRequired: isPathRequired,
-    disableFormControls,
+    disableFormControlsUnderPath,
+    overrideByFieldSchema,
   } = useSchemaForm();
-
-  const targetPath = useMemo(() => nestPath(path, nestedUnderPath), [nestedUnderPath, path]);
 
   // Register this path synchronously during render
   if (!skipRenderedPathRegistration && path) {
@@ -94,14 +93,14 @@ export const SchemaFormControl = ({
       return !isRequired;
     }
 
-    if (!path || targetPath === nestedUnderPath) {
+    if (!path) {
       return false;
     }
 
     return !isPathRequired(path);
-  }, [isPathRequired, isRequired, nestedUnderPath, path, targetPath]);
+  }, [isPathRequired, isRequired, path]);
 
-  const value = useWatch({ name: targetPath });
+  const value = useWatch({ name: path });
 
   // ~ declarative_component_schema type $parameters handling ~
   if (path.includes("$parameters")) {
@@ -109,35 +108,65 @@ export const SchemaFormControl = ({
   }
 
   // Check if there's an override for this path
-  if (overrideByPath[path] !== undefined) {
-    return overrideByPath[path];
+  const matchingPathOverride = getMatchingOverrideForPath(overrideByPath, path);
+  if (matchingPathOverride !== undefined) {
+    return matchingPathOverride(path);
   }
 
   if (targetSchema.deprecated && value === undefined) {
     return null;
   }
 
+  const multiOptionSchemas = targetSchema.oneOf || targetSchema.anyOf;
+  const options = multiOptionSchemas
+    ? multiOptionSchemas
+        .map((optionSchema) => resolveTopLevelRef(rootSchema, optionSchema as AirbyteJsonSchema))
+        .filter((optionSchema) => !!optionSchema.title)
+        .map((optionSchema) => ({
+          title: optionSchema.title as string,
+          description: optionSchema.description,
+        }))
+    : undefined;
+
+  const label = titleOverride
+    ? titleOverride
+    : titleOverride === null
+    ? undefined
+    : displayName(path, targetSchema.title);
+
   const baseProps: BaseControlProps = {
-    name: targetPath,
-    label: titleOverride ? titleOverride : titleOverride === null ? undefined : displayName(path, targetSchema.title),
+    name: path,
+    label,
     labelTooltip:
       targetSchema.description || targetSchema.examples ? (
-        <LabelInfo description={targetSchema.description} examples={targetSchema.examples} />
+        <LabelInfo
+          label={label}
+          description={<ReactMarkdown className={styles.markdown}>{targetSchema.description ?? ""}</ReactMarkdown>}
+          examples={targetSchema.examples}
+          options={options}
+        />
       ) : undefined,
     optional: isOptional,
-    header: targetSchema.deprecated ? (
-      <DeprecatedBadge message={targetSchema.deprecation_message} />
-    ) : (
-      <LinkComponentsToggle path={path} fieldSchema={targetSchema} />
+    header: (
+      <FlexContainer alignItems="center">
+        {targetSchema.deprecated && <DeprecatedBadge message={targetSchema.deprecation_message} />}
+        <LinkComponentsToggle path={path} fieldSchema={targetSchema} />
+      </FlexContainer>
     ),
     containerControlClassName: className,
     onlyShowErrorIfTouched,
     placeholder,
     "data-field-path": path,
-    disabled: disableFormControls,
+    disabled: !!disableFormControlsUnderPath && path.startsWith(disableFormControlsUnderPath),
+    interpolationContext: targetSchema.interpolation_context,
   };
 
-  if (targetSchema.oneOf || targetSchema.anyOf) {
+  const matchingSchemaOverride = overrideByFieldSchema?.find((override) => override.shouldOverride(targetSchema));
+  if (matchingSchemaOverride) {
+    return matchingSchemaOverride.renderOverride(baseProps);
+  }
+
+  if (multiOptionSchemas) {
     return (
       <MultiOptionControl
         fieldSchema={targetSchema}
@@ -149,7 +178,7 @@ export const SchemaFormControl = ({
     );
   }
 
-  if (targetSchema.type === "object") {
+  if (targetSchema.type === "object" || targetSchema.properties) {
     return (
       <ObjectControl
         fieldSchema={targetSchema}
@@ -208,11 +237,25 @@ export const SchemaFormControl = ({
 const DeprecatedBadge = ({ message }: { message?: string }) => {
   return message ? (
     <Tooltip control={<Badge variant="grey">Deprecated</Badge>} placement="top">
-      <ReactMarkdown className={styles.deprecatedTooltip}>{message}</ReactMarkdown>
+      <ReactMarkdown className={styles.markdown}>{message}</ReactMarkdown>
     </Tooltip>
   ) : (
     <Badge variant="grey">
       <FormattedMessage id="form.deprecated" />
     </Badge>
   );
+};
+
+export const getMatchingOverrideForPath = (overrideByPath: OverrideByPath, path: string) => {
+  const matchingOverridePath = Object.keys(overrideByPath).find((overridePath) => {
+    // if overridePath contains a * then it is a wildcard that should match any character besides .
+    if (overridePath.includes("*")) {
+      const regex = new RegExp(`^${overridePath.replace("*", "[^.]+")}$`);
+      return regex.test(path);
+    }
+
+    return overridePath === path;
+  });
+
+  return matchingOverridePath ? overrideByPath[matchingOverridePath] : undefined;
 };

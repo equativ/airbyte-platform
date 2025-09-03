@@ -8,8 +8,8 @@ import io.airbyte.commons.license.ActiveAirbyteLicense
 import io.airbyte.commons.license.AirbyteLicense
 import io.airbyte.config.ActorType
 import io.airbyte.featureflag.AllowConfigTemplateEndpoints
-import io.airbyte.featureflag.AllowConfigWithSecretCoordinatesEndpoints
 import io.airbyte.featureflag.DestinationDefinition
+import io.airbyte.featureflag.LicenseAllowDestinationObjectStorageConfig
 import io.airbyte.featureflag.LicenseAllowEnterpriseConnector
 import io.airbyte.featureflag.Multi
 import io.airbyte.featureflag.Organization
@@ -54,9 +54,9 @@ class EntitlementProviderTest {
     }
 
     @Test
-    fun `test hasConfigWithSecretCoordinatesEntitlements`() {
+    fun `test hasDestinationObjectStorageEntitlement`() {
       val organizationId = UUID.randomUUID()
-      val res = entitlementProvider.hasConfigWithSecretCoordinatesEntitlements(organizationId)
+      val res = entitlementProvider.hasDestinationObjectStorageEntitlement(organizationId)
       assertFalse(res)
     }
   }
@@ -102,14 +102,11 @@ class EntitlementProviderTest {
       assertEquals(res, license.isEmbedded)
     }
 
-    @ParameterizedTest
-    @ValueSource(booleans = [true, false])
-    fun `test hasConfigWithSecretCoordinatesEntitlements returns value from the license`(isEmbedded: Boolean) {
+    @Test
+    fun `test hasDestinationObjectStorageEntitlement always returns true`() {
       val organizationId = UUID.randomUUID()
-
-      every { license.isEmbedded } returns isEmbedded
-      val res = entitlementProvider.hasConfigWithSecretCoordinatesEntitlements(organizationId)
-      assertEquals(res, license.isEmbedded)
+      val res = entitlementProvider.hasDestinationObjectStorageEntitlement(organizationId)
+      assertEquals(true, res)
     }
   }
 
@@ -150,15 +147,13 @@ class EntitlementProviderTest {
       assertEquals(res, isEntitled)
     }
 
-    // TODO: for cloud, this entitlement is always false for now
-    // https://github.com/airbytehq/airbyte-internal-issues/issues/12217
     @ParameterizedTest
-    @ValueSource(booleans = [false, false])
-    fun `test hasConfigWithSecretCoordinatesEntitlements returns value from feature flag`(isEntitled: Boolean) {
+    @ValueSource(booleans = [true, false])
+    fun `test hasDestinationObjectStorageEntitlement returns value from feature flag`(isEntitled: Boolean) {
       val organizationId = UUID.randomUUID()
-      every { featureFlagClient.boolVariation(AllowConfigWithSecretCoordinatesEndpoints, Organization(organizationId)) } returns isEntitled
+      every { featureFlagClient.boolVariation(LicenseAllowDestinationObjectStorageConfig, Organization(organizationId)) } returns isEntitled
 
-      val res = entitlementProvider.hasConfigWithSecretCoordinatesEntitlements(organizationId)
+      val res = entitlementProvider.hasDestinationObjectStorageEntitlement(organizationId)
       assertEquals(res, isEntitled)
     }
 

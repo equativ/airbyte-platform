@@ -1,12 +1,15 @@
-import React, { useMemo, useState } from "react";
+import { Listbox } from "@headlessui/react";
+import React, { useMemo } from "react";
 import { useFormContext } from "react-hook-form";
 import { FormattedMessage, useIntl } from "react-intl";
 
 import { SelectedIndicatorDot } from "components/connection/CreateConnection/SelectedIndicatorDot";
 import { Box } from "components/ui/Box";
-import { FlexContainer, FlexItem } from "components/ui/Flex";
-import { Icon } from "components/ui/Icon";
-import { ListBox } from "components/ui/ListBox";
+import { FlexContainer } from "components/ui/Flex";
+import { FloatLayout } from "components/ui/ListBox/FloatLayout";
+import { ListboxButton } from "components/ui/ListBox/ListboxButton";
+import { ListboxOption } from "components/ui/ListBox/ListboxOption";
+import { ListboxOptions } from "components/ui/ListBox/ListboxOptions";
 import { Text } from "components/ui/Text";
 
 import { PermissionType, ScopeType } from "core/api/types/AirbyteClient";
@@ -35,6 +38,7 @@ interface InviteUserRowProps {
   setSelectedRow: (value: string | null) => void;
   user?: UnifiedUserModel;
   scope: ScopeType;
+  onSelectPermission?: (permission: PermissionType) => void;
 }
 
 export const InviteUserRow: React.FC<InviteUserRowProps> = ({
@@ -45,14 +49,13 @@ export const InviteUserRow: React.FC<InviteUserRowProps> = ({
   setSelectedRow,
   user,
   scope,
+  onSelectPermission,
 }) => {
   const allowAllRBACRoles = useFeature(FeatureItem.AllowAllRBACRoles);
 
-  const [selectedPermissionType, setPermissionType] = useState<PermissionType>(
-    scope === ScopeType.workspace ? PermissionType.workspace_admin : PermissionType.organization_admin
-  );
+  const { setValue, watch } = useFormContext<AddUserFormValues>();
+  const selectedPermissionType = watch("permission");
 
-  const { setValue } = useFormContext<AddUserFormValues>();
   const { formatMessage } = useIntl();
   const { userId: currentUserId } = useCurrentUser();
   const isCurrentUser = user?.id === currentUserId;
@@ -61,13 +64,12 @@ export const InviteUserRow: React.FC<InviteUserRowProps> = ({
 
   const onSelectRow = () => {
     setSelectedRow(id);
-    setValue("permission", selectedPermissionType, { shouldValidate: true });
     setValue("email", email, { shouldValidate: true });
   };
 
-  const onSelectPermission = (selectedValue: PermissionType) => {
-    setPermissionType(selectedValue);
+  const handlePermissionChange = (selectedValue: PermissionType) => {
     setValue("permission", selectedValue, { shouldValidate: true });
+    onSelectPermission?.(selectedValue);
   };
 
   const shouldDisableRow = useMemo(() => {
@@ -147,40 +149,41 @@ export const InviteUserRow: React.FC<InviteUserRowProps> = ({
           </FlexContainer>
           <FlexContainer alignItems="center">
             {allowAllRBACRoles && selectedRow === id && (
-              <ListBox<PermissionType>
-                buttonClassName={styles.inviteUserRow__listBoxButton}
-                selectedValue={selectedPermissionType}
-                controlButton={() => (
-                  <Box py="sm" px="xs">
-                    <FlexContainer direction="row" alignItems="center" gap="xs">
-                      <Text size="md" color="grey" as="span">
-                        <FormattedMessage
-                          id="userInvitations.create.modal.asRole"
-                          values={{ role: <UserRoleText highestPermissionType={selectedPermissionTypeString} /> }}
-                        />
-                      </Text>
-                      <FlexItem>
-                        <Icon type="chevronDown" color="disabled" size="sm" />
-                      </FlexItem>
-                    </FlexContainer>
-                  </Box>
-                )}
-                options={permissionsByResourceType[`${scope}`].map((optionPermissionType) => {
-                  return {
-                    label: (
-                      <ChangeRoleMenuItemContent
-                        permissionType={optionPermissionType}
-                        roleIsInvalid={
+              <Listbox value={selectedPermissionType} onChange={handlePermissionChange}>
+                <FloatLayout strategy="fixed">
+                  <ListboxButton className={styles.inviteUserRow__listBoxButton}>
+                    <Box py="sm" px="xs">
+                      <FlexContainer direction="row" alignItems="center" gap="xs">
+                        <Text size="md" color="grey" as="span">
+                          <FormattedMessage
+                            id="userInvitations.create.modal.asRole"
+                            values={{ role: <UserRoleText highestPermissionType={selectedPermissionTypeString} /> }}
+                          />
+                        </Text>
+                      </FlexContainer>
+                    </Box>
+                  </ListboxButton>
+                  <ListboxOptions>
+                    {permissionsByResourceType[`${scope}`].map((optionPermissionType) => (
+                      <ListboxOption
+                        key={optionPermissionType}
+                        value={optionPermissionType}
+                        disabled={
                           !!user ? disallowedRoles(user, scope, isCurrentUser).includes(optionPermissionType) : false
                         }
-                        roleIsActive={optionPermissionType === selectedPermissionType}
-                      />
-                    ),
-                    value: optionPermissionType,
-                  };
-                })}
-                onSelect={onSelectPermission}
-              />
+                      >
+                        <ChangeRoleMenuItemContent
+                          permissionType={optionPermissionType}
+                          roleIsInvalid={
+                            !!user ? disallowedRoles(user, scope, isCurrentUser).includes(optionPermissionType) : false
+                          }
+                          roleIsActive={optionPermissionType === selectedPermissionType}
+                        />
+                      </ListboxOption>
+                    ))}
+                  </ListboxOptions>
+                </FloatLayout>
+              </Listbox>
             )}
             <div className={styles.inviteUserRow__dot}>
               <SelectedIndicatorDot selected={selectedRow === id} />

@@ -16,10 +16,11 @@ import { Text } from "components/ui/Text";
 
 import { HttpError, useCustomComponentsEnabled } from "core/api";
 import { Action, Namespace, useAnalyticsService } from "core/services/analytics";
+import { useConnectorBuilderResolve } from "core/services/connectorBuilder/ConnectorBuilderResolveContext";
+import { useIsCloudApp } from "core/utils/app";
 import { links } from "core/utils/links";
 import { useLocalStorage } from "core/utils/useLocalStorage";
 import {
-  useConnectorBuilderFormState,
   useConnectorBuilderTestRead,
   useSelectedPageAndSlice,
 } from "services/connectorBuilder/ConnectorBuilderStateService";
@@ -31,6 +32,7 @@ import { StreamTestButton } from "./StreamTestButton";
 import styles from "./StreamTester.module.scss";
 import { isStreamDynamicStream } from "../types";
 import { useBuilderWatch } from "../useBuilderWatch";
+import { useStreamName } from "../useStreamNames";
 import { useStreamTestMetadata } from "../useStreamTestMetadata";
 
 export const StreamTester: React.FC<{
@@ -38,9 +40,8 @@ export const StreamTester: React.FC<{
   setTestingValuesInputOpen: (open: boolean) => void;
 }> = ({ hasTestingValuesErrors, setTestingValuesInputOpen }) => {
   const { formatMessage } = useIntl();
-  const { streamNames, dynamicStreamNames, isResolving, resolveErrorMessage, resolveError } =
-    useConnectorBuilderFormState();
-  const generatedStreams = useBuilderWatch("formValues.generatedStreams");
+  const isCloudApp = useIsCloudApp();
+  const generatedStreams = useBuilderWatch("generatedStreams");
   const {
     streamRead: {
       data: streamReadData,
@@ -58,17 +59,14 @@ export const StreamTester: React.FC<{
     cancelStreamRead,
     testStreamRequestType,
   } = useConnectorBuilderTestRead();
+  const { resolveError, isResolving, resolveErrorMessage } = useConnectorBuilderResolve();
   const [showLimitWarning, setShowLimitWarning] = useLocalStorage("connectorBuilderLimitWarning", true);
   const testStreamId = useBuilderWatch("testStreamId");
   const { selectedSlice } = useSelectedPageAndSlice();
   const globalAuxiliaryRequests = streamReadData?.auxiliary_requests;
 
   const streamIsDynamic = isStreamDynamicStream(testStreamId);
-  const streamName = streamIsDynamic
-    ? dynamicStreamNames[testStreamId.index]
-    : testStreamId.type === "generated_stream"
-    ? generatedStreams?.[testStreamId.dynamicStreamName]?.[testStreamId.index]?.name
-    : streamNames[testStreamId.index];
+  const streamName = useStreamName(testStreamId) ?? "";
 
   const analyticsService = useAnalyticsService();
 
@@ -207,7 +205,7 @@ export const StreamTester: React.FC<{
 
   return (
     <div className={styles.container}>
-      {streamName === undefined && isResolving && (
+      {!streamName && isResolving && (
         <Text size="lg" align="center">
           <FormattedMessage id="connectorBuilder.loadingStreamList" />
         </Text>
@@ -255,9 +253,30 @@ export const StreamTester: React.FC<{
             <FormattedMessage id="connectorBuilder.couldNotValidateConnectorSpec" />
           </Text>
           <Text bold>{resolveErrorMessage}</Text>
+          {resolveError?.status === 403 && !isCloudApp && (
+            <Message
+              type="warning"
+              text={
+                <Text>
+                  <FormattedMessage
+                    id="connectorBuilder.fixIngress"
+                    values={{
+                      a: (node: React.ReactNode) => (
+                        <a href={links.fixIngress1_7} target="_blank" rel="noreferrer">
+                          {node}
+                        </a>
+                      ),
+                    }}
+                  />
+                </Text>
+              }
+            />
+          )}
           {errorExceptionStack && (
             <Collapsible label={formatMessage({ id: "connectorBuilder.tracebackLabel" })} className={styles.traceback}>
-              <Pre longLines>{errorExceptionStack}</Pre>
+              <Pre longLines>
+                {isString(errorExceptionStack) ? errorExceptionStack : JSON.stringify(errorExceptionStack, null, 2)}
+              </Pre>
             </Collapsible>
           )}
           <Text>

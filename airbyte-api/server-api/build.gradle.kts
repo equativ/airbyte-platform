@@ -41,6 +41,8 @@ dependencies {
   implementation(libs.jackson.datatype)
   implementation(libs.jackson.databind)
   implementation(libs.micronaut.security.oauth2)
+  implementation(libs.micronaut.security)
+  implementation(libs.micronaut.security.jwt)
   implementation(libs.openapi.jackson.databind.nullable)
   implementation(libs.reactor.core)
   implementation(libs.slf4j.api)
@@ -56,6 +58,7 @@ dependencies {
   testImplementation(libs.assertj.core)
   testImplementation(libs.junit.pioneer)
   testImplementation(libs.mockk)
+  testImplementation(libs.mockwebserver)
   testImplementation(libs.kotlin.test.runner.junit5)
 }
 
@@ -71,7 +74,7 @@ val genApiServer =
     generatorName = "jaxrs-spec"
     inputSpec = specFile
     outputDir = serverOutputDir
-    templateDir = "$projectDir/src/main/resources/templates/jaxrs-spec"
+    templateDir.set("$projectDir/src/main/resources/templates/jaxrs-spec")
 
     apiPackage = "io.airbyte.api.generated"
     invokerPackage = "io.airbyte.api.invoker.generated"
@@ -133,7 +136,7 @@ val genApiServer2 =
     generatorName = "kotlin-server"
     inputSpec = specFile
     outputDir = serverOutputDir
-    templateDir = "$projectDir/src/main/resources/templates/kotlin-server"
+    templateDir.set("$projectDir/src/main/resources/templates/kotlin-server")
 
     packageName = "io.airbyte.api.server.generated"
 

@@ -11,13 +11,16 @@ import io.airbyte.commons.server.handlers.AttemptHandler
 import io.airbyte.commons.server.handlers.DestinationHandler
 import io.airbyte.commons.server.handlers.JobHistoryHandler
 import io.airbyte.commons.server.handlers.SourceHandler
+import io.airbyte.config.ActorDefinitionVersion
 import io.airbyte.config.Attempt
 import io.airbyte.config.AttemptFailureSummary
 import io.airbyte.config.AttemptStatus
 import io.airbyte.config.DestinationConnection
 import io.airbyte.config.FailureReason
 import io.airbyte.config.Job
+import io.airbyte.config.JobConfig
 import io.airbyte.config.JobConfig.ConfigType
+import io.airbyte.config.JobStatus
 import io.airbyte.config.SourceConnection
 import io.airbyte.config.StandardDestinationDefinition
 import io.airbyte.config.StandardSourceDefinition
@@ -80,7 +83,7 @@ class JobExplanationHandlerTest {
 
   @Test
   fun `getJobExplanation should return LLM response`() {
-    val job = Job(1, ConfigType.SYNC, connectionId.toString(), null, null, null, null, 13, 37, true)
+    val job = Job(1, ConfigType.SYNC, connectionId.toString(), JobConfig(), listOf(), JobStatus.PENDING, null, 13, 37, true)
 
     val connection =
       StandardSync().also {
@@ -150,8 +153,10 @@ class JobExplanationHandlerTest {
     every { destinationService.getStandardDestinationDefinition(destinationDefinitionId) } returns destinationDef
     every { jobHistoryHandler.getJobInfoWithoutLogs(jobId) } returns jobInfo
     every { attemptHandler.getAttemptForJob(jobId, 0) } returns attempt
-    every { sourceHandler.getSpecFromSourceDefinitionIdForWorkspace(sourceDefinitionId, workspaceId) } returns connectorSpecification
-    every { destinationHandler.getSpecForDestinationId(destinationDefinitionId, workspaceId, destinationId) } returns connectorSpecification
+    every { sourceHandler.getSourceVersionForWorkspaceId(sourceDefinitionId, workspaceId) } returns
+      ActorDefinitionVersion().withSpec(connectorSpecification)
+    every { destinationHandler.getDestinationVersionForDestinationId(destinationDefinitionId, workspaceId, destinationId) } returns
+      ActorDefinitionVersion().withSpec(connectorSpecification)
     every { secretsProcessor.prepareSecretsForOutput(any(), any()) } answers { firstArg() }
     every { openAIService.getChatResponse(any(), any(), any()) } returns "This is a mocked LLM response"
 

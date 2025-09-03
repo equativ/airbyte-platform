@@ -6,7 +6,6 @@ package io.airbyte.server.apis.controllers
 
 import io.airbyte.api.generated.JobsApi
 import io.airbyte.api.model.generated.BooleanRead
-import io.airbyte.api.model.generated.CheckInput
 import io.airbyte.api.model.generated.ConnectionIdRequestBody
 import io.airbyte.api.model.generated.ConnectionJobRequestBody
 import io.airbyte.api.model.generated.DeleteStreamResetRecordsForJobRequest
@@ -29,9 +28,9 @@ import io.airbyte.api.model.generated.PersistCancelJobRequestBody
 import io.airbyte.api.model.generated.ReportJobStartRequest
 import io.airbyte.api.model.generated.SyncInput
 import io.airbyte.api.problems.throwable.generated.ApiNotImplementedInOssProblem
-import io.airbyte.commons.auth.AuthRoleConstants
 import io.airbyte.commons.auth.generated.Intent
 import io.airbyte.commons.auth.permissions.RequiresIntent
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.json.Jsons
 import io.airbyte.commons.server.handlers.JobHistoryHandler
 import io.airbyte.commons.server.handlers.JobInputHandler
@@ -39,7 +38,10 @@ import io.airbyte.commons.server.handlers.JobsHandler
 import io.airbyte.commons.server.handlers.SchedulerHandler
 import io.airbyte.commons.server.scheduling.AirbyteTaskExecutors
 import io.airbyte.commons.temporal.StreamResetRecordsHelper
+import io.airbyte.metrics.lib.ApmTraceUtils
+import io.airbyte.metrics.lib.MetricTags
 import io.airbyte.server.apis.execute
+import io.airbyte.server.services.JobObservabilityService
 import io.micronaut.context.annotation.Context
 import io.micronaut.http.annotation.Body
 import io.micronaut.http.annotation.Controller
@@ -59,6 +61,7 @@ open class JobsApiController(
   private val jobInputHandler: JobInputHandler,
   private val jobsHandler: JobsHandler,
   private val streamResetRecordsHelper: StreamResetRecordsHelper,
+  private val jobObservabilityService: JobObservabilityService,
 ) : JobsApi {
   @Post("/cancel")
   @ExecuteOn(AirbyteTaskExecutors.SCHEDULER)
@@ -86,12 +89,33 @@ open class JobsApiController(
     }
   }
 
-  @Post("/get_check_input")
-  @Secured(AuthRoleConstants.WORKSPACE_READER, AuthRoleConstants.ORGANIZATION_READER)
+  @Post("/evaluate_outlier")
+  @Secured(AuthRoleConstants.ADMIN)
   @ExecuteOn(AirbyteTaskExecutors.IO)
-  override fun getCheckInput(
-    @Body checkInput: CheckInput?,
-  ): Any? = execute { jobInputHandler.getCheckJobInput(checkInput) }
+  override fun evaluateOutlier(jobIdRequestBody: JobIdRequestBody): InternalOperationResult? =
+    execute {
+      try {
+        jobObservabilityService.evaluateOutlier(jobId = jobIdRequestBody.id)
+        InternalOperationResult().succeeded(true)
+      } catch (t: Throwable) {
+        ApmTraceUtils.addTagsToTrace(mapOf(MetricTags.JOB_ID to jobIdRequestBody.id))
+        throw t
+      }
+    }
+
+  @Post("/finalize")
+  @Secured(AuthRoleConstants.ADMIN)
+  @ExecuteOn(AirbyteTaskExecutors.IO)
+  override fun finalizeJob(jobIdRequestBody: JobIdRequestBody): InternalOperationResult? =
+    execute {
+      try {
+        jobObservabilityService.finalizeStats(jobId = jobIdRequestBody.id)
+        InternalOperationResult().succeeded(true)
+      } catch (t: Throwable) {
+        ApmTraceUtils.addTagsToTrace(mapOf(MetricTags.JOB_ID to jobIdRequestBody.id))
+        throw t
+      }
+    }
 
   @Post("/get_debug_info")
   @Secured(AuthRoleConstants.WORKSPACE_READER, AuthRoleConstants.ORGANIZATION_READER)
@@ -118,7 +142,7 @@ open class JobsApiController(
   @Secured(AuthRoleConstants.WORKSPACE_READER, AuthRoleConstants.ORGANIZATION_READER, AuthRoleConstants.DATAPLANE)
   @ExecuteOn(AirbyteTaskExecutors.IO)
   override fun getJobInput(
-    @Body syncInput: SyncInput?,
+    @Body syncInput: SyncInput,
   ): Any? = execute { jobInputHandler.getJobInput(syncInput) }
 
   @Post("/get_light")

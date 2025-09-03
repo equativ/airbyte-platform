@@ -1,52 +1,75 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { useSearchParams } from "react-router-dom";
 
 import { CloudInviteUsersHint } from "components/CloudInviteUsersHint";
+import LoadingPage from "components/LoadingPage";
 import { PageContainer } from "components/PageContainer";
 import { Box } from "components/ui/Box";
 import { Card } from "components/ui/Card";
 import { FlexContainer } from "components/ui/Flex";
 import { Heading } from "components/ui/Heading";
+import { LoadingSkeleton } from "components/ui/LoadingSkeleton";
+import { SearchInput } from "components/ui/SearchInput";
+import { Text } from "components/ui/Text";
 
-import { useSourceDefinitionList, useSourceList } from "core/api";
+import { useSourceList } from "core/api";
+import { SourceRead, SourceReadList } from "core/api/types/AirbyteClient";
 import { PageTrackingCodes, useTrackPage } from "core/services/analytics";
 
 import { CreateNewSource, SOURCE_DEFINITION_PARAM } from "./CreateNewSource";
 import { RadioButtonTiles } from "./RadioButtonTiles";
 import { SelectExistingConnector } from "./SelectExistingConnector";
 
-export type SourceType = "existing" | "new";
-
 export const EXISTING_SOURCE_TYPE = "existing";
 export const NEW_SOURCE_TYPE = "new";
+const VALID_VIEWS = [EXISTING_SOURCE_TYPE, NEW_SOURCE_TYPE] as const;
+export type View = (typeof VALID_VIEWS)[number];
 export const SOURCE_TYPE_PARAM = "sourceType";
 export const SOURCE_ID_PARAM = "sourceId";
 
+const PAGE_SIZE = 10;
+
 export const DefineSource: React.FC = () => {
-  useTrackPage(PageTrackingCodes.CONNECTIONS_NEW_DEFINE_SOURCE);
-  const { formatMessage } = useIntl();
-  const { sources } = useSourceList();
-  const { sourceDefinitionMap } = useSourceDefinitionList();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
+  const searchParam = searchParams.get(SOURCE_TYPE_PARAM) as View;
+  const viewFromSearchParam = VALID_VIEWS.includes(searchParam) ? searchParam : null;
+  // This query is used to check if there are any existing sources so we can render the correct initial view. It also
+  // serves to warm the cache for the query inside DefineSourceView, which will be mutated as the user searches and paginates.
+  const existingSourcesQuery = useSourceList({ pageSize: PAGE_SIZE, filters: { searchTerm: "" } });
 
-  if (!searchParams.get(SOURCE_TYPE_PARAM)) {
-    if (sources.length === 0) {
-      searchParams.set(SOURCE_TYPE_PARAM, NEW_SOURCE_TYPE);
-      setSearchParams(searchParams);
-    } else {
-      searchParams.set(SOURCE_TYPE_PARAM, EXISTING_SOURCE_TYPE);
-      setSearchParams(searchParams);
-    }
+  const pages = existingSourcesQuery.data?.pages;
+  const hasExistingSources = pages?.[0]?.sources.length !== 0;
+
+  const initialView = viewFromSearchParam === "new" ? "new" : hasExistingSources ? "existing" : "new";
+
+  if (existingSourcesQuery.isLoading) {
+    return <LoadingPage />;
   }
-  const selectedSourceType = useMemo(() => {
-    return searchParams.get(SOURCE_TYPE_PARAM) as SourceType;
-  }, [searchParams]);
 
-  const selectSourceType = (sourceType: SourceType) => {
+  return <DefineSourceView initialView={initialView} />;
+};
+
+const DefineSourceView: React.FC<{ initialView: "new" | "existing" }> = ({ initialView }) => {
+  useTrackPage(PageTrackingCodes.CONNECTIONS_NEW_DEFINE_SOURCE);
+  const [selectedView, setSelectedView] = useState<View>(initialView);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { formatMessage } = useIntl();
+  const [searchTerm, setSearchTerm] = useState("");
+  const existingSourcesQuery = useSourceList({ pageSize: PAGE_SIZE, filters: { searchTerm } });
+
+  const infiniteSources = useMemo<SourceReadList>(
+    () => ({
+      sources: existingSourcesQuery.data?.pages?.flatMap<SourceRead>((page) => page.sources) ?? [],
+    }),
+    [existingSourcesQuery.data]
+  );
+
+  const selectSourceType = (sourceType: View) => {
     searchParams.delete(SOURCE_DEFINITION_PARAM);
     searchParams.set(SOURCE_TYPE_PARAM, sourceType);
     setSearchParams(searchParams);
+    setSelectedView(sourceType);
   };
 
   const selectSource = (sourceId: string) => {
@@ -55,14 +78,7 @@ export const DefineSource: React.FC = () => {
     setSearchParams(searchParams);
   };
 
-  const sortedSources = useMemo(() => {
-    return sources
-      .map((source) => ({
-        ...source,
-        sourceDefinitionName: sourceDefinitionMap.get(source.sourceDefinitionId)?.name ?? "",
-      }))
-      .sort((a, b) => a.sourceDefinitionName.localeCompare(b.sourceDefinitionName) || a.name.localeCompare(b.name));
-  }, [sources, sourceDefinitionMap]);
+  const hasExistingSources = existingSourcesQuery.isSuccess && infiniteSources.sources.length !== 0;
 
   return (
     <Box p="xl">
@@ -81,7 +97,7 @@ export const DefineSource: React.FC = () => {
                       value: EXISTING_SOURCE_TYPE,
                       label: formatMessage({ id: "connectionForm.sourceExisting" }),
                       description: formatMessage({ id: "connectionForm.sourceExistingDescription" }),
-                      disabled: sources.length === 0,
+                      disabled: !hasExistingSources && searchTerm.length === 0,
                     },
                     {
                       value: NEW_SOURCE_TYPE,
@@ -89,19 +105,50 @@ export const DefineSource: React.FC = () => {
                       description: formatMessage({ id: "onboarding.sourceSetUp.description" }),
                     },
                   ]}
-                  selectedValue={selectedSourceType}
+                  selectedValue={selectedView}
                   onSelectRadioButton={(id) => selectSourceType(id)}
                 />
               </Box>
             </Card>
           </PageContainer>
         )}
-        {selectedSourceType === EXISTING_SOURCE_TYPE && (
+        {selectedView === "existing" && (
           <PageContainer centered>
-            <SelectExistingConnector connectors={sortedSources} selectConnector={selectSource} />
+            <Box mb="md">
+              <SearchInput value={searchTerm} onChange={setSearchTerm} debounceTimeout={300} />
+            </Box>
+            {!existingSourcesQuery.isLoading && infiniteSources.sources.length > 0 && (
+              <SelectExistingConnector
+                connectors={infiniteSources.sources}
+                selectConnector={selectSource}
+                hasNextPage={!!existingSourcesQuery.hasNextPage}
+                fetchNextPage={() => existingSourcesQuery.fetchNextPage()}
+                isFetchingNextPage={existingSourcesQuery.isFetchingNextPage}
+              />
+            )}
+            {existingSourcesQuery.isLoading && (
+              <Card>
+                <FlexContainer direction="column" gap="lg">
+                  <LoadingSkeleton />
+                  <LoadingSkeleton />
+                  <LoadingSkeleton />
+                  <LoadingSkeleton />
+                  <LoadingSkeleton />
+                </FlexContainer>
+              </Card>
+            )}
+            {!existingSourcesQuery.isLoading && searchTerm.length > 0 && infiniteSources.sources.length === 0 && (
+              <Box mt="xl">
+                <FlexContainer justifyContent="center" gap="md">
+                  <Text>
+                    <FormattedMessage id="tables.sources.filters.empty" />
+                  </Text>
+                </FlexContainer>
+              </Box>
+            )}
           </PageContainer>
         )}
-        {selectedSourceType === NEW_SOURCE_TYPE && <CreateNewSource />}
+        {selectedView === "new" && <CreateNewSource />}
         <CloudInviteUsersHint connectorType="source" />
       </FlexContainer>
     </Box>

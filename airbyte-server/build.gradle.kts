@@ -19,7 +19,7 @@ dependencies {
   implementation(libs.bundles.micronaut.cache)
   implementation(libs.bundles.micronaut.data.jdbc)
   implementation(libs.bundles.micronaut.metrics)
-  implementation(libs.micronaut.jaxrs.server)
+  implementation(libs.bundles.micronaut.jaxrs)
   implementation(libs.micronaut.http)
   implementation(libs.jakarta.ws.rs.api)
   implementation(libs.micronaut.security)
@@ -38,6 +38,7 @@ dependencies {
   implementation(libs.cron.utils)
   implementation(libs.jakarta.ws.rs.api)
   implementation(libs.jakarta.validation.api)
+  implementation(libs.kotlin.logging)
   implementation(libs.kubernetes.client)
 
   implementation(project(":oss:airbyte-analytics"))
@@ -65,6 +66,7 @@ dependencies {
   implementation(project(":oss:airbyte-config:config-persistence"))
   implementation(project(":oss:airbyte-config:config-secrets"))
   implementation(project(":oss:airbyte-config:specs"))
+  implementation(project(":oss:airbyte-statistics"))
   implementation(project(":oss:airbyte-worker-models"))
 
   // TODO airybte-server should not depend directly on airbyte-data. All data access should go
@@ -131,13 +133,21 @@ val copyWebapp =
   tasks.register<Copy>("copyWebapp") {
     from("${project(":oss:airbyte-webapp").layout.buildDirectory.get()}/app")
     into("${project.layout.projectDirectory}/src/main/resources/webapp")
+
+    doFirst {
+      val src = "${project(":oss:airbyte-webapp").layout.buildDirectory.get()}/app"
+      if (!file(src).exists()) {
+        throw GradleException("source file $src does not exist")
+      }
+    }
+
     dependsOn(
-      project(":oss:airbyte-webapp").tasks.named("build"),
+      project(":oss:airbyte-webapp").tasks.named("pnpmBuild"),
       "spotlessStyling",
     )
   }
 
-tasks.named("dockerBuildImage") {
+tasks.named("assemble") {
   dependsOn(copyWebapp)
 }
 

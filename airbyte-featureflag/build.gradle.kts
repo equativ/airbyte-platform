@@ -11,10 +11,11 @@ dependencies {
   implementation(libs.micronaut.inject)
   implementation(libs.launchdarkly)
   implementation(libs.jackson.databind)
-  implementation(libs.jackson.dataformat)
+  implementation(libs.jackson.dataformat.yml)
   implementation(libs.jackson.kotlin)
   implementation(libs.okhttp)
   implementation(project(":oss:airbyte-commons"))
+  implementation(libs.kotlin.logging)
 
   kspTest(platform(libs.micronaut.platform))
   kspTest(libs.bundles.micronaut.test.annotation.processor)

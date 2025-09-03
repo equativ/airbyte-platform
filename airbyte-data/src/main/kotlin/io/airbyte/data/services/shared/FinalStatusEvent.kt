@@ -6,6 +6,7 @@ package io.airbyte.data.services.shared
 
 import com.fasterxml.jackson.annotation.JsonInclude
 import io.airbyte.config.JobConfig
+import io.airbyte.domain.models.RejectedRecordsMetadata
 import io.airbyte.protocol.models.v0.StreamDescriptor
 import io.micronaut.data.annotation.TypeDef
 import io.micronaut.data.model.DataType
@@ -17,10 +18,12 @@ open class FinalStatusEvent(
   private val endTimeEpochSeconds: Long,
   private val bytesLoaded: Long,
   private val recordsLoaded: Long,
+  private val recordsRejected: Long? = null,
   private val attemptsCount: Int,
   private val jobType: String,
   private val statusType: String,
   private val streams: List<StreamDescriptor>? = null,
+  private val rejectedRecordsMeta: RejectedRecordsMetadata? = null,
 ) : ConnectionEvent {
   fun getJobId(): Long = jobId
 
@@ -33,6 +36,10 @@ open class FinalStatusEvent(
   fun getRecordsLoaded(): Long = recordsLoaded
 
   fun getAttemptsCount(): Int = attemptsCount
+
+  fun getRecordsRejected(): Long? = recordsRejected
+
+  fun getRejectedRecordsMeta(): RejectedRecordsMetadata? = rejectedRecordsMeta
 
   fun getStreams(): List<StreamDescriptor>? = streams
 

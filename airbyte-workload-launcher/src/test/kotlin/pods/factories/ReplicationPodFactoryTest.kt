@@ -7,7 +7,6 @@ package pods.factories
 import io.airbyte.commons.storage.STORAGE_CLAIM_NAME
 import io.airbyte.commons.storage.STORAGE_MOUNT
 import io.airbyte.commons.storage.STORAGE_VOLUME_NAME
-import io.airbyte.featureflag.PlaneName
 import io.airbyte.featureflag.TestClient
 import io.airbyte.workload.launcher.context.WorkloadSecurityContextProvider
 import io.airbyte.workload.launcher.pods.KubeContainerInfo
@@ -122,7 +121,7 @@ class ReplicationPodFactoryTest {
       )
     val nodeSelectionFactory: NodeSelectionFactory =
       mockk {
-        every { createReplicationNodeSelection(any(), any()) } returns expectedNodeSelection
+        every { createNodeSelection(any(), any()) } returns expectedNodeSelection
       }
     val fac =
       Fixtures.defaultReplicationPodFactory.copy(
@@ -199,7 +198,6 @@ class ReplicationPodFactoryTest {
       NodeSelectionFactory(
         featureFlagClient = featureFlagClient,
         tolerations = defaultTolerations,
-        infraFlagContexts = listOf(PlaneName("test")),
         spotToleration = spotToleration,
       )
 

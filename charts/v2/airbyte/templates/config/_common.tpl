@@ -6,6 +6,17 @@
 */}}
 
 {{/*
+Renders the common secret name
+*/}}
+{{- define "airbyte.common.secretName" }}
+{{- if .Values.global.secretName }}
+    {{- .Values.global.secretName }}
+{{- else }}
+    {{- .Values.global.secretName | default (printf "%s-airbyte-secrets" .Release.Name) }}
+{{- end }}
+{{- end }}
+
+{{/*
 Renders the global.edition value
 */}}
 {{- define "airbyte.common.edition" }}
@@ -111,24 +122,6 @@ Renders the common.api.host environment variable
     configMapKeyRef:
       name: {{ .Release.Name }}-airbyte-env
       key: AIRBYTE_API_HOST
-{{- end }}
-
-{{/*
-Renders the global.api.authHeaderName value
-*/}}
-{{- define "airbyte.common.api.authHeaderName" }}
-    {{- .Values.global.api.authHeaderName | default "X-Airbyte-Auth" }}
-{{- end }}
-
-{{/*
-Renders the common.api.authHeaderName environment variable
-*/}}
-{{- define "airbyte.common.api.authHeaderName.env" }}
-- name: AIRBYTE_API_AUTH_HEADER_NAME
-  valueFrom:
-    configMapKeyRef:
-      name: {{ .Release.Name }}-airbyte-env
-      key: AIRBYTE_API_AUTH_HEADER_NAME
 {{- end }}
 
 {{/*
@@ -266,6 +259,31 @@ Renders the common.webapp.url environment variable
 {{- end }}
 
 {{/*
+Renders the global.dummySecret value
+*/}}
+{{- define "airbyte.common.dummySecret" }}
+    {{- .Values.global.dummySecret | default "dummy" }}
+{{- end }}
+
+{{/*
+Renders the common.dummySecret secret key
+*/}}
+{{- define "airbyte.common.dummySecret.secretKey" }}
+	{{- .Values.global.dummySecretSecretKey | default "AIRBYTE_DUMMY_SECRET" }}
+{{- end }}
+
+{{/*
+Renders the common.dummySecret environment variable
+*/}}
+{{- define "airbyte.common.dummySecret.env" }}
+- name: AIRBYTE_DUMMY_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "airbyte.common.secretName" . }}
+      key: {{ include "airbyte.common.dummySecret.secretKey" . }}
+{{- end }}
+
+{{/*
 Renders the set of all common environment variables
 */}}
 {{- define "airbyte.common.envs" }}
@@ -275,7 +293,6 @@ Renders the set of all common environment variables
 {{- include "airbyte.common.cluster.name.env" . }}
 {{- include "airbyte.common.airbyteUrl.env" . }}
 {{- include "airbyte.common.api.host.env" . }}
-{{- include "airbyte.common.api.authHeaderName.env" . }}
 {{- include "airbyte.common.server.host.env" . }}
 {{- include "airbyte.common.auth.enabled.env" . }}
 {{- include "airbyte.common.connectorBuilderServer.apiHost.env" . }}
@@ -283,6 +300,7 @@ Renders the set of all common environment variables
 {{- include "airbyte.common.api.internalHost.env" . }}
 {{- include "airbyte.common.local.env" . }}
 {{- include "airbyte.common.webapp.url.env" . }}
+{{- include "airbyte.common.dummySecret.env" . }}
 {{- end }}
 
 {{/*
@@ -295,7 +313,6 @@ AIRBYTE_CLUSTER_TYPE: {{ include "airbyte.common.cluster.type" . | quote }}
 AIRBYTE_CLUSTER_NAME: {{ include "airbyte.common.cluster.name" . | quote }}
 AIRBYTE_URL: {{ include "airbyte.common.airbyteUrl" . | quote }}
 AIRBYTE_API_HOST: {{ include "airbyte.common.api.host" . | quote }}
-AIRBYTE_API_AUTH_HEADER_NAME: {{ include "airbyte.common.api.authHeaderName" . | quote }}
 AIRBYTE_SERVER_HOST: {{ include "airbyte.common.server.host" . | quote }}
 API_AUTHORIZATION_ENABLED: {{ include "airbyte.common.auth.enabled" . | quote }}
 CONNECTOR_BUILDER_SERVER_API_HOST: {{ include "airbyte.common.connectorBuilderServer.apiHost" . | quote }}
@@ -303,4 +320,11 @@ DEPLOYMENT_ENV: {{ include "airbyte.common.deploymentEnv" . | quote }}
 INTERNAL_API_HOST: {{ include "airbyte.common.api.internalHost" . | quote }}
 LOCAL: {{ include "airbyte.common.local" . | quote }}
 WEBAPP_URL: {{ include "airbyte.common.webapp.url" . | quote }}
+{{- end }}
+
+{{/*
+Renders the set of all common secret variables
+*/}}
+{{- define "airbyte.common.secrets" }}
+AIRBYTE_DUMMY_SECRET: {{ include "airbyte.common.dummySecret" . | quote }}
 {{- end }}

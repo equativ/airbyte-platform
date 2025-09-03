@@ -67,7 +67,7 @@ internal class LocalContainerAirbyteDestinationTest {
     containerLogMdcBuilder =
       MdcScope
         .Builder()
-        .setExtraMdcEntries(LogSource.DESTINATION.toMdc())
+        .setExtraMdcEntriesNonNullable(LogSource.DESTINATION.toMdc())
     randomConnectionId = UUID.randomUUID()
     destinationTimeoutMonitor = mockk<DestinationTimeoutMonitor>()
     jobRoot = Path.of(".")
@@ -91,7 +91,7 @@ internal class LocalContainerAirbyteDestinationTest {
       }
     streamFactory =
       mockk<AirbyteStreamFactory> {
-        every { create(any()) } returns stream
+        every { create(any(), any()) } returns stream
       }
     workerDestinationConfig =
       mockk<WorkerDestinationConfig> {

@@ -8,7 +8,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import io.airbyte.api.problems.model.generated.ProblemValueData
 import io.airbyte.api.problems.throwable.generated.UnknownValueProblem
 import io.airbyte.api.problems.throwable.generated.UnprocessableEntityProblem
-import io.airbyte.commons.auth.AuthRoleConstants
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.server.authorization.RoleResolver
 import io.airbyte.commons.server.scheduling.AirbyteTaskExecutors
 import io.airbyte.commons.server.support.AuthenticationId
@@ -48,12 +48,12 @@ open class DestinationsController(
   private val roleResolver: RoleResolver,
   private val currentUserService: CurrentUserService,
 ) : PublicDestinationsApi {
-  @Secured(AuthRoleConstants.WORKSPACE_EDITOR)
+  @Secured(AuthRoleConstants.WORKSPACE_EDITOR, AuthRoleConstants.EMBEDDED_END_USER)
   @ExecuteOn(AirbyteTaskExecutors.PUBLIC_API)
   override fun publicCreateDestination(destinationCreateRequest: DestinationCreateRequest?): Response {
     val destinationResponse: Any? =
       destinationCreateRequest?.let { request ->
-        val userId: UUID = currentUserService.currentUser.userId
+        val userId: UUID = currentUserService.getCurrentUser().userId
 
         val destinationDefinitionId: UUID =
           request.definitionId
@@ -108,10 +108,10 @@ open class DestinationsController(
 
   @ExecuteOn(AirbyteTaskExecutors.PUBLIC_API)
   override fun publicDeleteDestination(destinationId: String): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.DESTINATION_ID_, destinationId)
       .requireRole(AuthRoleConstants.WORKSPACE_EDITOR)
@@ -143,10 +143,10 @@ open class DestinationsController(
     destinationId: String,
     includeSecretCoordinates: Boolean?,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.DESTINATION_ID_, destinationId)
       .requireRole(AuthRoleConstants.WORKSPACE_READER)
@@ -181,13 +181,13 @@ open class DestinationsController(
     limit: Int,
     offset: Int,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     // If workspace IDs were given, then verify the user has access to those workspaces.
     // If none were given, then the DestinationService will determine the workspaces for the current user.
     if (!workspaceIds.isNullOrEmpty()) {
       roleResolver
-        .Request()
+        .newRequest()
         .withCurrentUser()
         .withWorkspaces(workspaceIds)
         .requireRole(AuthRoleConstants.WORKSPACE_READER)
@@ -221,10 +221,10 @@ open class DestinationsController(
     destinationId: String,
     destinationPatchRequest: DestinationPatchRequest?,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.DESTINATION_ID_, destinationId)
       .requireRole(AuthRoleConstants.WORKSPACE_EDITOR)
@@ -259,10 +259,10 @@ open class DestinationsController(
     destinationId: String,
     destinationPutRequest: DestinationPutRequest?,
   ): Response {
-    val userId: UUID = currentUserService.currentUser.userId
+    val userId: UUID = currentUserService.getCurrentUser().userId
 
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.DESTINATION_ID_, destinationId)
       .requireRole(AuthRoleConstants.WORKSPACE_EDITOR)

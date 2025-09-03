@@ -6,7 +6,7 @@ package io.airbyte.commons.server.handlers
 
 import io.airbyte.api.model.generated.WorkspaceCreateWithId
 import io.airbyte.api.model.generated.WorkspaceRead
-import io.airbyte.commons.auth.AuthRoleConstants
+import io.airbyte.commons.auth.roles.AuthRoleConstants
 import io.airbyte.commons.server.authorization.RoleResolver
 import io.airbyte.commons.server.converters.WorkspaceConverter
 import io.airbyte.commons.server.errors.ApplicationErrorKnownException
@@ -15,11 +15,11 @@ import io.airbyte.commons.server.handlers.helpers.validateWorkspace
 import io.airbyte.commons.server.support.AuthenticationId
 import io.airbyte.commons.server.support.CurrentUserService
 import io.airbyte.config.AuthenticatedUser
-import io.airbyte.config.ConfigSchema
+import io.airbyte.config.ConfigNotFoundType
 import io.airbyte.config.Configs.AirbyteEdition
 import io.airbyte.config.Organization
 import io.airbyte.config.Permission
-import io.airbyte.data.exceptions.ConfigNotFoundException
+import io.airbyte.data.ConfigNotFoundException
 import io.airbyte.data.services.DataplaneGroupService
 import io.airbyte.data.services.OrganizationPaymentConfigService
 import io.airbyte.data.services.OrganizationService
@@ -57,7 +57,7 @@ open class ResourceBootstrapHandler(
         else ->
           organizationService.getOrganization(organizationId).orElseThrow {
             ConfigNotFoundException(
-              ConfigSchema.ORGANIZATION,
+              ConfigNotFoundType.ORGANIZATION,
               "Attempted to bootstrap workspace but couldn't find existing organization $organizationId",
             )
           }
@@ -65,7 +65,7 @@ open class ResourceBootstrapHandler(
 
     // Ensure user has the required permissions to create a workspace
     roleResolver
-      .Request()
+      .newRequest()
       .withCurrentUser()
       .withRef(AuthenticationId.ORGANIZATION_ID, organization.organizationId)
       .requireRole(AuthRoleConstants.ORGANIZATION_ADMIN)

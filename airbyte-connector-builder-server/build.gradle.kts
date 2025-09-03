@@ -44,6 +44,7 @@ dependencies {
 
   // Internal dependencies)
   implementation(project(":oss:airbyte-commons"))
+  implementation(project(":oss:airbyte-commons-auth"))
   implementation(project(":oss:airbyte-commons-micronaut"))
   implementation(project(":oss:airbyte-commons-protocol"))
   implementation(project(":oss:airbyte-commons-server"))
@@ -77,12 +78,13 @@ dependencies {
   testImplementation(libs.bundles.junit)
   testImplementation(libs.assertj.core)
   testImplementation(libs.mockk)
+  testImplementation(libs.mockito.kotlin)
   testImplementation(libs.junit.pioneer)
 }
 
 airbyte {
   application {
-    mainClass = "io.airbyte.connectorbuilder.MicronautConnectorBuilderServerRunner"
+    mainClass = "io.airbyte.connectorbuilder.ApplicationKt"
     defaultJvmArgs = listOf("-XX:+ExitOnOutOfMemoryError", "-XX:MaxRAMPercentage=75.0")
     localEnvVars.putAll(
       mapOf(

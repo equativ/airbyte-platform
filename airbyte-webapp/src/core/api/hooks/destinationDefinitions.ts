@@ -10,6 +10,7 @@ import {
   deleteDestinationDefinition,
   getDestinationDefinitionForWorkspace,
   listDestinationDefinitionsForWorkspace,
+  listDestinationDefinitions,
   listLatestDestinationDefinitions,
   updateDestinationDefinition,
 } from "../generated/AirbyteClient";
@@ -25,7 +26,7 @@ import { useSuspenseQuery } from "../useSuspenseQuery";
 
 export const destinationDefinitionKeys = {
   all: [SCOPE_WORKSPACE, "destinationDefinition"] as const,
-  lists: () => [...destinationDefinitionKeys.all, "list"] as const,
+  lists: (filterByUsed: boolean = false) => [...destinationDefinitionKeys.all, "list", filterByUsed] as const,
   listLatest: () => [...destinationDefinitionKeys.all, "listLatest"] as const,
   detail: (id: string) => [...destinationDefinitionKeys.all, "details", id] as const,
 };
@@ -48,16 +49,18 @@ interface DestinationDefinitions {
   destinationDefinitionMap: Map<string, DestinationDefinitionRead>;
 }
 
-export const useDestinationDefinitionList = (): DestinationDefinitions => {
+export const useDestinationDefinitionList = ({
+  filterByUsed,
+}: { filterByUsed?: boolean } = {}): DestinationDefinitions => {
   const requestOptions = useRequestOptions();
 
   const workspaceId = useCurrentWorkspaceId();
 
   return useQuery(
-    destinationDefinitionKeys.lists(),
+    destinationDefinitionKeys.lists(filterByUsed),
     async () => {
       const { destinationDefinitions } = await listDestinationDefinitionsForWorkspace(
-        { workspaceId },
+        { workspaceId, filterByUsed },
         requestOptions
       ).then(({ destinationDefinitions }) => ({
         destinationDefinitions: destinationDefinitions.sort((a, b) => a.name.localeCompare(b.name)),
@@ -181,4 +184,37 @@ export const useDeleteDestinationDefinition = () => {
   return {
     deleteDestinationDefinition: mutateAsync,
   };
+};
+
+/**
+ * used in the embedded onboarding flow to get the list of destination definitions... we almost never
+ * want this list, as it is not scoped to the current workspace and will return all destination definitions
+ *
+ * however, in this case, we do want it because we don't have a workspace id to use.
+ *
+ * this will be replaced by a sonar-specific endpoint in the future
+ *
+ */
+export const useGlobalDestinationDefinitionList = () => {
+  const requestOptions = useRequestOptions();
+
+  return useQuery(
+    destinationDefinitionKeys.lists(),
+    async () => {
+      const { destinationDefinitions } = await listDestinationDefinitions(requestOptions).then(
+        ({ destinationDefinitions }) => ({
+          destinationDefinitions: destinationDefinitions.sort((a, b) => a.name.localeCompare(b.name)),
+        })
+      );
+      const destinationDefinitionMap = new Map<string, DestinationDefinitionRead>();
+      destinationDefinitions.forEach((destinationDefinition) => {
+        destinationDefinitionMap.set(destinationDefinition.destinationDefinitionId, destinationDefinition);
+      });
+      return {
+        destinationDefinitions,
+        destinationDefinitionMap,
+      };
+    },
+    { suspense: true }
+  ).data as DestinationDefinitions;
 };

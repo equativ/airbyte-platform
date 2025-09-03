@@ -98,6 +98,7 @@ enum class DocumentType(
   WORKLOAD_OUTPUT(prefix = Path.of("/workload/output")),
   ACTIVITY_PAYLOADS(prefix = Path.of("/activity-payloads")),
   AUDIT_LOGS(prefix = Path.of("audit-logging")),
+  REPLICATION_DUMP(prefix = Path.of("replication-dump")),
   PROFILER_OUTPUT(prefix = Path.of("/profiler/output")),
 }
 
@@ -480,7 +481,7 @@ abstract class AbstractS3StorageClient internal constructor(
   }
 
   private fun createBucketIfNotExists() {
-    if (!doesBucketExist(bucketName=bucketName)) {
+    if (!doesBucketExist(bucketName = bucketName)) {
       val createBucketRequest = CreateBucketRequest.builder().bucket(bucketName).build()
       s3Client.createBucket(createBucketRequest)
     }
@@ -567,5 +568,6 @@ fun StorageConfig.bucketName(type: DocumentType): String =
     DocumentType.LOGS -> this.buckets.log
     DocumentType.ACTIVITY_PAYLOADS -> this.buckets.activityPayload
     DocumentType.AUDIT_LOGS -> this.buckets.auditLogging?.takeIf { it.isNotBlank() } ?: ""
+    DocumentType.REPLICATION_DUMP -> this.buckets.replicationDump?.takeIf { it.isNotBlank() } ?: REPLICATION_DUMP
     DocumentType.PROFILER_OUTPUT -> this.buckets.profilerOutput?.takeIf { it.isNotBlank() } ?: ""
   }

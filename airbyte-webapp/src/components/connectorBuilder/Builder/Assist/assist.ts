@@ -1,22 +1,27 @@
 import merge from "lodash/merge";
 
 import { CDK_VERSION } from "components/connectorBuilder/cdk";
-import { convertToBuilderFormValuesSync } from "components/connectorBuilder/convertManifestToBuilderForm";
-import { BuilderFormValues } from "components/connectorBuilder/types";
 import { useBuilderWatch } from "components/connectorBuilder/useBuilderWatch";
 
 import { useCurrentWorkspaceId } from "area/workspace/utils";
 import { HttpError, useAssistApiMutation, useAssistApiProxyQuery } from "core/api";
 import { KnownExceptionInfo } from "core/api/types/ConnectorBuilderClient";
 import {
+  ConnectorManifest,
   DatetimeBasedCursor,
   DeclarativeComponentSchema,
+  DeclarativeStream,
+  DeclarativeStreamType,
   HttpRequesterAuthenticator,
   HttpRequesterHttpMethod,
   PrimaryKey,
   RecordSelector,
+  SimpleRetrieverType,
   SimpleRetrieverPaginator,
   SpecConnectionSpecification,
+  HttpRequesterType,
+  AsyncRetrieverType,
+  HttpRequester,
 } from "core/api/types/ConnectorManifest";
 import { useConnectorBuilderFormState } from "services/connectorBuilder/ConnectorBuilderStateService";
 
@@ -29,7 +34,7 @@ export type AssistKey =
   | "request_options"
   | "incremental_sync";
 
-export const convertToAssistFormValuesSync = (updates: BuilderAssistManifestResponse): BuilderFormValues => {
+export const convertToAssistFormValuesSync = (updates: BuilderAssistManifestResponse): ConnectorManifest => {
   const update = updates.manifest_update;
   const updatedManifest: DeclarativeComponentSchema = {
     type: "DeclarativeSource",
@@ -73,8 +78,7 @@ export const convertToAssistFormValuesSync = (updates: BuilderAssistManifestResp
       },
     },
   };
-  const updatedForm = convertToBuilderFormValuesSync(updatedManifest);
-  return updatedForm;
+  return updatedManifest;
 };
 
 export interface BuilderAssistCoreParams {
@@ -132,11 +136,12 @@ const useAssistProxyQuery = <T>(
   controller: string,
   enabled: boolean,
   input: Record<string, unknown>,
-  ignoreCacheKeys: Array<keyof BuilderAssistApiAllParams>
+  ignoreCacheKeys: Array<keyof BuilderAssistApiAllParams>,
+  transformResult?: (data: T) => T
 ) => {
   const { params: globalParams } = useAssistGlobalContext();
   const params = merge({}, globalParams, input);
-  return useAssistApiProxyQuery<T>(controller, enabled, params, ignoreCacheKeys);
+  return useAssistApiProxyQuery<T>(controller, enabled, params, ignoreCacheKeys, transformResult);
 };
 
 const hasValueWithTrim = (value: unknown) => {
@@ -165,20 +170,59 @@ const useAssistGlobalContext = (): { params: Record<string, unknown> } => {
 };
 
 const useAssistProjectContext = (): { params: Record<string, unknown>; hasRequiredParams: boolean } => {
-  const { assistEnabled, projectId, assistSessionId, jsonManifest } = useConnectorBuilderFormState();
+  const { assistEnabled, projectId, assistSessionId } = useConnectorBuilderFormState();
+  const manifest = useBuilderWatch("manifest");
   // session id on form
   const params = {
-    docs_url: useBuilderWatch("formValues.assist.docsUrl"),
-    openapi_spec_url: useBuilderWatch("formValues.assist.openapiSpecUrl"),
+    docs_url: useBuilderWatch("manifest.metadata.assist.docsUrl"),
+    openapi_spec_url: useBuilderWatch("manifest.metadata.assist.openapiSpecUrl"),
     app_name: useBuilderWatch("name") || "Connector",
-    url_base: useBuilderWatch("formValues.global.urlBase"),
+    url_base: getUrlBase(manifest),
     project_id: projectId,
-    manifest: jsonManifest,
+    manifest,
     session_id: assistSessionId,
   };
   const hasBase = hasOneOf(params, ["docs_url", "openapi_spec_url"]);
   const hasRequiredParams = assistEnabled && hasBase;
   return { params, hasRequiredParams };
+};
+
+const extractUrlBaseFromRequester = (requester: HttpRequester) => {
+  if (requester.url_base) {
+    return requester.url_base;
+  }
+  if (requester.url) {
+    // extract the HTTP schema and domain, ending at the first slash after the domain
+    const match = requester.url.match(/^(https?:\/\/[^/]+)/);
+    return match ? match[1] : undefined;
+  }
+  return undefined;
+};
+
+const getUrlBase = (manifest: DeclarativeComponentSchema) => {
+  if (!manifest.streams || manifest.streams.length === 0) {
+    return undefined;
+  }
+
+  const firstDeclarativeStream = manifest.streams.find(
+    (stream) => stream.type === DeclarativeStreamType.DeclarativeStream && !!stream.retriever
+  ) as DeclarativeStream | undefined;
+  if (!firstDeclarativeStream) {
+    return undefined;
+  }
+
+  if (firstDeclarativeStream.retriever?.type === SimpleRetrieverType.SimpleRetriever) {
+    if (firstDeclarativeStream.retriever.requester?.type === HttpRequesterType.HttpRequester) {
+      return extractUrlBaseFromRequester(firstDeclarativeStream.retriever.requester);
+    }
+    return undefined;
+  } else if (firstDeclarativeStream.retriever?.type === AsyncRetrieverType.AsyncRetriever) {
+    if (firstDeclarativeStream.retriever.creation_requester?.type === HttpRequesterType.HttpRequester) {
+      return extractUrlBaseFromRequester(firstDeclarativeStream.retriever.creation_requester);
+    }
+    return undefined;
+  }
+  return undefined;
 };
 
 const useAssistProjectStreamContext = (
@@ -204,7 +248,20 @@ export const useBuilderAssistFindAuth = () => {
 export const useBuilderAssistCreateStream = (input: BuilderAssistInputStreamParams) => {
   // this one is always enabled, let the server return an error if there is a problem
   const { params } = useAssistProjectStreamContext(input);
-  return useAssistProxyQuery<BuilderAssistManifestResponse>("create_stream", true, params, []);
+  const transformResult =
+    params.url_base && typeof params.url_base === "string"
+      ? (data: BuilderAssistManifestResponse): BuilderAssistManifestResponse => {
+          return {
+            ...data,
+            manifest_update: {
+              ...data.manifest_update,
+              url_base: params.url_base as string,
+            },
+          };
+        }
+      : undefined;
+
+  return useAssistProxyQuery<BuilderAssistManifestResponse>("create_stream", true, params, [], transformResult);
 };
 
 export const useBuilderAssistFindStreamPaginator = (input: BuilderAssistInputStreamParams) => {

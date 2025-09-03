@@ -51,6 +51,7 @@ data class ReplicationPodFactory(
     isFileTransfer: Boolean,
     workspaceId: UUID,
     enableAsyncProfiler: Boolean = false,
+    profilingMode: String = "cpu",
     architectureEnvironmentVariables: ArchitectureEnvironmentVariables = ArchitectureDecider.buildLegacyEnvironment(),
   ): Pod {
     // TODO: We should inject the scheduler from the ENV and use this just for overrides
@@ -89,12 +90,12 @@ data class ReplicationPodFactory(
         image = destImage,
       )
 
-    val nodeSelection = nodeSelectionFactory.createReplicationNodeSelection(nodeSelectors, allLabels)
+    val nodeSelection = nodeSelectionFactory.createNodeSelection(nodeSelectors, allLabels)
 
     val containers = mutableListOf(orchContainer, sourceContainer, destContainer)
 
     if (enableAsyncProfiler) {
-      containers.add(profilerContainerFactory.create(orchRuntimeEnvVars, replicationVolumes.profilerVolumeMounts))
+      containers.add(profilerContainerFactory.create(orchRuntimeEnvVars, replicationVolumes.profilerVolumeMounts, profilingMode))
     }
 
     return PodBuilder()
@@ -119,10 +120,12 @@ data class ReplicationPodFactory(
       .withAffinity(nodeSelection.podAffinity)
       .withAutomountServiceAccountToken(false)
       .withSecurityContext(
-        if (enableAsyncProfiler || architectureEnvironmentVariables.isSocketBased()) {
-          workloadSecurityContextProvider.rootSecurityContext()
-        } else {
-          workloadSecurityContextProvider.defaultPodSecurityContext()
+        when {
+          enableAsyncProfiler -> workloadSecurityContextProvider.rootSecurityContext()
+          architectureEnvironmentVariables.isSocketBased() ->
+            workloadSecurityContextProvider.socketRootlessPodSecurityContext()
+          else ->
+            workloadSecurityContextProvider.defaultPodSecurityContext()
         },
       ).endSpec()
       .build()

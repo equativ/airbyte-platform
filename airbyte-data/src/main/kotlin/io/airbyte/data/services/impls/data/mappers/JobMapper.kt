@@ -4,7 +4,7 @@
 
 package io.airbyte.data.services.impls.data.mappers
 
-import io.airbyte.commons.enums.Enums
+import io.airbyte.commons.enums.convertTo
 import io.airbyte.commons.json.Jsons
 import io.airbyte.config.JobConfig
 import io.airbyte.data.repositories.entities.Job
@@ -47,42 +47,43 @@ fun EntityJobStatus.toConfig(): ModelJobStatus =
 
 fun EntityJobWithAssociations.toConfigModel(): ModelJob =
   ModelJob(
-    this.id!!,
-    this.configType?.toConfig(),
+    this.id,
+    this.configType.toConfig(),
     this.scope,
     Jsons.`object`(this.config, JobConfig::class.java),
     this.attempts?.map { it.toConfigModel() } ?: emptyList(),
-    this.status?.toConfig(),
+    this.status.toConfig(),
     startedAt?.toEpochSecond(),
-    createdAt?.toEpochSecond() ?: 0,
-    updatedAt?.toEpochSecond() ?: 0,
-    this.isScheduled ?: true,
+    createdAt.toEpochSecond(),
+    updatedAt.toEpochSecond(),
+    this.isScheduled,
   )
 
 fun EntityJob.toConfigModel(): ModelJob =
   ModelJob(
-    this.id!!,
-    this.configType?.toConfig(),
+    this.id,
+    this.configType.toConfig(),
     this.scope,
     Jsons.`object`(this.config, JobConfig::class.java),
     emptyList(),
-    this.status?.toConfig(),
+    this.status.toConfig(),
     startedAt?.toEpochSecond(),
-    createdAt?.toEpochSecond() ?: 0,
-    updatedAt?.toEpochSecond() ?: 0,
-    this.isScheduled ?: true,
+    createdAt.toEpochSecond(),
+    updatedAt.toEpochSecond(),
+    this.isScheduled,
   )
 
 fun ModelJob.toEntity(): EntityJob =
   EntityJob(
     id,
-    Enums.convertTo(this.configType, JobConfigType::class.java),
+    this.configType.convertTo<JobConfigType>(),
     this.scope,
     Jsons.jsonNode(config),
-    Enums.convertTo(this.status, JobStatus::class.java),
-    if (startedAtInSecond.isPresent) OffsetDateTime.ofInstant(Instant.ofEpochSecond(startedAtInSecond.get()), ZoneOffset.UTC) else null,
+    this.status.convertTo<JobStatus>(),
+    startedAtInSecond?.let { OffsetDateTime.ofInstant(Instant.ofEpochSecond(it), ZoneOffset.UTC) },
     OffsetDateTime.ofInstant(Instant.ofEpochSecond(createdAtInSecond), ZoneOffset.UTC),
     OffsetDateTime.ofInstant(Instant.ofEpochSecond(updatedAtInSecond), ZoneOffset.UTC),
+    false,
   )
 
 fun EntityConfigType.toConfig(): ModelConfigType =

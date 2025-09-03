@@ -88,43 +88,48 @@ exports[`ConnectionReplicationPage should render 1`] = `
                                 class="<removed-for-snapshot-test>"
                                 data-testid="sync-catalog-search"
                                 placeholder="Search stream or field name"
+                                role="search"
                                 type="search"
                                 value=""
                               />
                             </div>
                           </label>
-                          <div
-                            data-testid="sync-catalog-filter-depth"
+                          <button
+                            aria-expanded="false"
+                            aria-haspopup="listbox"
+                            class="<removed-for-snapshot-test>"
+                            data-headlessui-state=""
+                            data-testid="sync-catalog-filter-depth-listbox-button"
+                            id="headlessui-listbox-button-:r2:"
+                            type="button"
                           >
-                            <button
-                              aria-expanded="false"
-                              aria-haspopup="listbox"
+                            <span
                               class="<removed-for-snapshot-test>"
-                              data-headlessui-state=""
-                              data-testid="sync-catalog-filter-depth-listbox-button"
-                              id="headlessui-listbox-button-:r2:"
-                              type="button"
                             >
-                              <span
+                              <div
                                 class="<removed-for-snapshot-test>"
-                                data-type="text"
                               >
                                 <span
                                   class="<removed-for-snapshot-test>"
+                                  data-type="text"
                                 >
-                                  Streams and fields
+                                  <span
+                                    class="<removed-for-snapshot-test>"
+                                  >
+                                    Streams and fields
+                                  </span>
                                 </span>
-                              </span>
+                              </div>
                               <div
                                 class="<removed-for-snapshot-test>"
                                 data-icon="chevron-down"
                                 data-testid="mocksvg"
                               />
-                            </button>
-                            <div
-                              style="position: absolute; z-index: 9999; top: 0px; left: 0px; transform: translate(5px,5px);"
-                            />
-                          </div>
+                            </span>
+                          </button>
+                          <div
+                            style="position: absolute; z-index: 9999; top: 0px; left: 0px; transform: translate(5px,5px);"
+                          />
                         </div>
                         <div
                           class="<removed-for-snapshot-test>"
@@ -512,54 +517,62 @@ exports[`ConnectionReplicationPage should render 1`] = `
                                         class="<removed-for-snapshot-test>"
                                       />
                                     </button>
-                                    <span
+                                    <div
                                       class="<removed-for-snapshot-test>"
                                     >
-                                      <p
+                                      <span
                                         class="<removed-for-snapshot-test>"
-                                        data-type="text"
                                       >
-                                        another_stream
-                                      </p>
-                                    </span>
+                                        <p
+                                          class="<removed-for-snapshot-test>"
+                                          data-type="text"
+                                        >
+                                          another_stream
+                                        </p>
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </td>
                               <td
                                 class="<removed-for-snapshot-test>"
                               >
-                                <div
-                                  data-testid="sync-mode-select"
+                                <button
+                                  aria-expanded="false"
+                                  aria-haspopup="listbox"
+                                  class="<removed-for-snapshot-test>"
+                                  data-headlessui-state=""
+                                  data-testid="sync-mode-select-listbox-button"
+                                  id="headlessui-listbox-button-:rn:"
+                                  type="button"
                                 >
-                                  <button
-                                    aria-expanded="false"
-                                    aria-haspopup="listbox"
+                                  <span
                                     class="<removed-for-snapshot-test>"
-                                    data-headlessui-state=""
-                                    data-testid="sync-mode-select-listbox-button"
-                                    id="headlessui-listbox-button-:rn:"
-                                    type="button"
                                   >
                                     <span
                                       class="<removed-for-snapshot-test>"
                                     >
-                                      <p
+                                      <div
                                         class="<removed-for-snapshot-test>"
-                                        data-type="text"
                                       >
-                                        Full refresh | Overwrite
-                                      </p>
+                                        <p
+                                          class="<removed-for-snapshot-test>"
+                                          data-type="text"
+                                        >
+                                          Full refresh | Overwrite
+                                        </p>
+                                      </div>
+                                      <div
+                                        class="<removed-for-snapshot-test>"
+                                        data-icon="chevron-down"
+                                        data-testid="mocksvg"
+                                      />
                                     </span>
-                                    <div
-                                      class="<removed-for-snapshot-test>"
-                                      data-icon="caret-down"
-                                      data-testid="mocksvg"
-                                    />
-                                  </button>
-                                  <div
-                                    style="position: absolute; z-index: 9999; top: 0px; left: 0px; transform: translate(5px,5px);"
-                                  />
-                                </div>
+                                  </span>
+                                </button>
+                                <div
+                                  style="position: absolute; z-index: 9999; top: 0px; left: 0px; transform: translate(5px,5px);"
+                                />
                               </td>
                               <td
                                 class="<removed-for-snapshot-test>"
@@ -639,54 +652,62 @@ exports[`ConnectionReplicationPage should render 1`] = `
                                         class="<removed-for-snapshot-test>"
                                       />
                                     </button>
-                                    <span
+                                    <div
                                       class="<removed-for-snapshot-test>"
                                     >
-                                      <p
+                                      <span
                                         class="<removed-for-snapshot-test>"
-                                        data-type="text"
                                       >
-                                        pokemon
-                                      </p>
-                                    </span>
+                                        <p
+                                          class="<removed-for-snapshot-test>"
+                                          data-type="text"
+                                        >
+                                          pokemon
+                                        </p>
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </td>
                               <td
                                 class="<removed-for-snapshot-test>"
                               >
-                                <div
-                                  data-testid="sync-mode-select"
+                                <button
+                                  aria-expanded="false"
+                                  aria-haspopup="listbox"
+                                  class="<removed-for-snapshot-test>"
+                                  data-headlessui-state=""
+                                  data-testid="sync-mode-select-listbox-button"
+                                  id="headlessui-listbox-button-:rq:"
+                                  type="button"
                                 >
-                                  <button
-                                    aria-expanded="false"
-                                    aria-haspopup="listbox"
+                                  <span
                                     class="<removed-for-snapshot-test>"
-                                    data-headlessui-state=""
-                                    data-testid="sync-mode-select-listbox-button"
-                                    id="headlessui-listbox-button-:rq:"
-                                    type="button"
                                   >
                                     <span
                                       class="<removed-for-snapshot-test>"
                                     >
-                                      <p
+                                      <div
                                         class="<removed-for-snapshot-test>"
-                                        data-type="text"
                                       >
-                                        Full refresh | Overwrite
-                                      </p>
+                                        <p
+                                          class="<removed-for-snapshot-test>"
+                                          data-type="text"
+                                        >
+                                          Full refresh | Overwrite
+                                        </p>
+                                      </div>
+                                      <div
+                                        class="<removed-for-snapshot-test>"
+                                        data-icon="chevron-down"
+                                        data-testid="mocksvg"
+                                      />
                                     </span>
-                                    <div
-                                      class="<removed-for-snapshot-test>"
-                                      data-icon="caret-down"
-                                      data-testid="mocksvg"
-                                    />
-                                  </button>
-                                  <div
-                                    style="position: absolute; z-index: 9999; top: 0px; left: 0px; transform: translate(5px,5px);"
-                                  />
-                                </div>
+                                  </span>
+                                </button>
+                                <div
+                                  style="position: absolute; z-index: 9999; top: 0px; left: 0px; transform: translate(5px,5px);"
+                                />
                               </td>
                               <td
                                 class="<removed-for-snapshot-test>"
@@ -760,16 +781,20 @@ exports[`ConnectionReplicationPage should render 1`] = `
                                         class="<removed-for-snapshot-test>"
                                       />
                                     </button>
-                                    <span
+                                    <div
                                       class="<removed-for-snapshot-test>"
                                     >
-                                      <p
+                                      <span
                                         class="<removed-for-snapshot-test>"
-                                        data-type="text"
                                       >
-                                        pokemon2
-                                      </p>
-                                    </span>
+                                        <p
+                                          class="<removed-for-snapshot-test>"
+                                          data-type="text"
+                                        >
+                                          pokemon2
+                                        </p>
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </td>
@@ -901,43 +926,48 @@ exports[`ConnectionReplicationPage should show an error if there is a schemaErro
                                 class="<removed-for-snapshot-test>"
                                 data-testid="sync-catalog-search"
                                 placeholder="Search stream or field name"
+                                role="search"
                                 type="search"
                                 value=""
                               />
                             </div>
                           </label>
-                          <div
-                            data-testid="sync-catalog-filter-depth"
+                          <button
+                            aria-expanded="false"
+                            aria-haspopup="listbox"
+                            class="<removed-for-snapshot-test>"
+                            data-headlessui-state=""
+                            data-testid="sync-catalog-filter-depth-listbox-button"
+                            id="headlessui-listbox-button-:rt:"
+                            type="button"
                           >
-                            <button
-                              aria-expanded="false"
-                              aria-haspopup="listbox"
+                            <span
                               class="<removed-for-snapshot-test>"
-                              data-headlessui-state=""
-                              data-testid="sync-catalog-filter-depth-listbox-button"
-                              id="headlessui-listbox-button-:rt:"
-                              type="button"
                             >
-                              <span
+                              <div
                                 class="<removed-for-snapshot-test>"
-                                data-type="text"
                               >
                                 <span
                                   class="<removed-for-snapshot-test>"
+                                  data-type="text"
                                 >
-                                  Streams and fields
+                                  <span
+                                    class="<removed-for-snapshot-test>"
+                                  >
+                                    Streams and fields
+                                  </span>
                                 </span>
-                              </span>
+                              </div>
                               <div
                                 class="<removed-for-snapshot-test>"
                                 data-icon="chevron-down"
                                 data-testid="mocksvg"
                               />
-                            </button>
-                            <div
-                              style="position: absolute; z-index: 9999; top: 0px; left: 0px; transform: translate(5px,5px);"
-                            />
-                          </div>
+                            </span>
+                          </button>
+                          <div
+                            style="position: absolute; z-index: 9999; top: 0px; left: 0px; transform: translate(5px,5px);"
+                          />
                         </div>
                         <div
                           class="<removed-for-snapshot-test>"
@@ -1325,54 +1355,62 @@ exports[`ConnectionReplicationPage should show an error if there is a schemaErro
                                         class="<removed-for-snapshot-test>"
                                       />
                                     </button>
-                                    <span
+                                    <div
                                       class="<removed-for-snapshot-test>"
                                     >
-                                      <p
+                                      <span
                                         class="<removed-for-snapshot-test>"
-                                        data-type="text"
                                       >
-                                        another_stream
-                                      </p>
-                                    </span>
+                                        <p
+                                          class="<removed-for-snapshot-test>"
+                                          data-type="text"
+                                        >
+                                          another_stream
+                                        </p>
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </td>
                               <td
                                 class="<removed-for-snapshot-test>"
                               >
-                                <div
-                                  data-testid="sync-mode-select"
+                                <button
+                                  aria-expanded="false"
+                                  aria-haspopup="listbox"
+                                  class="<removed-for-snapshot-test>"
+                                  data-headlessui-state=""
+                                  data-testid="sync-mode-select-listbox-button"
+                                  id="headlessui-listbox-button-:r1i:"
+                                  type="button"
                                 >
-                                  <button
-                                    aria-expanded="false"
-                                    aria-haspopup="listbox"
+                                  <span
                                     class="<removed-for-snapshot-test>"
-                                    data-headlessui-state=""
-                                    data-testid="sync-mode-select-listbox-button"
-                                    id="headlessui-listbox-button-:r1i:"
-                                    type="button"
                                   >
                                     <span
                                       class="<removed-for-snapshot-test>"
                                     >
-                                      <p
+                                      <div
                                         class="<removed-for-snapshot-test>"
-                                        data-type="text"
                                       >
-                                        Full refresh | Overwrite
-                                      </p>
+                                        <p
+                                          class="<removed-for-snapshot-test>"
+                                          data-type="text"
+                                        >
+                                          Full refresh | Overwrite
+                                        </p>
+                                      </div>
+                                      <div
+                                        class="<removed-for-snapshot-test>"
+                                        data-icon="chevron-down"
+                                        data-testid="mocksvg"
+                                      />
                                     </span>
-                                    <div
-                                      class="<removed-for-snapshot-test>"
-                                      data-icon="caret-down"
-                                      data-testid="mocksvg"
-                                    />
-                                  </button>
-                                  <div
-                                    style="position: absolute; z-index: 9999; top: 0px; left: 0px; transform: translate(5px,5px);"
-                                  />
-                                </div>
+                                  </span>
+                                </button>
+                                <div
+                                  style="position: absolute; z-index: 9999; top: 0px; left: 0px; transform: translate(5px,5px);"
+                                />
                               </td>
                               <td
                                 class="<removed-for-snapshot-test>"
@@ -1452,54 +1490,62 @@ exports[`ConnectionReplicationPage should show an error if there is a schemaErro
                                         class="<removed-for-snapshot-test>"
                                       />
                                     </button>
-                                    <span
+                                    <div
                                       class="<removed-for-snapshot-test>"
                                     >
-                                      <p
+                                      <span
                                         class="<removed-for-snapshot-test>"
-                                        data-type="text"
                                       >
-                                        pokemon
-                                      </p>
-                                    </span>
+                                        <p
+                                          class="<removed-for-snapshot-test>"
+                                          data-type="text"
+                                        >
+                                          pokemon
+                                        </p>
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </td>
                               <td
                                 class="<removed-for-snapshot-test>"
                               >
-                                <div
-                                  data-testid="sync-mode-select"
+                                <button
+                                  aria-expanded="false"
+                                  aria-haspopup="listbox"
+                                  class="<removed-for-snapshot-test>"
+                                  data-headlessui-state=""
+                                  data-testid="sync-mode-select-listbox-button"
+                                  id="headlessui-listbox-button-:r1l:"
+                                  type="button"
                                 >
-                                  <button
-                                    aria-expanded="false"
-                                    aria-haspopup="listbox"
+                                  <span
                                     class="<removed-for-snapshot-test>"
-                                    data-headlessui-state=""
-                                    data-testid="sync-mode-select-listbox-button"
-                                    id="headlessui-listbox-button-:r1l:"
-                                    type="button"
                                   >
                                     <span
                                       class="<removed-for-snapshot-test>"
                                     >
-                                      <p
+                                      <div
                                         class="<removed-for-snapshot-test>"
-                                        data-type="text"
                                       >
-                                        Full refresh | Overwrite
-                                      </p>
+                                        <p
+                                          class="<removed-for-snapshot-test>"
+                                          data-type="text"
+                                        >
+                                          Full refresh | Overwrite
+                                        </p>
+                                      </div>
+                                      <div
+                                        class="<removed-for-snapshot-test>"
+                                        data-icon="chevron-down"
+                                        data-testid="mocksvg"
+                                      />
                                     </span>
-                                    <div
-                                      class="<removed-for-snapshot-test>"
-                                      data-icon="caret-down"
-                                      data-testid="mocksvg"
-                                    />
-                                  </button>
-                                  <div
-                                    style="position: absolute; z-index: 9999; top: 0px; left: 0px; transform: translate(5px,5px);"
-                                  />
-                                </div>
+                                  </span>
+                                </button>
+                                <div
+                                  style="position: absolute; z-index: 9999; top: 0px; left: 0px; transform: translate(5px,5px);"
+                                />
                               </td>
                               <td
                                 class="<removed-for-snapshot-test>"
@@ -1573,16 +1619,20 @@ exports[`ConnectionReplicationPage should show an error if there is a schemaErro
                                         class="<removed-for-snapshot-test>"
                                       />
                                     </button>
-                                    <span
+                                    <div
                                       class="<removed-for-snapshot-test>"
                                     >
-                                      <p
+                                      <span
                                         class="<removed-for-snapshot-test>"
-                                        data-type="text"
                                       >
-                                        pokemon2
-                                      </p>
-                                    </span>
+                                        <p
+                                          class="<removed-for-snapshot-test>"
+                                          data-type="text"
+                                        >
+                                          pokemon2
+                                        </p>
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
                               </td>
